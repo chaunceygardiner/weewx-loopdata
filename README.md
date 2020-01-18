@@ -18,24 +18,24 @@ Installation Instructions
 2. Add user.loopdata.LoopData to report_servcices in weewx.con.
 
 [LoopData]
-    loop_data_dir = /home/weewx/gauge-data
-    filename = loop-data.txt
-    target_report = LiveSeasonsReport
-    include = dateTime, windSpeed, COMPASS_windDir, DESC_barometerRate, FMT_barometer, \
-        FMT_day_rain_total, FMT_dewpoint, FMT_heatindex, FMT_outHumidity, FMT_outTemp, FMT_rain, \
-        FMT_rainRate, FMT_windchill, FMT_windSpeed, FMT_HI_windGust, FMT_10mMaxGust
-    [[rename]]
-        windRose = WindRose
-    remote_server = foo.bar.com
-    remote_user = root
-    remote_dir = /home/weewx/loop-data
-    compress = False
-    log_success = False
-    ssh_options = "-o ConnectTimeout=1"
-    timeout = 1
-    skip_if_older_than = 3
+* loop_data_dir = /home/weewx/gauge-data
+* filename = loop-data.txt
+* target_report = LiveSeasonsReport
+* include = dateTime, windSpeed, COMPASS_windDir, DESC_barometerRate, FMT_barometer, \
+            FMT_day_rain_total, FMT_dewpoint, FMT_heatindex, FMT_outHumidity, FMT_outTemp, FMT_rain, \
+            FMT_rainRate, FMT_windchill, FMT_windSpeed, FMT_HI_windGust, FMT_10mMaxGust
+* [[rename]]
+** windRose = WindRose
+* remote_server = foo.bar.com
+* remote_user = root
+* remote_dir = /home/weewx/loop-data
+* compress = False
+* log_success = False
+* ssh_options = "-o ConnectTimeout=1"
+* timeout = 1
+* skip_if_older_than = 3
 
- Fill out the following fields:
+Fill in the following fields.
  * loop_data_dir     : The directory into which the loop data file should be written.
  * filename          : The name of the loop data file to write.
  * target_report     : The WeeWX report to target.  LoopData will use this report to determine the
@@ -62,7 +62,7 @@ Installation Instructions
  * skip_if_older_than: Don't bother to rsync if greater than this number of seconds.  Default is 4.
                        (Skip this and move on to the next if this data is older than 4 seconds.
 
-  List of all fields:
+  List of all fields available:
  * dateTime          : The time of this loop packet (seconds since the epoch).
  * usUnits           : The units system all obeservations are expressed in.
                        This will be the unit system of the report specified by
