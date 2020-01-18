@@ -63,67 +63,65 @@ Installation Instructions
                        (Skip this and move on to the next if this data is older than 4 seconds.
 
   List of all fields:
-                     * dateTime          : The time of this loop packet (seconds since the epoch).
-                     * usUnits           : The units system all obeservations are expressed in.
-                                           This will be the unit system of the report specified by
-                                           target_report in weewx.conf.
-                      All observations available in WeeWX's day_summary.
-                      Currently:
-                                         * outTemp
-                                         * inTemp
-                                         * outHumidity
-                                         * pressure
-                                         * windSpeed
-                                         * windDir
-                                         * windGust
-                                         * windGustDir
-                                         * day_rain_total
-                                         * rain
-                                         * altimeter
-                                         * appTemp
-                                         * barometer
-                                         * beaufort
-                                         * cloudbase
-                                         * dewpoint
-                                         * heatindex
-                                         * humidex
-                                         * maxSolarRad
-                                         * rainRate
-                                         * windchill
-                     * FMT_<obs>         : The observation expressed as a formatted value, including
-                                           the units (e.g., '4.8 mph').
-                     * LABEL_<obs>       : The label for the units associted with the observation (e.g., 'mph').
-                                           This label also applies to the high and low fields for this observation.
-                     * UNITS_<obs>       : The units that the observation is expressed in.  Also the units
-                                           for the corresponding HI and LO entries.  Example: 'mile_per_hour'.
-                     * LO_<obs>          : The minimum value of the observation today.
-                     * FMT_LO_<obs>      : The low observation expressed as a formatted value, including
-                                           the units (e.g., '4.8 mph').
-                     * T_LO<obs>         : The time of the daily minimum observation.
-                     * HI<obs>           : The maximum value of the observation today.
-                     * FMT_HI_<obs>      : The high observation expressed as a formatted value, including
-                                           the units (e.g., '4.8 mph').
-                     * T_HI<obs>         : The time of the daily maximum observation.
-                     * COMPASS_<obs>     : For windDir and windGustDir, text expression for the direction
-                                           (.e., 'NNE').
-                     * 10mMaxGust        : The maximum wind gust in the last 10m.
-                     * T_10mMaxGust      : The time of the max gust (seconds since the epoch).
-                     * FMT_10mMaxGust    : 10mMaxGust expressed as a formatted value ('8.6 mph').
-                     * LABEL_10mMaxGust  : The label of the units for 10mMaxGust (e.g., 'mph').
-                     * UNITS_10mMaxGust  : The units that 10mMaxGust is expressed in (e.g., 'mile_per_hour').
-                     * barometerRate     : The difference in barometer in the last 3 hours
-                                           (i.e., barometer_3_hours_ago - barometer_now)
-                     * DESC_barometerRate: Shipping forecast descriptions for the 3 hour change in
-                                           barometer readings (e.g., "Falling Slowly').
-                     * FMT_barometerRate:  Formatted baromter rate (e.g., '0.2 inHg/h').
-                     * UNITS_barometerRate:The units used in baromter rate (e.g., 'inHg_per_hour').
-                                           barometer readings (e.g., "Falling Slowly').
-                     * LABEL_barometerRate:The label used for baromter rate units (e.g., 'inHg/hr').
-                     * windRose          : An array of 16 directions (N,NNE,NE,ENE,E,ESE,SE,SSE,S,SSW,SW,
-                                           WSW,W,WNW,NW,NNW) containing the distance traveled in each 
-                                           direction.)
-                     * LABEL_windRose    : The label of the units for windRose (e.g., 'm')
-                     * UNITS_windRose    : The units that windrose values are expressed in (e.g., 'mile').
+ * dateTime          : The time of this loop packet (seconds since the epoch).
+ * usUnits           : The units system all obeservations are expressed in.
+                       This will be the unit system of the report specified by
+                       target_report in weewx.conf.
+ * outTemp           : Outside temperature.
+ * inTemp            : Inside temperature.
+ * outHumidity       : Outside humidity.
+ * pressure          : Pressure
+ * windSpeed         : Wind Speed
+ * windDir           : Wind Direction
+ * windGust          : Wind Gust (high wind speed)
+ * windGustDir       : Wind Gust Direction
+ * day_rain_total    : Total rainfall today.
+ * rain              : Rain
+ * altimeter         : Altimeter
+ * appTemp           : Apparent Temperature Outside
+ * barometer         : Barometer
+ * beaufort          : Beaufort Wind Scale rating
+ * cloudbase         : Cloudbase Elevation
+ * dewpoint          : Dew Point
+ * heatindex         : Heat Index
+ * humidex           : Humidity Index
+ * maxSolarRad       : Maximum Solar Radiation
+ * rainRate          : Rate of Rain
+ * windchill         : Wind Chill Factor
+ * FMT_<obs>         : The above observations expressed as a formatted value, including
+                       the units (e.g., '4.8 mph').
+ * LABEL_<obs>       : The label for the units associted with the observation (e.g., 'mph').
+                       This label also applies to the high and low fields for this observation.
+ * UNITS_<obs>       : The units that the observation is expressed in.  Also the units
+                       for the corresponding HI and LO entries.  Example: 'mile_per_hour'.
+ * LO_<obs>          : The minimum value of the observation today.
+ * FMT_LO_<obs>      : The low observation expressed as a formatted value, including
+                       the units (e.g., '4.8 mph').
+ * T_LO<obs>         : The time of the daily minimum observation.
+ * HI<obs>           : The maximum value of the observation today.
+ * FMT_HI_<obs>      : The high observation expressed as a formatted value, including
+                       the units (e.g., '4.8 mph').
+ * T_HI<obs>         : The time of the daily maximum observation.
+ * COMPASS_<obs>     : For windDir and windGustDir, text expression for the direction
+                       (.e., 'NNE').
+ * 10mMaxGust        : The maximum wind gust in the last 10m.
+ * T_10mMaxGust      : The time of the max gust (seconds since the epoch).
+ * FMT_10mMaxGust    : 10mMaxGust expressed as a formatted value ('8.6 mph').
+ * LABEL_10mMaxGust  : The label of the units for 10mMaxGust (e.g., 'mph').
+ * UNITS_10mMaxGust  : The units that 10mMaxGust is expressed in (e.g., 'mile_per_hour').
+ * barometerRate     : The difference in barometer in the last 3 hours
+                       (i.e., barometer_3_hours_ago - barometer_now)
+ * DESC_barometerRate: Shipping forecast descriptions for the 3 hour change in
+                       barometer readings (e.g., "Falling Slowly').
+ * FMT_barometerRate:  Formatted baromter rate (e.g., '0.2 inHg/h').
+ * UNITS_barometerRate:The units used in baromter rate (e.g., 'inHg_per_hour').
+                       barometer readings (e.g., "Falling Slowly').
+ * LABEL_barometerRate:The label used for baromter rate units (e.g., 'inHg/hr').
+ * windRose          : An array of 16 directions (N,NNE,NE,ENE,E,ESE,SE,SSE,S,SSW,SW,
+                       WSW,W,WNW,NW,NNW) containing the distance traveled in each 
+                       direction.)
+ * LABEL_windRose    : The label of the units for windRose (e.g., 'm')
+ * UNITS_windRose    : The units that windrose values are expressed in (e.g., 'mile').
 
 <h2>Licensing</h2>
 
