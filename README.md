@@ -7,6 +7,8 @@ A WeeWX service to generate a json file (typically, loop-data.txt)
 containing observations from loop packets as they are generated in
 weewx.
 
+**THIS PLUGIN REQUIRES PYTHON 3 AND WEEWX 4**
+
 Copyright (C)2020 by John A Kline (john@johnkline.com)
 
 Inspired by https://github.com/gjr80/weewx-realtime_gauge-data.  This does not attempt to duplicate
