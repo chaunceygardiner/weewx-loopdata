@@ -13,7 +13,7 @@ Inspired by https://github.com/gjr80/weewx-realtime_gauge-data.  This does not a
 Gary's realtime gauge data plugin for the SteelSeries gauges.  To power Steel Series gauges from
 WeeWX, you definitely want to use weewx-realtime_gauge_data.
 
-<h2>Installation Instructions</h2>
+# Installation Instructions
 1. Install bin/user/loopdata.py in /home/weewx/bin/user.
 2. Add user.loopdata.LoopData to report_servcices in weewx.con.
 
@@ -35,7 +35,7 @@ WeeWX, you definitely want to use weewx-realtime_gauge_data.
 * `timeout = 1`
 * `skip_if_older_than = 3`
 
-Fill in the following fields.
+## Fill in the following fields.
  * `loop_data_dir`     : The directory into which the loop data file should be written.
  * `filename`          : The name of the loop data file to write.
  * `target_report`     : The WeeWX report to target.  LoopData will use this report to determine the
@@ -62,7 +62,7 @@ Fill in the following fields.
  * `skip_if_older_than`: Don't bother to rsync if greater than this number of seconds.  Default is 4.
                        (Skip this and move on to the next if this data is older than 4 seconds.
 
-<h3>List of all fields available:</h3>
+## List of all fields available:
  * `dateTime`          : The time of this loop packet (seconds since the epoch).
  * `usUnits`           : The units system all obeservations are expressed in.
                        This will be the unit system of the report specified by
