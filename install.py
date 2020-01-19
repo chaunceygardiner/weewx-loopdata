@@ -39,7 +39,7 @@ class LoopDataInstaller(ExtensionInstaller):
                         'enable':'false',
                         'remote_server': 'www.foobar.com',
                         'remote_user': 'root',
-                        'remote_dir': '/home/weewx/gauge-data',
+                        'remote_dir': '/home/weewx/loop-data',
                         'compress': 'false',
                         'log_success': 'false',
                         'ssh_options': '-o ConnectTimeout=1',
