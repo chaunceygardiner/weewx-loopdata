@@ -7,44 +7,54 @@ A WeeWX service to generate a json file (typically, loop-data.txt)
 containing observations from loop packets as they are generated in
 weewx.
 
-**THIS PLUGIN REQUIRES PYTHON 3 AND WEEWX 4**
-
 Copyright (C)2020 by John A Kline (john@johnkline.com)
+
+**THIS PLUGIN REQUIRES PYTHON 3 AND WEEWX 4**
 
 Inspired by https://github.com/gjr80/weewx-realtime_gauge-data.  This does not attempt to duplicate
 Gary's realtime gauge data plugin for the SteelSeries gauges.  To power Steel Series gauges from
 WeeWX, you definitely want to use weewx-realtime_gauge_data.
 
 # Installation Instructions
-1. Install bin/user/loopdata.py in /home/weewx/bin/user.
-2. Add user.loopdata.LoopData to report_servcices in weewx.conf
-3. Add the following section to weewx.conf
+1. Run the following command.
 
+`sudo /home/weewx/bin/wee_extension --install ~/software/weewx-loopdata`
+
+Note: The above command assumes a WeeWX installation of `/home/weewx` and
+      that this extension was downloaded to `~/software/weewx-loopdata`.
+      Adjust the command as necessary.
+
+The above command will insert a section in weewx.conf similar to the following.
+This section is explained below.
+
+```
 [LoopData]
-*     [[FileSpec]]
-..*         loop_data_dir = /home/weewx/loop-data
-..*         filename = loop-data.txt
-*     [[Formatting]]
-..*         target_report = LiveSeasonsReport
-*     [[RsyncSpec]]
-..*         remote_server = foo.bar.com
-..*         remote_user = root
-..*         remote_dir = /home/weewx/loop-data
-..*         compress = False
-..*         log_success = False
-..*         ssh_options = "-o ConnectTimeout=1"
-..*         timeout = 1
-..*         skip_if_older_than = 3
-*     [[Include]]
-..*         fields = dateTime, windSpeed, COMPASS_windDir, DESC_barometerRate, FMT_barometer, FMT_day_rain_total, FMT_dewpoint, FMT_heatindex, FMT_outHumidity, FMT_outTemp, FMT_rain, FMT_rainRate, FMT_windchill, FMT_windSpeed, FMT_HI_windGust, FMT_10mMaxGust
-*     [[Rename]]
-..*         windRose = WindRose
+    [[FileSpec]]
+        loop_data_dir = /home/weewx/loop-data
+        filename = loop-data.txt
+    [[Formatting]]
+        target_report = LiveSeasonsReport
+    [[RsyncSpec]]
+        remote_server = foo.bar.com
+        remote_user = root
+        remote_dir = /home/weewx/loop-data
+        compress = False
+        log_success = False
+        ssh_options = "-o ConnectTimeout=1"
+        timeout = 1
+        skip_if_older_than = 3
+    [[Include]]
+        fields = dateTime, windSpeed, COMPASS_windDir, DESC_barometerRate, FMT_barometer
+    [[Rename]]
+        windRose = WindRose
+```
 
-## Fill in the following items.
+## Fields in `LoopData` sections of `weewx.conf`:
  * `loop_data_dir`     : The directory into which the loop data file should be written.
  * `filename`          : The name of the loop data file to write.
  * `target_report`     : The WeeWX report to target.  LoopData will use this report to determine the
                          units to use and the formatting to apply.
+ * `enable`            : Set to true to rsync the loop data file to `remote_server`.
  * `remote_server`     : The server to which gauge-data.txt will be copied.
                          To use rsync to sync loop-data.txt to a remote computer, passwordless ssh
                          using public/private key must be configured for authentication from the user
@@ -127,6 +137,6 @@ WeeWX, you definitely want to use weewx-realtime_gauge_data.
  * `LABEL_windRose`    : The label of the units for windRose (e.g., 'm')
  * `UNITS_windRose`    : The units that windrose values are expressed in (e.g., 'mile').
 
-<h2>Licensing</h2>
+##Licensing
 
 WeeWX is licensed under the GNU Public License v3.

@@ -6,6 +6,7 @@ containing observations from loop packets as they are generated in
 weewx.
 
 Copyright (C)2020 by John A Kline (john@johnkline.com)
+Distributed under the terms of the GNU Public License (GPLv3)
 
 Inspired by https://github.com/gjr80/weewx-realtime_gauge-data.  This does not attempt to duplicate
 Gary's realtime gauge data plugin for the SteelSeries gauges.  To power Steel Series gauges from
@@ -22,16 +23,20 @@ Installation Instructions
     [[Formatting]]
         target_report = LiveSeasonsReport
     [[RsyncSpec]]
+        enable = False
         remote_server = foo.bar.com
         remote_user = root
         remote_dir = /home/weewx/gauge-data
         compress = False
         log_success = False
-        ssh_options = "-o ConnectTimeout=1"
+        ssh_options = -o ConnectTimeout=1
         timeout = 1
         skip_if_older_than = 3
     [[Include]]
-        fields = dateTime, windSpeed, COMPASS_windDir, DESC_barometerRate, FMT_barometer, FMT_day_rain_total, FMT_dewpoint, FMT_heatindex, FMT_outHumidity, FMT_outTemp, FMT_rain, FMT_rainRate, FMT_windchill, FMT_windSpeed, FMT_HI_windGust, FMT_10mMaxGust
+        fields = dateTime, windSpeed, COMPASS_windDir, DESC_barometerRate, \
+                 FMT_barometer, FMT_day_rain_total, FMT_dewpoint, FMT_heatindex, \
+                 FMT_outHumidity, FMT_outTemp, FMT_rain, FMT_rainRate, \
+                 FMT_windchill, FMT_windSpeed, FMT_HI_windGust, FMT_10mMaxGust
     [[Rename]]
         windRose = WindRose
 
@@ -46,6 +51,7 @@ Installation Instructions
                        keys (i.e., what these fields should be renamed.  If rename is missing and
                        include (see above).
                        is also missing, all fields are included.
+   enable            : Enable rsyncing the loop-data.txt file to remote_server.
    remote_server     : The server to which gauge-data.txt will be copied.
                        To use rsync to sync loop-data.txt to a remote computer, passwordless ssh
                        using public/private key must be configured for authentication from the user
@@ -148,6 +154,7 @@ import weeutil.weeutil
 
 
 from weeutil.weeutil import timestamp_to_string
+from weeutil.weeutil import to_bool
 from weeutil.weeutil import to_float
 from weeutil.weeutil import to_int
 from weewx.engine import StdService
@@ -174,7 +181,7 @@ class Configuration:
     formatter          : weewx.units.Formatter
     converter          : weewx.units.Converter
     tmpname            : str
-    skip_if_older_than : int
+    enable             : bool
     remote_server      : str
     remote_port        : int
     remote_user        : str
@@ -182,6 +189,7 @@ class Configuration:
     compress           : bool
     log_success        : bool
     ssh_options        : str
+    skip_if_older_than : int
     timeout            : int
     barometer_rate_secs: int
     wind_rose_secs     : int
@@ -244,13 +252,14 @@ class LoopData(StdService):
             formatter           = weewx.units.Formatter.fromSkinDict(target_report_dict),
             converter           = weewx.units.Converter.fromSkinDict(target_report_dict),
             tmpname             = tmp.name,
+            enable              = to_bool(rsync_spec_dict.get('enable')),
             remote_server       = rsync_spec_dict.get('remote_server'),
             remote_port         = to_int(rsync_spec_dict.get('remote_port')) if rsync_spec_dict.get(
                                       'remote_port') is not None else None,
             remote_user         = rsync_spec_dict.get('remote_user'),
             remote_dir          = rsync_spec_dict.get('remote_dir'),
-            compress            = True if rsync_spec_dict.get('compress') == 'True' else False,
-            log_success         = True if rsync_spec_dict.get('log_success') == 'True' else False,
+            compress            = to_bool(rsync_spec_dict.get('compress')),
+            log_success         = to_bool(rsync_spec_dict.get('log_success')),
             ssh_options         = rsync_spec_dict.get('ssh_options', '-o ConnectTimeout=1'),
             timeout             = to_int(rsync_spec_dict.get('timeout', 1)),
             skip_if_older_than  = to_int(rsync_spec_dict.get('skip_if_older_than', 3)),
@@ -408,7 +417,7 @@ class LoopProcessor:
         # move it to filename
         shutil.move(self.cfg.tmpname, os.path.join(self.cfg.loop_data_dir, self.cfg.filename))
         log.debug('Moved to %s' % os.path.join(self.cfg.loop_data_dir, self.cfg.filename))
-        if self.cfg.remote_server is not None:
+        if self.cfg.enable:
             # rsync the data
             self.rsync_data(pkt['dateTime'])
 
@@ -425,7 +434,7 @@ class LoopProcessor:
         # formatter
         # converter
         log.info('tmpname            : %s' % cfg.tmpname)
-        log.info('skip_if_older_than : %d' % cfg.skip_if_older_than)
+        log.info('enable             : %d' % cfg.enable)
         log.info('remote_server      : %s' % cfg.remote_server)
         log.info('remote_port        : %r' % cfg.remote_port)
         log.info('remote_user        : %s' % cfg.remote_user)
@@ -434,6 +443,7 @@ class LoopProcessor:
         log.info('log_success        : %d' % cfg.log_success)
         log.info('ssh_options        : %s' % cfg.ssh_options)
         log.info('timeout            : %d' % cfg.timeout)
+        log.info('skip_if_older_than : %d' % cfg.skip_if_older_than)
         log.info('barometer_rate_secs: %d' % cfg.barometer_rate_secs)
         log.info('wind_rose_secs     : %d' % cfg.wind_rose_secs)
         log.info('wind_rose_points   : %d' % cfg.wind_rose_points)
