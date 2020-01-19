@@ -22,14 +22,14 @@ Installation Instructions
     [[Formatting]]
         target_report = LiveSeasonsReport
     [[RsyncSpec]]
-        #remote_server = foo.bar.com
-        #remote_user = root
-        #remote_dir = /home/weewx/gauge-data
-        #compress = False
-        #log_success = False
-        #ssh_options = "-o ConnectTimeout=1"
-        #timeout = 1
-        #skip_if_older_than = 3
+        remote_server = foo.bar.com
+        remote_user = root
+        remote_dir = /home/weewx/gauge-data
+        compress = False
+        log_success = False
+        ssh_options = "-o ConnectTimeout=1"
+        timeout = 1
+        skip_if_older_than = 3
     [[Include]]
         fields = dateTime, windSpeed, COMPASS_windDir, DESC_barometerRate, FMT_barometer, FMT_day_rain_total, FMT_dewpoint, FMT_heatindex, FMT_outHumidity, FMT_outTemp, FMT_rain, FMT_rainRate, FMT_windchill, FMT_windSpeed, FMT_HI_windGust, FMT_10mMaxGust
     [[Rename]]
@@ -252,7 +252,7 @@ class LoopData(StdService):
             compress            = True if rsync_spec_dict.get('compress') == 'True' else False,
             log_success         = True if rsync_spec_dict.get('log_success') == 'True' else False,
             ssh_options         = rsync_spec_dict.get('ssh_options', '-o ConnectTimeout=1'),
-            timeout             = rsync_spec_dict.get('timeout', 1),
+            timeout             = to_int(rsync_spec_dict.get('timeout', 1)),
             skip_if_older_than  = to_int(rsync_spec_dict.get('skip_if_older_than', 3)),
             barometer_rate_secs = 10800,
             wind_rose_secs      = 86400,
