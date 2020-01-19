@@ -9,6 +9,16 @@ weewx.
 
 Copyright (C)2020 by John A Kline (john@johnkline.com)
 
+### Why?  What does it do?
+
+LoopData writes a json file for every loop packet received.  With some javascript,
+you can accomplish this:
+
+`https://www.paloaltoweather.com/weatherboard.html`
+and/or this:
+`https://www.paloaltoweather.com/index.html`
+Note: Skins coming soon!
+
 **THIS PLUGIN REQUIRES PYTHON 3 AND WEEWX 4**
 
 Inspired by https://github.com/gjr80/weewx-realtime_gauge-data.  This does not attempt to duplicate
