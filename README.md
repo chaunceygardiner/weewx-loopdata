@@ -12,8 +12,8 @@ Copyright (C)2020 by John A Kline (john@johnkline.com)
 ### Why?  What does it do?
 
 LoopData writes a json file for every loop packet received.  With some
-javascript, one can have reports like this [Weatherbaord(TM) Report]
-(https://www.paloaltoweather.com/weatherboard.html) and this
+javascript, one can have reports like the following:
+[Weatherbaord(TM) Report](https://www.paloaltoweather.com/weatherboard.html)
 [LiveSeasons Report](https://www.paloaltoweather.com/index.html).
 Note: Skins coming soon!
 
