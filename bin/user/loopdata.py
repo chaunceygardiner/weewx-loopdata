@@ -16,22 +16,24 @@ Installation Instructions
 2. Add user.loopdata.LoopData to report_servcices in weewx.con.
 
 [LoopData]
-    loop_data_dir = /home/weewx/gauge-data
-    filename = loop-data.txt
-    target_report = LiveSeasonsReport
-    include = dateTime, windSpeed, COMPASS_windDir, DESC_barometerRate, FMT_barometer, \
-        FMT_day_rain_total, FMT_dewpoint, FMT_heatindex, FMT_outHumidity, FMT_outTemp, FMT_rain, \
-        FMT_rainRate, FMT_windchill, FMT_windSpeed, FMT_HI_windGust, FMT_10mMaxGust
-    [[rename]]
+    [[FileSpec]]
+        loop_data_dir = /home/weewx/gauge-data
+        filename = loop-data.txt
+    [[Formatting]]
+        target_report = LiveSeasonsReport
+    [[RsyncSpec]]
+        #remote_server = foo.bar.com
+        #remote_user = root
+        #remote_dir = /home/weewx/gauge-data
+        #compress = False
+        #log_success = False
+        #ssh_options = "-o ConnectTimeout=1"
+        #timeout = 1
+        #skip_if_older_than = 3
+    [[Include]]
+        fields = dateTime, windSpeed, COMPASS_windDir, DESC_barometerRate, FMT_barometer, FMT_day_rain_total, FMT_dewpoint, FMT_heatindex, FMT_outHumidity, FMT_outTemp, FMT_rain, FMT_rainRate, FMT_windchill, FMT_windSpeed, FMT_HI_windGust, FMT_10mMaxGust
+    [[Rename]]
         windRose = WindRose
-    remote_server = foo.bar.com
-    remote_user = root
-    remote_dir = /home/weewx/loop-data
-    compress = False
-    log_success = False
-    ssh_options = "-o ConnectTimeout=1"
-    timeout = 1
-    skip_if_older_than = 3
 
  Fill out the following fields:
    loop_data_dir     : The directory into which the loop data file should be written.
@@ -202,12 +204,17 @@ class LoopData(StdService):
         if sys.version_info[0] < 3:
             raise Exception("Python 3 is required for the loopdata plugin.")
 
-        rt_config_dict = config_dict.get('LoopData', {})
+        loop_config_dict     = config_dict.get('LoopData', {})
+        file_spec_dict       = loop_config_dict.get('FileSpec', {})
+        formatting_spec_dict = loop_config_dict.get('Formatting', {})
+        rsync_spec_dict      = loop_config_dict.get('RsyncSpec', {})
+        include_spec_dict    = loop_config_dict.get('Include', {})
+        rename_spec_dict     = loop_config_dict.get('Rename', {})
 
         tmp = tempfile.NamedTemporaryFile(prefix='LoopData', delete=False)
         tmp.close()
 
-        target_report = rt_config_dict.get('target_report', 'LiveSeasonsReport')
+        target_report = formatting_spec_dict.get('target_report', 'LiveSeasonsReport')
         target_report_dict = config_dict.get('StdReport').get(target_report)
 
         self.cfg: Configuration = Configuration(
@@ -215,21 +222,21 @@ class LoopData(StdService):
             config_dict         = config_dict,
             archive_interval    = to_int(config_dict.get('StdArchive').get('archive_interval')),
             loop_data_dir       = LoopData.compute_loop_data_dir(config_dict),
-            filename            = rt_config_dict.get('filename', 'loop-data.txt'),
+            filename            = file_spec_dict.get('filename', 'loop-data.txt'),
             target_report       = target_report,
             formatter           = weewx.units.Formatter.fromSkinDict( target_report_dict),
             converter           = weewx.units.Converter.fromSkinDict( target_report_dict),
             tmpname             = tmp.name,
-            remote_server       = rt_config_dict.get('remote_server'),
-            remote_port         = to_int(rt_config_dict.get('remote_port')) if rt_config_dict.get(
+            remote_server       = rsync_spec_dict.get('remote_server'),
+            remote_port         = to_int(rsync_spec_dict.get('remote_port')) if rsync_spec_dict.get(
                                       'remote_port') is not None else None,
-            remote_user         = rt_config_dict.get('remote_user'),
-            remote_dir          = rt_config_dict.get('remote_dir'),
-            compress            = True if rt_config_dict.get('compress') == 'True' else False,
-            log_success         = True if rt_config_dict.get('log_success') == 'True' else False,
-            ssh_options         = rt_config_dict.get('ssh_options', '-o ConnectTimeout=1'),
-            timeout             = rt_config_dict.get('timeout', 1),
-            skip_if_older_than  = to_int(rt_config_dict.get('skip_if_older_than', 3)),
+            remote_user         = rsync_spec_dict.get('remote_user'),
+            remote_dir          = rsync_spec_dict.get('remote_dir'),
+            compress            = True if rsync_spec_dict.get('compress') == 'True' else False,
+            log_success         = True if rsync_spec_dict.get('log_success') == 'True' else False,
+            ssh_options         = rsync_spec_dict.get('ssh_options', '-o ConnectTimeout=1'),
+            timeout             = rsync_spec_dict.get('timeout', 1),
+            skip_if_older_than  = to_int(rsync_spec_dict.get('skip_if_older_than', 3)),
             barometer_rate_secs = 10800,
             wind_rose_secs      = 86400,
             wind_rose_points    = 16)
@@ -264,9 +271,11 @@ class LoopData(StdService):
     def compute_loop_data_dir(config_dict):
         weewx_root: str = config_dict.get('WEEWX_ROOT')
         html_root: str = config_dict.get('StdReport').get('HTML_ROOT')
-        rt_dir: str = config_dict.get('LoopData').get('loop_data_dir')
-        log.debug('compute_loop_data_dir: %s' %  os.path.join(weewx_root, html_root, rt_dir))
-        return os.path.join(weewx_root, html_root, rt_dir)
+        loop_data_dict = config_dict.get('LoopData', {})
+        file_spec_dict = loop_data_dict.get('FileSpec', {})
+        loop_dir: str = file_spec_dict.get('loop_data_dir')
+        log.debug('compute_loop_data_dir: %s' %  os.path.join(weewx_root, html_root, loop_dir))
+        return os.path.join(weewx_root, html_root, loop_dir)
 
 class LoopProcessor:
     def __init__(self, cfg: Configuration):
@@ -366,14 +375,16 @@ class LoopProcessor:
             os.unlink(self.cfg.tmpname)
 
     def compose_and_write_packet(self, pkt: Dict[str, Any]) -> None:
-        include_section = self.cfg.config_dict.get('LoopData').get('include', None)
-        rename_section = self.cfg.config_dict.get('LoopData').get('rename', None)
-        if include_section == None and rename_section == None:
+        loop_data_section = self.cfg.config_dict.get('LoopData', {})
+        include_section = loop_data_section.get('Include', {})
+        fields_to_include = include_section.get('fields', None)
+        rename_section = loop_data_section.get('Rename', None)
+        if fields_to_include == None and rename_section == None:
             self.write_packet(pkt)
         else:
             selective_pkt: Dict[str, Any] = {}
-            if include_section != None:
-                for obstype in include_section:
+            if fields_to_include != None:
+                for obstype in fields_to_include:
                     if obstype in pkt:
                         selective_pkt[obstype] = pkt[obstype]
             if rename_section != None:
