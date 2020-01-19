@@ -13,8 +13,8 @@ Copyright (C)2020 by John A Kline (john@johnkline.com)
 
 LoopData writes a json file for every loop packet received.  With some
 javascript, one can have reports like the following:
-[Weatherbaord(TM) Report](https://www.paloaltoweather.com/weatherboard.html)
-[LiveSeasons Report](https://www.paloaltoweather.com/index.html).
+* [Weatherbaord(TM) Report](https://www.paloaltoweather.com/weatherboard.html)
+* [LiveSeasons Report](https://www.paloaltoweather.com/index.html).
 Note: Skins coming soon!
 
 **THIS PLUGIN REQUIRES PYTHON 3 AND WEEWX 4**
