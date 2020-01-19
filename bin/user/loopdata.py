@@ -199,6 +199,9 @@ class LoopData(StdService):
         super(LoopData, self).__init__(engine, config_dict)
         log.info("Service version is %s." % REALTIME_DATA_VERSION)
 
+        if sys.version_info[0] < 3:
+            raise Exception("Python 3 is required for the loopdata plugin.")
+
         rt_config_dict = config_dict.get('LoopData', {})
 
         tmp = tempfile.NamedTemporaryFile(prefix='LoopData', delete=False)
@@ -383,8 +386,9 @@ class LoopProcessor:
         log.debug('Writing packet to %s' % self.cfg.tmpname)
         with open(self.cfg.tmpname, "w") as f:
             f.write(json.dumps(pkt))
-            log.debug('Wrote to %s' % self.cfg.tmpname)
-        os.sync()
+            f.flush()
+            os.fsync(f.fileno())
+        log.debug('Wrote to %s' % self.cfg.tmpname)
         # move it to filename
         shutil.move(self.cfg.tmpname, os.path.join(self.cfg.loop_data_dir, self.cfg.filename))
         log.debug('Moved to %s' % os.path.join(self.cfg.loop_data_dir, self.cfg.filename))
