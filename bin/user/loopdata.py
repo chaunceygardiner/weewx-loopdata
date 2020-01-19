@@ -169,6 +169,8 @@ class Configuration:
     loop_data_dir      : str
     filename           : str
     target_report      : str
+    fields_to_include  : Optional[List[str]]
+    fields_to_rename   : Optional[Dict[str, str]]
     formatter          : weewx.units.Formatter
     converter          : weewx.units.Converter
     tmpname            : str
@@ -204,28 +206,43 @@ class LoopData(StdService):
         if sys.version_info[0] < 3:
             raise Exception("Python 3 is required for the loopdata plugin.")
 
+        std_archive_dict     = config_dict.get('StdArchive', {})
+        std_report_dict      = config_dict.get('StdReport', {})
+
         loop_config_dict     = config_dict.get('LoopData', {})
         file_spec_dict       = loop_config_dict.get('FileSpec', {})
         formatting_spec_dict = loop_config_dict.get('Formatting', {})
         rsync_spec_dict      = loop_config_dict.get('RsyncSpec', {})
         include_spec_dict    = loop_config_dict.get('Include', {})
-        rename_spec_dict     = loop_config_dict.get('Rename', {})
+        fields_to_rename     = loop_config_dict.get('Rename', {})
 
+        # Compose the directory in which to write the file.
+        weewx_root: str = config_dict.get('WEEWX_ROOT')
+        html_root: str = std_report_dict.get('HTML_ROOT')
+        loop_dir: str = file_spec_dict.get('loop_data_dir', '.')
+        loop_data_dir = os.path.join(weewx_root, html_root, loop_dir)
+
+        # Get a temporay file in which to write data before renaming.
         tmp = tempfile.NamedTemporaryFile(prefix='LoopData', delete=False)
         tmp.close()
 
+        # Get a target report dictionary we can use for converting units and formatting.
         target_report = formatting_spec_dict.get('target_report', 'LiveSeasonsReport')
-        target_report_dict = config_dict.get('StdReport').get(target_report)
+        target_report_dict = std_report_dict.get(target_report)
+
+        fields_to_include = include_spec_dict.get('fields', None)
 
         self.cfg: Configuration = Configuration(
             queue               = queue.SimpleQueue(),
             config_dict         = config_dict,
-            archive_interval    = to_int(config_dict.get('StdArchive').get('archive_interval')),
-            loop_data_dir       = LoopData.compute_loop_data_dir(config_dict),
+            archive_interval    = to_int(std_archive_dict.get('archive_interval')),
+            loop_data_dir       = loop_data_dir,
             filename            = file_spec_dict.get('filename', 'loop-data.txt'),
             target_report       = target_report,
-            formatter           = weewx.units.Formatter.fromSkinDict( target_report_dict),
-            converter           = weewx.units.Converter.fromSkinDict( target_report_dict),
+            fields_to_include   = fields_to_include,
+            fields_to_rename    = fields_to_rename,
+            formatter           = weewx.units.Formatter.fromSkinDict(target_report_dict),
+            converter           = weewx.units.Converter.fromSkinDict(target_report_dict),
             tmpname             = tmp.name,
             remote_server       = rsync_spec_dict.get('remote_server'),
             remote_port         = to_int(rsync_spec_dict.get('remote_port')) if rsync_spec_dict.get(
@@ -267,16 +284,6 @@ class LoopData(StdService):
         log.debug('end_archive_period: event: %s' % event)
         self.cfg.queue.put(event)
 
-    @staticmethod
-    def compute_loop_data_dir(config_dict):
-        weewx_root: str = config_dict.get('WEEWX_ROOT')
-        html_root: str = config_dict.get('StdReport').get('HTML_ROOT')
-        loop_data_dict = config_dict.get('LoopData', {})
-        file_spec_dict = loop_data_dict.get('FileSpec', {})
-        loop_dir: str = file_spec_dict.get('loop_data_dir')
-        log.debug('compute_loop_data_dir: %s' %  os.path.join(weewx_root, html_root, loop_dir))
-        return os.path.join(weewx_root, html_root, loop_dir)
-
 class LoopProcessor:
     def __init__(self, cfg: Configuration):
         self.cfg = cfg
@@ -285,6 +292,7 @@ class LoopProcessor:
         self.barometer_readings: List[Reading] = []
         self.wind_gust_readings: List[Reading] = []
         self.wind_rose_readings: List[WindroseReading] = []
+        LoopProcessor.log_configuration(cfg)
 
     def process_queue(self) -> None:
         try:
@@ -311,16 +319,17 @@ class LoopProcessor:
                     self.next_day = LoopProcessor.local_midnight_timestamp()
                     log.debug('Next day is: %s' % timestamp_to_string(self.next_day))
 
-                    # This is the first loop, initalize the highs, lows,
-                    # barometer rate and 10m high gust.  Note: Not done in init()
-                    # as the daily summaries might not be up to date at init time.
-                    db_manager = LoopProcessor.get_db_manager(self.cfg.config_dict)
-                    self.day_summary = db_manager._get_day_summary(time.time())
+                    # This is the first loop, initialize db_manager.  Also initalize
+                    # the highs, lows, barometer rate and 10m high gust.  Note:
+                    # Not done in init() as the daily summaries might not be up
+                    # to date at init time.
+                    self.db_manager = LoopProcessor.get_db_manager(self.cfg.config_dict)
+                    self.day_summary = self.db_manager._get_day_summary(time.time())
                     log.debug('startup: day_summary: %s' % self.day_summary)
 
-                    self.fill_in_wind_rose_readings_at_startup(db_manager)
-                    self.fill_in_barometer_readings_at_startup(db_manager)
-                    self.fill_in_10m_wind_gust_readings_at_startup(db_manager)
+                    self.fill_in_wind_rose_readings_at_startup()
+                    self.fill_in_barometer_readings_at_startup()
+                    self.fill_in_10m_wind_gust_readings_at_startup()
                     LoopProcessor.fixup_rain_on_startup(pkt)
                     log.info('LoopData process queue took %f seconds to set up.' % (
                              time.time() - start))
@@ -328,7 +337,7 @@ class LoopProcessor:
                     self.next_day = LoopProcessor.local_midnight_timestamp()
                     log.debug('Next day is: %s' % timestamp_to_string(self.next_day))
                     # NOTE: Add 10s to be sure we get back today's (empty) summary.
-                    self.day_summary = db_manager._get_day_summary(time.time()+10)
+                    self.day_summary = self.db_manager._get_day_summary(time.time()+10)
                     log.debug('midnight_reset: day_summary: %s' % self.day_summary)
                     for obstype in self.day_summary:
                         log.debug('midnight_reset: accum[%s].lasttime: %r' % (
@@ -375,22 +384,18 @@ class LoopProcessor:
             os.unlink(self.cfg.tmpname)
 
     def compose_and_write_packet(self, pkt: Dict[str, Any]) -> None:
-        loop_data_section = self.cfg.config_dict.get('LoopData', {})
-        include_section = loop_data_section.get('Include', {})
-        fields_to_include = include_section.get('fields', None)
-        rename_section = loop_data_section.get('Rename', None)
-        if fields_to_include == None and rename_section == None:
+        if self.cfg.fields_to_include is None and self.cfg.fields_to_rename is None:
             self.write_packet(pkt)
         else:
             selective_pkt: Dict[str, Any] = {}
-            if fields_to_include != None:
-                for obstype in fields_to_include:
+            if self.cfg.fields_to_include is not None:
+                for obstype in self.cfg.fields_to_include:
                     if obstype in pkt:
                         selective_pkt[obstype] = pkt[obstype]
-            if rename_section != None:
-                for obstype in rename_section:
+            if self.cfg.fields_to_rename is not None:
+                for obstype in self.cfg.fields_to_rename:
                     if obstype in pkt:
-                        selective_pkt[rename_section[obstype]] = pkt[obstype]
+                        selective_pkt[self.cfg.fields_to_rename[obstype]] = pkt[obstype]
             self.write_packet(selective_pkt)
 
     def write_packet(self, pkt: Dict[str, Any]) -> None:
@@ -406,6 +411,32 @@ class LoopProcessor:
         if self.cfg.remote_server is not None:
             # rsync the data
             self.rsync_data(pkt['dateTime'])
+
+    @staticmethod
+    def log_configuration(cfg: Configuration):
+        # queue
+        # config_dict
+        log.info('archive_interval   : %d' % cfg.archive_interval)
+        log.info('loop_data_dir      : %s' % cfg.loop_data_dir)
+        log.info('filename           : %s' % cfg.filename)
+        log.info('target_report      : %s' % cfg.target_report)
+        log.info('fields_to_include  : %s' % cfg.fields_to_include)
+        log.info('fields_to_rename   : %s' % cfg.fields_to_rename)
+        # formatter
+        # converter
+        log.info('tmpname            : %s' % cfg.tmpname)
+        log.info('skip_if_older_than : %d' % cfg.skip_if_older_than)
+        log.info('remote_server      : %s' % cfg.remote_server)
+        log.info('remote_port        : %r' % cfg.remote_port)
+        log.info('remote_user        : %s' % cfg.remote_user)
+        log.info('remote_dir         : %s' % cfg.remote_dir)
+        log.info('compress           : %d' % cfg.compress)
+        log.info('log_success        : %d' % cfg.log_success)
+        log.info('ssh_options        : %s' % cfg.ssh_options)
+        log.info('timeout            : %d' % cfg.timeout)
+        log.info('barometer_rate_secs: %d' % cfg.barometer_rate_secs)
+        log.info('wind_rose_secs     : %d' % cfg.wind_rose_secs)
+        log.info('wind_rose_points   : %d' % cfg.wind_rose_points)
 
     @staticmethod
     def fixup_rain_on_startup(pkt):
@@ -559,9 +590,9 @@ class LoopProcessor:
         if do_hi_lo and obstype != 'day_rain_total':
             self.convert_hi_lo_units(pkt, obstype, unit_type, unit_group)
 
-    def fill_in_wind_rose_readings_at_startup(self, db_manager) -> None:
+    def fill_in_wind_rose_readings_at_startup(self) -> None:
         earliest: int = to_int(time.time() - self.cfg.wind_rose_secs)
-        for cols in db_manager.genSql('SELECT dateTime, windSpeed, windDir FROM' \
+        for cols in self.db_manager.genSql('SELECT dateTime, windSpeed, windDir FROM' \
                 ' archive WHERE dateTime >= %d ORDER BY dateTime ASC' % earliest):
             dateTime  = cols[0]
             windSpeed = cols[1]
@@ -576,9 +607,9 @@ class LoopProcessor:
                          'bucket[%d]: distance: %f' % (
                          timestamp_to_string(reading.timestamp), reading.bucket, reading.distance))
 
-    def fill_in_barometer_readings_at_startup(self, db_manager) -> None:
+    def fill_in_barometer_readings_at_startup(self) -> None:
         earliest: int = to_int(time.time() - self.cfg.barometer_rate_secs)
-        for cols in db_manager.genSql('SELECT dateTime, barometer FROM archive' \
+        for cols in self.db_manager.genSql('SELECT dateTime, barometer FROM archive' \
                 ' WHERE dateTime >= %d ORDER BY dateTime ASC' % earliest):
             reading: Reading = Reading(timestamp = cols[0], value = cols[1])
             self.barometer_readings.append(reading)
@@ -649,10 +680,10 @@ class LoopProcessor:
                 self.barometer_readings[0].timestamp))
             del self.barometer_readings[0]
 
-    def fill_in_10m_wind_gust_readings_at_startup(self, db_manager) -> None:
+    def fill_in_10m_wind_gust_readings_at_startup(self) -> None:
         earliest: int = to_int(time.time() - 600)
-        for cols in db_manager.genSql('SELECT dateTime, windGust FROM archive WHERE dateTime >= %d' \
-                                      ' ORDER BY dateTime ASC' % earliest):
+        for cols in self.db_manager.genSql('SELECT dateTime, windGust FROM ' \
+                'archive WHERE dateTime >= %d ORDER BY dateTime ASC' % earliest):
             reading: Reading = Reading(timestamp = cols[0], value = cols[1])
             self.wind_gust_readings.append(reading)
             log.debug('fill_in_10m_wind_gust_readings_at_startup: Reading(%s): %f' % (

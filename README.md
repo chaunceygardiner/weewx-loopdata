@@ -17,52 +17,54 @@ WeeWX, you definitely want to use weewx-realtime_gauge_data.
 
 # Installation Instructions
 1. Install bin/user/loopdata.py in /home/weewx/bin/user.
-2. Add user.loopdata.LoopData to report_servcices in weewx.con.
+2. Add user.loopdata.LoopData to report_servcices in weewx.conf
+3. Add the following section to weewx.conf
 
-`[LoopData]]`
-* `loop_data_dir = /home/weewx/gauge-data`
-* `filename = loop-data.txt`
-* `target_report = LiveSeasonsReport`
-* `include = dateTime, windSpeed, COMPASS_windDir, DESC_barometerRate, FMT_barometer,`
-            `FMT_day_rain_total, FMT_dewpoint, FMT_heatindex, FMT_outHumidity, FMT_outTemp, FMT_rain,`
-            `FMT_rainRate, FMT_windchill, FMT_windSpeed, FMT_HI_windGust, FMT_10mMaxGust`
-* `[[rename]]`
-..* `windRose = WindRose`
-* `remote_server = foo.bar.com`
-* `remote_user = root`
-* `remote_dir = /home/weewx/loop-data`
-* `compress = False`
-* `log_success = False`
-* `ssh_options = "-o ConnectTimeout=1"`
-* `timeout = 1`
-* `skip_if_older_than = 3`
+[LoopData]
+*     [[FileSpec]]
+..*         loop_data_dir = /home/weewx/loop-data
+..*         filename = loop-data.txt
+*     [[Formatting]]
+..*         target_report = LiveSeasonsReport
+*     [[RsyncSpec]]
+..*         remote_server = foo.bar.com
+..*         remote_user = root
+..*         remote_dir = /home/weewx/loop-data
+..*         compress = False
+..*         log_success = False
+..*         ssh_options = "-o ConnectTimeout=1"
+..*         timeout = 1
+..*         skip_if_older_than = 3
+*     [[Include]]
+..*         fields = dateTime, windSpeed, COMPASS_windDir, DESC_barometerRate, FMT_barometer, FMT_day_rain_total, FMT_dewpoint, FMT_heatindex, FMT_outHumidity, FMT_outTemp, FMT_rain, FMT_rainRate, FMT_windchill, FMT_windSpeed, FMT_HI_windGust, FMT_10mMaxGust
+*     [[Rename]]
+..*         windRose = WindRose
 
-## Fill in the following fields.
+## Fill in the following items.
  * `loop_data_dir`     : The directory into which the loop data file should be written.
  * `filename`          : The name of the loop data file to write.
  * `target_report`     : The WeeWX report to target.  LoopData will use this report to determine the
-                       units to use and the formatting to apply.
- * `include`           : Used to specify which fields to include in the file.  If include is missing
-                       and rename (see below) is also missing, all fields are included.
- * `rename`            : Used to specify which fields to include and which names should be used as
-                       keys (i.e., what these fields should be renamed.  If rename is missing and
-                       include (see above).
-                       is also missing, all fields are included.
+                         units to use and the formatting to apply.
  * `remote_server`     : The server to which gauge-data.txt will be copied.
-                       To use rsync to sync loop-data.txt to a remote computer, passwordless ssh
-                       using public/private key must be configured for authentication from the user
-                       account that weewx runs under on this computer to the user account on the
-                       remote machine with write access to the destination directory (remote_dir).
+                         To use rsync to sync loop-data.txt to a remote computer, passwordless ssh
+                         using public/private key must be configured for authentication from the user
+                         account that weewx runs under on this computer to the user account on the
+                         remote machine with write access to the destination directory (remote_dir).
  * `remote_user`       : The userid on remote_server with write permission to remote_server_dir.
  * `remote_directory`  : The directory on remote_server where filename will be copied.
  * `compress`          : True to compress the file before sending.  Default is False.
  * `log_success`       : True to write success with timing messages to the log (for debugging).
-                       Default is False.
+                         Default is False.
  * `ssh_options`       : ssh options Default is '-o ConnectTimeout=1' (When connecting, time out in
                        1 second.)
  * `timeout`           : I/O timeout. Default is 1.  (When sending, timeout in 1 second.)
  * `skip_if_older_than`: Don't bother to rsync if greater than this number of seconds.  Default is 4.
-                       (Skip this and move on to the next if this data is older than 4 seconds.
+                         (Skip this and move on to the next if this data is older than 4 seconds.
+ * `fields`            : Used to specify which fields to include in the file.  If fields is missing
+                         and Rename (see below) is also missing, all fields are included.
+ * `Rename`            : Used to specify which fields to include and which names should be used as
+                         keys (i.e., what these fields should be renamed.  If neither Rename nor fields
+                         is specified, all fields are included.
 
 ## List of all fields available:
  * `dateTime`          : The time of this loop packet (seconds since the epoch).
