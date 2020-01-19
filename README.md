@@ -35,6 +35,7 @@ This section is explained below.
     [[Formatting]]
         target_report = LiveSeasonsReport
     [[RsyncSpec]]
+        enable = false
         remote_server = foo.bar.com
         remote_user = root
         remote_dir = /home/weewx/loop-data
