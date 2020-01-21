@@ -34,7 +34,7 @@ class LoopDataInstaller(ExtensionInstaller):
                         'loop_data_dir': '/home/weewx/loop-data',
                         'filename':  'loop-data.txt'},
                     'Formatting': {
-                        'target_report': 'LiveSeasonsReport'},
+                        'target_report': 'SeasonsReport'},
                     'RsyncSpec': {
                         'enable':'false',
                         'remote_server': 'www.foobar.com',
