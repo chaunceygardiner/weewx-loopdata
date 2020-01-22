@@ -153,4 +153,4 @@ This section is explained below.
 
 ## Licensing
 
-WeeWX is licensed under the GNU Public License v3.
+weewx-loopdata is licensed under the GNU Public License v3.
