@@ -151,6 +151,6 @@ This section is explained below.
  * `LABEL_windRose`    : The label of the units for windRose (e.g., 'm')
  * `UNITS_windRose`    : The units that windrose values are expressed in (e.g., 'mile').
 
-##Licensing
+## Licensing
 
 WeeWX is licensed under the GNU Public License v3.
