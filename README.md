@@ -14,10 +14,12 @@ Copyright (C)2020 by John A Kline (john@johnkline.com)
 LoopData writes a json file for every loop packet received.  With some
 javascript.
 
-See weewx-loopdata in action with a WeatherBoard(TM) skin at  [www.paloaltoweather.com/weatherboard/](https://www.paloaltoweather.com/weatherboard/)
+See weewx-loopdata in action with a WeatherBoard&trade; skin at  [www.paloaltoweather.com/weatherboard/](https://www.paloaltoweather.com/weatherboard/)
 and in a "LiveSeasons" skin at [www.paloaltoweather.com/](https://www.paloaltoweather.com/).
 
-* [Weatherbaord(TM) Report](WeatherBoard.png)
+A WeatherBoard&trade; screenshot is below.
+
+![Weatherbaord&trade; Report](WeatherBoard.png)
 
 **THIS PLUGIN REQUIRES PYTHON 3 AND WEEWX 4**
 
