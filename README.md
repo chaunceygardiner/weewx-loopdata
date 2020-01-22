@@ -12,17 +12,19 @@ Copyright (C)2020 by John A Kline (john@johnkline.com)
 ### Why?  What does it do?
 
 LoopData writes a json file for every loop packet received.  With some
-javascript, one can have reports like the following:
-* [Weatherbaord(TM) Report](https://www.paloaltoweather.com/weatherboard.html)
-* [LiveSeasons Report](https://www.paloaltoweather.com/index.html).
+javascript.
 
-Note: Skins coming soon!
+See weewx-loopdata in action with a WeatherBoard(TM) skin at  [www.paloaltoweather.com/weatherboard/](https://www.paloaltoweather.com/weatherboard/)
+and in a "LiveSeasons" skin at [www.paloaltoweather.com/](https://www.paloaltoweather.com/).
+
+* [Weatherbaord(TM) Report](WeatherBoard.png)
 
 **THIS PLUGIN REQUIRES PYTHON 3 AND WEEWX 4**
 
-Inspired by https://github.com/gjr80/weewx-realtime_gauge-data.  This does not attempt to duplicate
-Gary's realtime gauge data plugin for the SteelSeries gauges.  To power Steel Series gauges from
-WeeWX, you definitely want to use weewx-realtime_gauge_data.
+This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gjr80/weewx-realtime_gauge-data).
+This does not attempt to duplicate Gary's fantastic realtime gauge data plugin
+for SteelSeries gauges.  In fact, I use that great extension [here](https://www.paloaltoweather.com/LiveSeasonsGauges/).
+To power Steel Series gauges from WeeWX, you definitely want to use Gary's extension.
 
 # Installation Instructions
 1. Run the following command.
