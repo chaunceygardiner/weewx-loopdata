@@ -31,7 +31,7 @@ class LoopDataInstaller(ExtensionInstaller):
             config = {
                 'LoopData': {
                     'FileSpec': {
-                        'loop_data_dir': '/home/weewx/loop-data',
+                        'loop_data_dir': '/home/weewx/public_html',
                         'filename':  'loop-data.txt'},
                     'Formatting': {
                         'target_report': 'SeasonsReport'},
