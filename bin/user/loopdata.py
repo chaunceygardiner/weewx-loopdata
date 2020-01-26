@@ -1,16 +1,29 @@
 """
 loopdata.py
 
-A WeeWX service to generate a json file (typically, loop-data.txt)
-containing observations from loop packets as they are generated in
-weewx.
-
 Copyright (C)2020 by John A Kline (john@johnkline.com)
 Distributed under the terms of the GNU Public License (GPLv3)
 
-Inspired by https://github.com/gjr80/weewx-realtime_gauge-data.  This does not attempt to duplicate
-Gary's realtime gauge data plugin for the SteelSeries gauges.  To power Steel Series gauges from
-WeeWX, you definitely want to use weewx-realtime_gauge_data.
+LoopData is a WeeWX service to generate a json file (loop-data.txt) containing
+observations from loop packets as they are typically frequently generated in
+WeeWX (e.g, every 2s).
+
+LoopData is easy to set up.  Specify the report to target and a json file will
+be generated on every loop with observations formatted and converted for that
+report.  That is, the units and format for observations areappropriate for the
+specified the report.
+
+From there, just write javascript to load the json file on a regular basis
+(typically, at the same rate as loop packets are generated in WeeWX) and update
+your report's html page.
+
+For an example skin that is wired to use loopdata, see:
+https://github.com/chaunceygardiner/weewx-weatherboard
+
+Inspired by https://github.com/gjr80/weewx-realtime_gauge-data.  This skin does
+not attempt to duplicate Gary's realtime gauge data plugin for the SteelSeries
+gauges.  If you are looking to for realtime Steel Series gauges, you definitely
+want to use weewx-realtime_gauge_data.
 
 Installation Instructions
 1. Install bin/user/loopdata.py in /home/weewx/bin/user.
@@ -21,7 +34,7 @@ Installation Instructions
         loop_data_dir = /home/weewx/gauge-data
         filename = loop-data.txt
     [[Formatting]]
-        target_report = LiveSeasonsReport
+        target_report = SeasonsReport
     [[RsyncSpec]]
         enable = False
         remote_server = foo.bar.com
@@ -235,7 +248,7 @@ class LoopData(StdService):
         tmp.close()
 
         # Get a target report dictionary we can use for converting units and formatting.
-        target_report = formatting_spec_dict.get('target_report', 'LiveSeasonsReport')
+        target_report = formatting_spec_dict.get('target_report', 'SeasonsReport')
         target_report_dict = std_report_dict.get(target_report)
 
         fields_to_include = include_spec_dict.get('fields', None)
@@ -715,7 +728,6 @@ class LoopProcessor:
         buckets: List[float] = [0.0]*self.cfg.wind_rose_points
         for r in self.wind_rose_readings:
             buckets[r.bucket] += r.distance
-            log.debug('Added %f to wind_rose_readings[%d]' % (r.distance, r.bucket))
         pkt['windRose'] = buckets
 
     def save_wind_gust_reading(self, pkt_time: int, value: float) -> None:
