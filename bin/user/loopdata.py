@@ -26,8 +26,21 @@ gauges.  If you are looking to for realtime Steel Series gauges, you definitely
 want to use weewx-realtime_gauge_data.
 
 Installation Instructions
-1. Install bin/user/loopdata.py in /home/weewx/bin/user.
-2. Add user.loopdata.LoopData to report_servcices in weewx.con.
+
+1. cd to the directory where you have cloned this extension, e.g.,
+
+   cd ~/software/weewx-loopdata
+
+2. Run the following command.
+
+   sudo /home/weewx/bin/wee_extension --install .
+
+   Note: this command assumes weewx is installed in /home/weewx.  If it's installed
+   elsewhere, adjust the path of wee_extension accordingly.
+
+3. The install creates a LoopData section in weewx.conf as shown below.  Adjust
+   the values accordingly.  In particular, specify the `target_report` for the
+   report you wish to use for formatting and units.
 
 [LoopData]
     [[FileSpec]]
@@ -53,7 +66,7 @@ Installation Instructions
     [[Rename]]
         windRose = WindRose
 
- Fill out the following fields:
+ A description of the fields follows:
    loop_data_dir     : The directory into which the loop data file should be written.
    filename          : The name of the loop data file to write.
    target_report     : The WeeWX report to target.  LoopData will use this report to determine the

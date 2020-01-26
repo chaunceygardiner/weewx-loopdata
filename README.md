@@ -41,16 +41,19 @@ for SteelSeries gauges.  In fact, I use that great extension [here](https://www.
 To power Steel Series gauges from WeeWX, you definitely want to use Gary's extension.
 
 # Installation Instructions
+1. cd to the directory where you have cloned this extension, e.g.,
+
+   `cd ~/software/weewx-loopdata`
 1. Run the following command.
 
-`sudo /home/weewx/bin/wee_extension --install ~/software/weewx-loopdata`
+   `sudo /home/weewx/bin/wee_extension --install .`
 
-Note: The above command assumes a WeeWX installation of `/home/weewx` and
-      that this extension was downloaded to `~/software/weewx-loopdata`.
-      Adjust the command as necessary.
+   Note: this command assumes weewx is installed in /home/weewx.  If it's installed
+   elsewhere, adjust the path of wee_extension accordingly.
 
-The above command will insert a section in weewx.conf similar to the following.
-This section is explained below.
+1. The install creates a LoopData section in weewx.conf as shown below.  Adjust
+   the values accordingly.  In particular, specify the `target_report` for the
+   report you wish to use for formatting and units.
 
 ```
 [LoopData]
@@ -75,7 +78,7 @@ This section is explained below.
         windRose = WindRose
 ```
 
-## Fields in `LoopData` sections of `weewx.conf`:
+## Entries in `LoopData` sections of `weewx.conf`:
  * `loop_data_dir`     : The directory into which the loop data file should be written.
  * `filename`          : The name of the loop data file to write.
  * `target_report`     : The WeeWX report to target.  LoopData will use this report to determine the
