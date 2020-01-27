@@ -9,6 +9,8 @@ WeeWX (e.g, every 2s).
 
 Copyright (C)2020 by John A Kline (john@johnkline.com)
 
+**THIS PLUGIN REQUIRES PYTHON 3 AND WEEWX 4**
+
 LoopData is easy to set up.  Specify the report to target and a json file will
 be generated on every loop with observations formatted and converted for that
 report.  That is, the units and format for observations areappropriate for the
@@ -32,8 +34,6 @@ and in a "LiveSeasons" skin at
 A WeatherBoard&trade; screenshot is below.
 
 ![Weatherbaord&trade; Report](WeatherBoard.png)
-
-**THIS PLUGIN REQUIRES PYTHON 3 AND WEEWX 4**
 
 This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gjr80/weewx-realtime_gauge-data).
 This does not attempt to duplicate Gary's fantastic realtime gauge data plugin

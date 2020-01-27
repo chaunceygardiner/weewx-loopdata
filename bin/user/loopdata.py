@@ -191,6 +191,14 @@ log = logging.getLogger(__name__)
 
 REALTIME_DATA_VERSION = '1.0'
 
+if sys.version_info[0] < 3:
+    raise weewx.UnsupportedFeature(
+        "weewx-loopdata requires Python 3, found %s" % sys.version_info[0])
+
+if weewx.__version__ < "4":
+    raise weewx.UnsupportedFeature(
+        "WeeWX 4 is required, found %s" % weewx.__version__)
+
 # Note: These two observations are also included below.
 COMPASS_OBSERVATIONS: List[str] = ['windDir', 'windGustDir']
 
