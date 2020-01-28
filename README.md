@@ -166,6 +166,11 @@ To power Steel Series gauges from WeeWX, you definitely want to use Gary's exten
  * `LABEL_windRose`    : The label of the units for windRose (e.g., 'm')
  * `UNITS_windRose`    : The units that windrose values are expressed in (e.g., 'mile').
 
+## Why require Python 3?
+
+LoopData is a new extension.  The author believes software written after Python 2 end of life
+should not target Python 2.
+
 ## Licensing
 
 weewx-loopdata is licensed under the GNU Public License v3.
