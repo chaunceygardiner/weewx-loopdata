@@ -106,6 +106,11 @@ To power Steel Series gauges from WeeWX, you definitely want to use Gary's exten
                          is specified, all fields are included.
 
 ## List of all fields available:
+
+This section list likely fields.  In reality, LoopData runs through the daily summaries and includes all
+observations it finds.  In addition to these observations, LoopData tracks 10m max gusts, baromter rate
+and windrose.
+
  * `dateTime`          : The time of this loop packet (seconds since the epoch).
  * `usUnits`           : The units system all obeservations are expressed in.
                        This will be the unit system of the report specified by
