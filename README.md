@@ -1,13 +1,21 @@
 # weewx-loopdata
 *Open source plugin for WeeWX software.
 
+Copyright (C)2020 by John A Kline (john@johnkline.com)
+
 ## Description
 
-LoopData is a WeeWX service to generate a json file (loop-data.txt) containing
-observations from loop packets as they are typically frequently generated in
-WeeWX (e.g, every 2s).
+LoopData is a WeeWX service that generates a json file (loop-data.txt)
+containing observations from loop packets, along with day high and low
+observations.  Typically, loop packets are frequently generated in WeeWX
+(e.g, every 2s).  With the constantly updating loop-data.txt file, one
+can write javascript to update a report.
 
-Copyright (C)2020 by John A Kline (john@johnkline.com)
+LoopData adds all observations for which there are daily summaries and
+also day high and low observations.
+
+Lastly, LoopData also includes in loop-data.txt 10 minute high wind gust,
+24 hour barometer trend and windrose data.
 
 **THIS PLUGIN REQUIRES PYTHON 3 AND WEEWX 4**
 
@@ -107,9 +115,12 @@ To power Steel Series gauges from WeeWX, you definitely want to use Gary's exten
 
 ## List of all fields available:
 
-This section list likely fields.  In reality, LoopData runs through the daily summaries and includes all
-observations it finds.  In addition to these observations, LoopData tracks 10m max gusts, baromter rate
-and windrose.
+This section list likely fields.  In reality, LoopData runs through the daily
+summaries and includes all observations it finds.  The daily summaries also
+conveniently privide day high (HI_<obs>) and day low (LO_<obs>) observations.
+
+In addition to these observations, LoopData also tracks 10 min. max gust,
+barometer rate and windrose data.
 
  * `dateTime`          : The time of this loop packet (seconds since the epoch).
  * `usUnits`           : The units system all obeservations are expressed in.
