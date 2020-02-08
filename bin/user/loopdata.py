@@ -427,15 +427,15 @@ class LoopProcessor:
             os.unlink(self.cfg.tmpname)
 
     def compose_and_write_packet(self, pkt: Dict[str, Any]) -> None:
-        if self.cfg.fields_to_include is None and self.cfg.fields_to_rename is None:
+        if (self.cfg.fields_to_include is None or len(self.cfg.fields_to_include) == 0) and (self.cfg.fields_to_rename is None or len(self.cfg.fields_to_rename) == 0):
             self.write_packet(pkt)
         else:
             selective_pkt: Dict[str, Any] = {}
-            if self.cfg.fields_to_include is not None:
+            if self.cfg.fields_to_include is not None or len(self.cfg.fields_to_include) == 0:
                 for obstype in self.cfg.fields_to_include:
                     if obstype in pkt:
                         selective_pkt[obstype] = pkt[obstype]
-            if self.cfg.fields_to_rename is not None:
+            if self.cfg.fields_to_rename is not None or len(self.cfg.fields_to_rename) == 0:
                 for obstype in self.cfg.fields_to_rename:
                     if obstype in pkt:
                         selective_pkt[self.cfg.fields_to_rename[obstype]] = pkt[obstype]

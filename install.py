@@ -53,5 +53,7 @@ class LoopDataInstaller(ExtensionInstaller):
                             'FMT_rainRate','FMT_windchill','FMT_windSpeed',
                             'FMT_HI_windGust','FMT_10mMaxGust']},
                     'Rename': {
-                        'windRose': 'WindRose'}}},
+                    }
+                }
+            },
             files = [('bin/user', ['bin/user/loopdata.py'])])
