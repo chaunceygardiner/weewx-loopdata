@@ -210,8 +210,8 @@ class Configuration:
     loop_data_dir      : str
     filename           : str
     target_report      : str
-    fields_to_include  : Optional[List[str]]
-    fields_to_rename   : Optional[Dict[str, str]]
+    fields_to_include  : List[str]
+    fields_to_rename   : Dict[str, str]
     formatter          : weewx.units.Formatter
     converter          : weewx.units.Converter
     tmpname            : str
@@ -272,7 +272,7 @@ class LoopData(StdService):
         target_report = formatting_spec_dict.get('target_report', 'SeasonsReport')
         target_report_dict = std_report_dict.get(target_report)
 
-        fields_to_include = include_spec_dict.get('fields', None)
+        fields_to_include = include_spec_dict.get('fields', [])
 
         self.cfg: Configuration = Configuration(
             queue               = queue.SimpleQueue(),
@@ -427,15 +427,15 @@ class LoopProcessor:
             os.unlink(self.cfg.tmpname)
 
     def compose_and_write_packet(self, pkt: Dict[str, Any]) -> None:
-        if (self.cfg.fields_to_include is None or len(self.cfg.fields_to_include) == 0) and (self.cfg.fields_to_rename is None or len(self.cfg.fields_to_rename) == 0):
+        if len(self.cfg.fields_to_include) == 0 and len(self.cfg.fields_to_rename) == 0:
             self.write_packet(pkt)
         else:
             selective_pkt: Dict[str, Any] = {}
-            if self.cfg.fields_to_include is not None or len(self.cfg.fields_to_include) == 0:
+            if len(self.cfg.fields_to_include) != 0:
                 for obstype in self.cfg.fields_to_include:
                     if obstype in pkt:
                         selective_pkt[obstype] = pkt[obstype]
-            if self.cfg.fields_to_rename is not None or len(self.cfg.fields_to_rename) == 0:
+            if len(self.cfg.fields_to_rename) != 0:
                 for obstype in self.cfg.fields_to_rename:
                     if obstype in pkt:
                         selective_pkt[self.cfg.fields_to_rename[obstype]] = pkt[obstype]
@@ -505,13 +505,13 @@ class LoopProcessor:
 
         return bucket if bucket < self.cfg.wind_rose_points else 0
 
-    def save_wind_rose_data(self, pkt_time: int, wind_speed: float, wind_dir: Optional[float]):
+    def save_wind_rose_data(self, pkt_time: int, wind_speed: float, wind_dir: float):
         # Example: 3.1 mph, 202 degrees
         # archive_interval:  300 seconds
         # intervals in an hour: 3600 / 300 (12)
         # distance = 3.1 / 12 = 0.258333 miles
 
-        if wind_speed != 0:
+        if wind_speed is not None and wind_speed != 0:
             log.debug('pkt_time: %d, bucket: %d, distance: %f' % (pkt_time,
                 self.get_wind_rose_bucket(wind_dir), wind_speed / (
                 3600.0 / self.cfg.archive_interval)))
@@ -709,10 +709,13 @@ class LoopProcessor:
             self.insert_barometer_rate_desc(pkt)
 
     def save_barometer_reading(self, pkt_time: int, value: float) -> None:
-        reading = Reading(timestamp = pkt_time, value = value)
-        self.barometer_readings.append(reading)
-        log.debug('save_barometer_reading: Reading(%s): %f' % (
-            timestamp_to_string(reading.timestamp), reading.value))
+        if value is not None:
+            reading = Reading(timestamp = pkt_time, value = value)
+            self.barometer_readings.append(reading)
+            log.debug('save_barometer_reading: Reading(%s): %f' % (
+                timestamp_to_string(reading.timestamp), reading.value))
+        else:
+            log.debug('save_barometer_reading: Reading(%s): None' % timestamp_to_string(reading.timestamp))
         # Trim readings older than barometer_rate_secs
         earliest: float = time.time() - self.cfg.barometer_rate_secs
         del_count: int = 0
@@ -752,7 +755,8 @@ class LoopProcessor:
         pkt['windRose'] = buckets
 
     def save_wind_gust_reading(self, pkt_time: int, value: float) -> None:
-        self.wind_gust_readings.append(Reading(timestamp = pkt_time, value = value))
+        if value is not None:
+            self.wind_gust_readings.append(Reading(timestamp = pkt_time, value = value))
         # Trim anything older than 10 minutes.
         earliest: float = time.time() - 600
         del_count: int = 0
