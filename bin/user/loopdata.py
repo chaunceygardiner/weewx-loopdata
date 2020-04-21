@@ -189,7 +189,7 @@ from weewx.units import ValueTuple
 # get a logger object
 log = logging.getLogger(__name__)
 
-REALTIME_DATA_VERSION = '1.0'
+LOOP_DATA_VERSION = '1.0'
 
 if sys.version_info[0] < 3:
     raise weewx.UnsupportedFeature(
@@ -243,7 +243,7 @@ class Reading:
 class LoopData(StdService):
     def __init__(self, engine, config_dict):
         super(LoopData, self).__init__(engine, config_dict)
-        log.info("Service version is %s." % REALTIME_DATA_VERSION)
+        log.info("Service version is %s." % LOOP_DATA_VERSION)
 
         if sys.version_info[0] < 3:
             raise Exception("Python 3 is required for the loopdata plugin.")
