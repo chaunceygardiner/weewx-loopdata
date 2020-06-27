@@ -150,7 +150,7 @@ Installation Instructions
                                            barometer readings (e.g., "Falling Slowly').
                        LABEL_barometerRate:The label used for baromter rate units (e.g., 'inHg/hr').
                        windRose          : An array of 16 directions (N,NNE,NE,ENE,E,ESE,SE,SSE,S,SSW,SW,
-                                           WSW,W,WNW,NW,NNW) containing the distance traveled in each 
+                                           WSW,W,WNW,NW,NNW) containing the distance traveled in each
                                            direction.)
                        LABEL_windRose    : The label of the units for windRose (e.g., 'm')
                        UNITS_windRose    : The units that windrose values are expressed in (e.g., 'mile').
@@ -167,6 +167,7 @@ import sys
 import tempfile
 import threading
 import time
+import types
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -189,7 +190,7 @@ from weewx.units import ValueTuple
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '1.0'
+LOOP_DATA_VERSION = '1.1'
 
 if sys.version_info[0] < 3:
     raise weewx.UnsupportedFeature(
@@ -206,6 +207,7 @@ COMPASS_OBSERVATIONS: List[str] = ['windDir', 'windGustDir']
 class Configuration:
     queue              : queue.SimpleQueue
     config_dict        : Dict[str, Any]
+    unit_system        : int
     archive_interval   : int
     loop_data_dir      : str
     filename           : str
@@ -258,6 +260,14 @@ class LoopData(StdService):
         include_spec_dict    = loop_config_dict.get('Include', {})
         fields_to_rename     = loop_config_dict.get('Rename', {})
 
+        # Get the unit_system
+        db_binder = weewx.manager.DBBinder(config_dict)
+        default_binding = config_dict.get('StdReport')['data_binding']
+        dbm = db_binder.get_manager(default_binding)
+        unit_system = dbm.std_unit_system
+        if unit_system is None:
+            unit_system = weewx.units.unit_constants[self.config_dict['StdConvert'].get('target_unit', 'US').upper()]
+
         # Compose the directory in which to write the file.
         weewx_root: str = config_dict.get('WEEWX_ROOT')
         html_root: str = std_report_dict.get('HTML_ROOT')
@@ -274,9 +284,23 @@ class LoopData(StdService):
 
         fields_to_include = include_spec_dict.get('fields', [])
 
+
+        # Get converter from target report (if specified),
+        # else Defaults (if specified),
+        # else USUnits converter.
+        try:
+            group_unit_dict = target_report_dict['Units']['Groups']
+        except KeyError:
+            try:
+                group_unit_dict = std_report_dict['Defaults']['Units']['Groups']
+            except KeyError:
+                group_unit_dict = USUnits
+        converter = weewx.units.Converter(group_unit_dict)
+
         self.cfg: Configuration = Configuration(
             queue               = queue.SimpleQueue(),
             config_dict         = config_dict,
+            unit_system         = unit_system,
             archive_interval    = to_int(std_archive_dict.get('archive_interval')),
             loop_data_dir       = loop_data_dir,
             filename            = file_spec_dict.get('filename', 'loop-data.txt'),
@@ -284,7 +308,7 @@ class LoopData(StdService):
             fields_to_include   = fields_to_include,
             fields_to_rename    = fields_to_rename,
             formatter           = weewx.units.Formatter.fromSkinDict(target_report_dict),
-            converter           = weewx.units.Converter.fromSkinDict(target_report_dict),
+            converter           = converter,
             tmpname             = tmp.name,
             enable              = to_bool(rsync_spec_dict.get('enable')),
             remote_server       = rsync_spec_dict.get('remote_server'),
@@ -306,35 +330,93 @@ class LoopData(StdService):
 
         log.info('LoopData file is: %s' % os.path.join(self.cfg.loop_data_dir, self.cfg.filename))
 
-        lp: LoopProcessor = LoopProcessor(self.cfg)
+        self.bind(weewx.PRE_LOOP, self.pre_loop)
+        self.bind(weewx.END_ARCHIVE_PERIOD, self.end_archive_period)
+        self.bind(weewx.NEW_LOOP_PACKET, self.new_loop)
+
+    def pre_loop(self, event):
+        binder = weewx.manager.DBBinder(self.config_dict)
+        binding = self.config_dict.get('StdReport')['data_binding']
+        dbm = binder.get_manager(binding)
+
+        # Init barometer, windgust, windrose and day_accumulator from the database
+        barometer_readings = self.fill_in_barometer_readings_at_startup(dbm)
+        wind_gust_readings = self.fill_in_10m_wind_gust_readings_at_startup(dbm)
+        wind_rose_readings = self.fill_in_wind_rose_readings_at_startup(dbm)
+
+        # Init day accumulator from day_summary
+        day_summary = dbm._get_day_summary(time.time())
+        # Init an accumulator
+        timespan = weeutil.weeutil.archiveDaySpan(time.time())
+        day_accum = weewx.accum.Accum(timespan, unit_system=self.cfg.unit_system)
+        for k in day_summary:
+            day_accum[k] = day_summary[k]
+
+        lp: LoopProcessor = LoopProcessor(self.cfg, day_accum, barometer_readings, wind_gust_readings, wind_rose_readings)
         t: threading.Thread = threading.Thread(target=lp.process_queue)
         t.setName('LoopData')
         t.setDaemon(True)
         t.start()
 
-        self.bind(weewx.STARTUP, self._catchup)
-        self.bind(weewx.END_ARCHIVE_PERIOD, self.end_archive_period)
-        self.bind(weewx.CHECK_LOOP, self.check_loop)
+    def fill_in_barometer_readings_at_startup(self, dbm) -> List[Reading]:
+        barometer_readings = []
+        earliest: int = to_int(time.time() - self.cfg.barometer_rate_secs)
+        for cols in dbm.genSql('SELECT dateTime, barometer FROM archive' \
+                ' WHERE dateTime >= %d ORDER BY dateTime ASC' % earliest):
+            reading: Reading = Reading(timestamp = cols[0], value = cols[1])
+            barometer_readings.append(reading)
+            log.debug('fill_in_barometer_readings_at_startup: Reading(%s): %f' % (
+                timestamp_to_string(reading.timestamp), reading.value))
+        return barometer_readings
 
-    def check_loop(self, event):
-        log.debug('check_loop: event: %s' % event)
+    def fill_in_10m_wind_gust_readings_at_startup(self, dbm) -> List[Reading]:
+        wind_gust_readings = []
+        earliest: int = to_int(time.time() - 600)
+        for cols in dbm.genSql('SELECT dateTime, windGust FROM ' \
+                'archive WHERE dateTime >= %d ORDER BY dateTime ASC' % earliest):
+            reading: Reading = Reading(timestamp = cols[0], value = cols[1])
+            wind_gust_readings.append(reading)
+            log.debug('fill_in_10m_wind_gust_readings_at_startup: Reading(%s): %f' % (
+                      timestamp_to_string(reading.timestamp), reading.value))
+        return wind_gust_readings
+
+    def fill_in_wind_rose_readings_at_startup(self, dbm) -> List[WindroseReading]:
+        wind_rose_readings = []
+        earliest: int = to_int(time.time() - self.cfg.wind_rose_secs)
+        for cols in dbm.genSql('SELECT dateTime, windSpeed, windDir FROM' \
+                ' archive WHERE dateTime >= %d ORDER BY dateTime ASC' % earliest):
+            dateTime  = cols[0]
+            windSpeed = cols[1]
+            windDir   = cols[2]
+            if windSpeed != 0:
+                reading = WindroseReading(
+                    timestamp = dateTime,
+                    bucket    = LoopProcessor.get_wind_rose_bucket(self.cfg.wind_rose_points, windDir),
+                    distance  = windSpeed / (3600.0 / self.cfg.archive_interval))
+                wind_rose_readings.append(reading)
+                log.debug('fill_in_wind_rose_readings_at_startup: Reading(%s): ' \
+                         'bucket[%d]: distance: %f' % (
+                         timestamp_to_string(reading.timestamp), reading.bucket, reading.distance))
+        return wind_rose_readings
+
+    def new_loop(self, event):
+        log.debug('new_loop: event: %s' % event)
         self.cfg.queue.put(event)
-
-    def _catchup(self, generator):
-        log.debug('_catchup: generator: %r' % generator)
 
     def end_archive_period(self, event):
         log.debug('end_archive_period: event: %s' % event)
         self.cfg.queue.put(event)
 
 class LoopProcessor:
-    def __init__(self, cfg: Configuration):
+    def __init__(self, cfg: Configuration, day_accum, barometer_readings: List[Reading],
+                 wind_gust_readings: List[Reading], wind_rose_readings: List[WindroseReading]):
         self.cfg = cfg
         self.next_day: int = 0
         self.archive_start: float = time.time()
-        self.barometer_readings: List[Reading] = []
-        self.wind_gust_readings: List[Reading] = []
-        self.wind_rose_readings: List[WindroseReading] = []
+        self.day_accum = day_accum
+        self.barometer_readings: List[Reading] = barometer_readings
+        self.wind_gust_readings: List[Reading] = wind_gust_readings
+        self.wind_rose_readings: List[WindroseReading] = wind_rose_readings
         LoopProcessor.log_configuration(cfg)
 
     def process_queue(self) -> None:
@@ -354,7 +436,7 @@ class LoopProcessor:
                     continue
 
                 log.debug('Dequeued loop event(%s): %s' % (event, timestamp_to_string(pkt_time)))
-                assert event.event_type == weewx.CHECK_LOOP
+                assert event.event_type == weewx.NEW_LOOP_PACKET
 
                 if self.next_day == 0:
                     # Startup work
@@ -362,32 +444,20 @@ class LoopProcessor:
                     self.next_day = LoopProcessor.local_midnight_timestamp()
                     log.debug('Next day is: %s' % timestamp_to_string(self.next_day))
 
-                    # This is the first loop, initialize db_manager.  Also initalize
-                    # the highs, lows, barometer rate and 10m high gust.  Note:
-                    # Not done in init() as the daily summaries might not be up
-                    # to date at init time.
-                    self.db_manager = LoopProcessor.get_db_manager(self.cfg.config_dict)
-                    self.day_summary = self.db_manager._get_day_summary(time.time())
-                    log.debug('startup: day_summary: %s' % self.day_summary)
-
-                    self.fill_in_wind_rose_readings_at_startup()
-                    self.fill_in_barometer_readings_at_startup()
-                    self.fill_in_10m_wind_gust_readings_at_startup()
                     LoopProcessor.fixup_rain_on_startup(pkt)
                     log.info('LoopData process queue took %f seconds to set up.' % (
                              time.time() - start))
-                elif pkt_time > self.next_day:
-                    self.next_day = LoopProcessor.local_midnight_timestamp()
-                    log.debug('Next day is: %s' % timestamp_to_string(self.next_day))
-                    # NOTE: Add 10s to be sure we get back today's (empty) summary.
-                    self.day_summary = self.db_manager._get_day_summary(time.time()+10)
-                    log.debug('midnight_reset: day_summary: %s' % self.day_summary)
-                    for obstype in self.day_summary:
-                        log.debug('midnight_reset: accum[%s].lasttime: %r' % (
-                                  obstype, self.day_summary[obstype].lasttime))
 
-                # Process new packet.  This handles all accumulators.
-                self.day_summary.addRecord(pkt)
+                try:
+                  # Process new packet.
+                  log.debug(pkt)
+                  self.day_accum.addRecord(pkt)
+                except weewx.accum.OutOfSpan:
+                    timespan = weeutil.weeutil.archiveDaySpan(time.time())
+                    self.day_accum = weewx.accum.Accum(timespan, unit_system=self.cfg.unit_system)
+                    # Try again:
+                    self.day_accum.addRecord(pkt)
+
 
                 # Keep 10 minutes of wind gust readings.
                 # Barometer rate is dealt with via archive records.
@@ -396,8 +466,8 @@ class LoopProcessor:
                 pkt = copy.deepcopy(pkt)
 
                 # Iterate through all scalar stats and add mins and maxes to record.
-                for obstype in self.day_summary:
-                    accum = self.day_summary[obstype]
+                for obstype in self.day_accum:
+                    accum = self.day_accum[obstype]
                     if isinstance(accum, weewx.accum.ScalarStats):
                         if accum.lasttime is not None:
                             min, mintime, max, maxtime, _, _, _, _ = accum.getStatsTuple()
@@ -460,6 +530,7 @@ class LoopProcessor:
         # queue
         # config_dict
         log.info('archive_interval   : %d' % cfg.archive_interval)
+        log.info('unit_system        : %d' % cfg.unit_system)
         log.info('loop_data_dir      : %s' % cfg.loop_data_dir)
         log.info('filename           : %s' % cfg.filename)
         log.info('target_report      : %s' % cfg.target_report)
@@ -496,14 +567,15 @@ class LoopProcessor:
         else:
             log.info('Expected None for pkt[rain], but found %f' % pkt['rain'])
 
-    def get_wind_rose_bucket(self, wind_dir: float) -> int:
-        slice_size: float = 360.0 / self.cfg.wind_rose_points
+    @staticmethod
+    def get_wind_rose_bucket(wind_rose_points: int, wind_dir: float) -> int:
+        slice_size: float = 360.0 / wind_rose_points
         bucket: int = to_int((wind_dir + slice_size / 2.0) / slice_size)
 
-        bkt =  bucket if bucket < self.cfg.wind_rose_points else 0
+        bkt =  bucket if bucket < wind_rose_points else 0
         log.debug('get_wind_rose_bucket: wind_dir: %d, bucket: %d' % (wind_dir, bkt))
 
-        return bucket if bucket < self.cfg.wind_rose_points else 0
+        return bucket if bucket < wind_rose_points else 0
 
     def save_wind_rose_data(self, pkt_time: int, wind_speed: float, wind_dir: float):
         # Example: 3.1 mph, 202 degrees
@@ -513,11 +585,11 @@ class LoopProcessor:
 
         if wind_speed is not None and wind_speed != 0:
             log.debug('pkt_time: %d, bucket: %d, distance: %f' % (pkt_time,
-                self.get_wind_rose_bucket(wind_dir), wind_speed / (
+                LoopProcessor.get_wind_rose_bucket(self.cfg.wind_rose_points, wind_dir), wind_speed / (
                 3600.0 / self.cfg.archive_interval)))
             self.wind_rose_readings.append(WindroseReading(
                 timestamp = pkt_time,
-                bucket    = self.get_wind_rose_bucket(wind_dir),
+                bucket    = LoopProcessor.get_wind_rose_bucket(self.cfg.wind_rose_points, wind_dir),
                 distance  = wind_speed / (3600.0 / self.cfg.archive_interval)))
 
             # Delete old WindRose data
@@ -634,32 +706,6 @@ class LoopProcessor:
         if do_hi_lo and obstype != 'day_rain_total':
             self.convert_hi_lo_units(pkt, obstype, unit_type, unit_group)
 
-    def fill_in_wind_rose_readings_at_startup(self) -> None:
-        earliest: int = to_int(time.time() - self.cfg.wind_rose_secs)
-        for cols in self.db_manager.genSql('SELECT dateTime, windSpeed, windDir FROM' \
-                ' archive WHERE dateTime >= %d ORDER BY dateTime ASC' % earliest):
-            dateTime  = cols[0]
-            windSpeed = cols[1]
-            windDir   = cols[2]
-            if windSpeed != 0:
-                reading = WindroseReading(
-                    timestamp = dateTime,
-                    bucket    = self.get_wind_rose_bucket(windDir),
-                    distance  = windSpeed / (3600.0 / self.cfg.archive_interval))
-                self.wind_rose_readings.append(reading)
-                log.debug('fill_in_wind_rose_readings_at_startup: Reading(%s): ' \
-                         'bucket[%d]: distance: %f' % (
-                         timestamp_to_string(reading.timestamp), reading.bucket, reading.distance))
-
-    def fill_in_barometer_readings_at_startup(self) -> None:
-        earliest: int = to_int(time.time() - self.cfg.barometer_rate_secs)
-        for cols in self.db_manager.genSql('SELECT dateTime, barometer FROM archive' \
-                ' WHERE dateTime >= %d ORDER BY dateTime ASC' % earliest):
-            reading: Reading = Reading(timestamp = cols[0], value = cols[1])
-            self.barometer_readings.append(reading)
-            log.debug('fill_in_barometer_readings_at_startup: Reading(%s): %f' % (
-                timestamp_to_string(reading.timestamp), reading.value))
-
     def insert_barometer_rate_desc(self, pkt: Dict[str, Any]) -> None:
         # Shipping forecast descriptions for the 3 hour change in baromter readings.
         # Falling (or rising) slowly: 0.1 - 1.5mb in 3 hours
@@ -727,15 +773,6 @@ class LoopProcessor:
                 self.barometer_readings[0].timestamp))
             del self.barometer_readings[0]
 
-    def fill_in_10m_wind_gust_readings_at_startup(self) -> None:
-        earliest: int = to_int(time.time() - 600)
-        for cols in self.db_manager.genSql('SELECT dateTime, windGust FROM ' \
-                'archive WHERE dateTime >= %d ORDER BY dateTime ASC' % earliest):
-            reading: Reading = Reading(timestamp = cols[0], value = cols[1])
-            self.wind_gust_readings.append(reading)
-            log.debug('fill_in_10m_wind_gust_readings_at_startup: Reading(%s): %f' % (
-                      timestamp_to_string(reading.timestamp), reading.value))
-
     def insert_10m_max_windgust(self, pkt: Dict[str, Any]) -> None:
         max_gust     : float = 0.0
         max_gust_time: int = 0
@@ -767,10 +804,3 @@ class LoopProcessor:
             log.debug('save_wind_gust_reading: Deleting old reading(%s)' % timestamp_to_string(
                 self.wind_gust_readings[0].timestamp))
             del self.wind_gust_readings[0]
-
-    @staticmethod
-    def get_db_manager(config_dict):
-        db_binder = weewx.manager.DBBinder(config_dict)
-        default_binding = config_dict.get('StdReport')['data_binding']
-        default_archive = db_binder.get_manager(default_binding)
-        return default_archive
