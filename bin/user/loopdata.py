@@ -564,8 +564,6 @@ class LoopProcessor:
             pkt['rain'] = 0.0
         elif pkt['rain'] is None:
             pkt['rain'] = 0.0
-        else:
-            log.info('Expected None for pkt[rain], but found %f' % pkt['rain'])
 
     @staticmethod
     def get_wind_rose_bucket(wind_rose_points: int, wind_dir: float) -> int:
