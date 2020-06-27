@@ -430,8 +430,14 @@ class LoopProcessor:
                 # is done with archive records rather than loop records.
                 # END_ARCHIVE_PERIOD is used to save barometer and wind.
                 if event.event_type == weewx.END_ARCHIVE_PERIOD:
-                    self.save_barometer_reading(pkt_time, to_float(pkt['barometer']))
-                    self.save_wind_rose_data(pkt_time, to_float(pkt['windSpeed']), pkt['windDir'])
+                    if 'barometer' in pkt:
+                        self.save_barometer_reading(pkt_time, to_float(pkt['barometer']))
+                    else:
+                        log.info('process_queue: barometer not in archive pkt, nothing to save for trend.')
+                    if 'windSpeed' in pkt and 'windDir' in pkt:
+                        self.save_wind_rose_data(pkt_time, to_float(pkt['windSpeed']), pkt['windDir'])
+                    else:
+                        log.info('process_queue: windSpeed and/or windDir not in archive packet, nothing to save for wind rose.')
                     continue
 
                 log.debug('Dequeued loop event(%s): %s' % (event, timestamp_to_string(pkt_time)))
