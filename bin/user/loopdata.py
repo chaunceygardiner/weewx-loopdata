@@ -411,7 +411,6 @@ class LoopProcessor:
     def __init__(self, cfg: Configuration, day_accum, barometer_readings: List[Reading],
                  wind_gust_readings: List[Reading], wind_rose_readings: List[WindroseReading]):
         self.cfg = cfg
-        self.next_day: int = 0
         self.archive_start: float = time.time()
         self.day_accum = day_accum
         self.barometer_readings: List[Reading] = barometer_readings
@@ -437,16 +436,6 @@ class LoopProcessor:
 
                 log.debug('Dequeued loop event(%s): %s' % (event, timestamp_to_string(pkt_time)))
                 assert event.event_type == weewx.NEW_LOOP_PACKET
-
-                if self.next_day == 0:
-                    # Startup work
-                    start: float = time.time()
-                    self.next_day = LoopProcessor.local_midnight_timestamp()
-                    log.debug('Next day is: %s' % timestamp_to_string(self.next_day))
-
-                    LoopProcessor.fixup_rain_on_startup(pkt)
-                    log.info('LoopData process queue took %f seconds to set up.' % (
-                             time.time() - start))
 
                 try:
                   # Process new packet.
@@ -552,18 +541,6 @@ class LoopProcessor:
         log.info('barometer_rate_secs: %d' % cfg.barometer_rate_secs)
         log.info('wind_rose_secs     : %d' % cfg.wind_rose_secs)
         log.info('wind_rose_points   : %d' % cfg.wind_rose_points)
-
-    @staticmethod
-    def fixup_rain_on_startup(pkt):
-        # Special case 'rain' because weewx.weewxformulas.calculate_rain
-        # returns None on startup.
-        # Not all driver's use weewx.weewxformulas.calculate_rain, but
-        # for those that do, we translate rain of None to rain of 0.0.
-        if 'rain' not in pkt:
-            log.error('Expected rain in pkt: %s' % pkt)
-            pkt['rain'] = 0.0
-        elif pkt['rain'] is None:
-            pkt['rain'] = 0.0
 
     @staticmethod
     def get_wind_rose_bucket(wind_rose_points: int, wind_dir: float) -> int:
