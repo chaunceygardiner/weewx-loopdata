@@ -190,7 +190,7 @@ from weewx.units import ValueTuple
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '1.1'
+LOOP_DATA_VERSION = '1.2'
 
 if sys.version_info[0] < 3:
     raise weewx.UnsupportedFeature(
@@ -249,6 +249,8 @@ class LoopData(StdService):
 
         if sys.version_info[0] < 3:
             raise Exception("Python 3 is required for the loopdata plugin.")
+
+        self.loop_proccessor_started = False
 
         std_archive_dict     = config_dict.get('StdArchive', {})
         std_report_dict      = config_dict.get('StdReport', {})
@@ -335,6 +337,11 @@ class LoopData(StdService):
         self.bind(weewx.NEW_LOOP_PACKET, self.new_loop)
 
     def pre_loop(self, event):
+        if self.loop_proccessor_started:
+            return
+
+        # Start the loop processor thread.
+        self.loop_proccessor_started = True
         binder = weewx.manager.DBBinder(self.config_dict)
         binding = self.config_dict.get('StdReport')['data_binding']
         dbm = binder.get_manager(binding)
