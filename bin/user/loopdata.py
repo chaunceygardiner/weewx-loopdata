@@ -420,6 +420,7 @@ class LoopProcessor:
         self.cfg = cfg
         self.archive_start: float = time.time()
         self.day_accum = day_accum
+        self.arc_per_accum = None
         self.barometer_readings: List[Reading] = barometer_readings
         self.wind_gust_readings: List[Reading] = wind_gust_readings
         self.wind_rose_readings: List[WindroseReading] = wind_rose_readings
@@ -440,7 +441,14 @@ class LoopProcessor:
                     if 'barometer' in pkt:
                         self.save_barometer_reading(pkt_time, to_float(pkt['barometer']))
                     else:
-                        log.info('process_queue: barometer not in archive pkt, nothing to save for trend.')
+                        if self.arc_per_accum is not None:
+                            log.debug('barometer not in archive pkt, using arc_per_accum')
+                            _, _, _, _, sum, count, _, _ = self.arc_per_accum['barometer'].getStatsTuple()
+                            if count > 0:
+                                avg_barometer = sum / count
+                                self.save_barometer_reading(pkt_time, avg_barometer)
+                                log.debug('saved barometer reading of %f for trend' % avg_barometer)
+
                     if 'windSpeed' in pkt and 'windDir' in pkt:
                         self.save_wind_rose_data(pkt_time, to_float(pkt['windSpeed']), pkt['windDir'])
                     else:
@@ -450,9 +458,10 @@ class LoopProcessor:
                 log.debug('Dequeued loop event(%s): %s' % (event, timestamp_to_string(pkt_time)))
                 assert event.event_type == weewx.NEW_LOOP_PACKET
 
-                try:
                   # Process new packet.
-                  log.debug(pkt)
+                log.debug(pkt)
+
+                try:
                   self.day_accum.addRecord(pkt)
                 except weewx.accum.OutOfSpan:
                     timespan = weeutil.weeutil.archiveDaySpan(time.time())
@@ -460,10 +469,23 @@ class LoopProcessor:
                     # Try again:
                     self.day_accum.addRecord(pkt)
 
+                if self.arc_per_accum is None:
+                    self.arc_per_accum = LoopProcessor.create_arc_per_accum(pkt_time, self.cfg.archive_interval)
+
+                try:
+                  self.arc_per_accum.addRecord(pkt)
+                except weewx.accum.OutOfSpan:
+                    log.debug('Creating new arc_per_accum')
+                    self.arc_per_accum = LoopProcessor.create_arc_per_accum(pkt_time, self.cfg.archive_interval)
+                    # Try again:
+                    self.arc_per_accum.addRecord(pkt)
+
+                _, _, _, _, sum, count, _, _ = self.arc_per_accum['barometer'].getStatsTuple()
 
                 # Keep 10 minutes of wind gust readings.
                 # Barometer rate is dealt with via archive records.
                 self.save_wind_gust_reading(pkt_time, to_float(pkt['windGust']))
+
 
                 pkt = copy.deepcopy(pkt)
 
@@ -526,6 +548,12 @@ class LoopProcessor:
         if self.cfg.enable:
             # rsync the data
             self.rsync_data(pkt['dateTime'])
+    
+    @staticmethod
+    def create_arc_per_accum(ts: int, arcint: int):
+        start_ts = weeutil.weeutil.startOfInterval(ts, arcint)
+        end_ts = start_ts + arcint
+        return weewx.accum.Accum(weeutil.weeutil.TimeSpan(start_ts, end_ts))
 
     @staticmethod
     def log_configuration(cfg: Configuration):
