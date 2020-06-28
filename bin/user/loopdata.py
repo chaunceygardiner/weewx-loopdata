@@ -190,7 +190,7 @@ from weewx.units import ValueTuple
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '1.2'
+LOOP_DATA_VERSION = '1.2.1'
 
 if sys.version_info[0] < 3:
     raise weewx.UnsupportedFeature(
