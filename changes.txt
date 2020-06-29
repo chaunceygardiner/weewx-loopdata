@@ -1,0 +1,26 @@
+loopdata change history
+-----------------------
+
+1.2.2 06/28/2020
+
+Introduced SUM_ and FMT_SUM_ prefixes for daily totals of observations.
+This is most useful for rain, where SUM_rain (or FMT_SUM_rain) will yield
+today's cumultive rainfall.
+
+1.2.1 06/27/2020
+Inexplicably, just a version bump.  No other changes.
+
+1.2 06/27/2020
+
+Fixed issue where loop thread was created multiple times.
+
+
+1.1 06/27/2020
+
+Fixes to work with Metric/Mixed database and to correctly target
+non-US reports.
+
+
+1.0 01/19/2020
+
+Initial release of loopdata.
