@@ -143,8 +143,8 @@ Next, look in the loop-data.txt file to find all of the available fields.
 
  * `dateTime`          : The time of this loop packet (seconds since the epoch).
  * `usUnits`           : The units system all obeservations are expressed in.
-                       This will be the unit system of the report specified by
-                       target_report in weewx.conf.
+                         This will be the unit system of the report specified by
+                         target_report in weewx.conf.
  * `outTemp`           : Outside temperature.
  * `inTemp`            : Inside temperature.
  * `outHumidity`       : Outside humidity.
@@ -153,7 +153,7 @@ Next, look in the loop-data.txt file to find all of the available fields.
  * `windDir`           : Wind Direction
  * `windGust`          : Wind Gust (high wind speed)
  * `windGustDir`       : Wind Gust Direction
- * `day_rain_total`    : Total rainfall today.
+ * `day_rain_total`    : Total rainfall today. If your driver doesn't report this, use SUM_rain (or FMT_SUM_rain) instead.
  * `rain`              : Rain
  * `altimeter`         : Altimeter
  * `appTemp`           : Apparent Temperature Outside
@@ -167,37 +167,41 @@ Next, look in the loop-data.txt file to find all of the available fields.
  * `rainRate`          : Rate of Rain
  * `windchill`         : Wind Chill Factor
  * `FMT_<obs>`         : The above observations expressed as a formatted value, including
-                       the units (e.g., '4.8 mph').
+                         the units (e.g., '4.8 mph').
  * `LABEL_<obs>`       : The label for the units associted with the observation (e.g., 'mph').
-                       This label also applies to the high and low fields for this observation.
+                         This label also applies to the high and low fields for this observation.
  * `UNITS_<obs>`       : The units that the observation is expressed in.  Also the units
-                       for the corresponding HI and LO entries.  Example: 'mile_per_hour'.
+                         for the corresponding HI and LO entries.  Example: 'mile_per_hour'.
  * `LO_<obs>`          : The minimum value of the observation today.
  * `FMT_LO_<obs>`      : The low observation expressed as a formatted value, including
-                       the units (e.g., '4.8 mph').
+                         the units (e.g., '4.8 mph').
  * `T_LO<obs>`         : The time of the daily minimum observation.
- * `HI<obs>`           : The maximum value of the observation today.
+ * `HI_<obs>`          : The maximum value of the observation today.
  * `FMT_HI_<obs>`      : The high observation expressed as a formatted value, including
-                       the units (e.g., '4.8 mph').
+                         the units (e.g., '4.8 mph').
  * `T_HI<obs>`         : The time of the daily maximum observation.
+ * `SUM_<obs>`         : The sum of the observation values reported today.  SUM_rain is
+                         especially useful for reporting the day's rain.
+ * `FMT_SUM_<obs>`     : The sum of the observation values reported today.  It is formatted
+                         and includes units (e.g., 0.42 in).
  * `COMPASS_<obs>`     : For windDir and windGustDir, text expression for the direction
-                       (.e., 'NNE').
+                         (.e., 'NNE').
  * `10mMaxGust`        : The maximum wind gust in the last 10m.
  * `T_10mMaxGust`      : The time of the max gust (seconds since the epoch).
  * `FMT_10mMaxGust`    : 10mMaxGust expressed as a formatted value ('8.6 mph').
  * `LABEL_10mMaxGust`  : The label of the units for 10mMaxGust (e.g., 'mph').
  * `UNITS_10mMaxGust`  : The units that 10mMaxGust is expressed in (e.g., 'mile_per_hour').
  * `barometerRate`     : The difference in barometer in the last 3 hours
-                       (i.e., barometer_3_hours_ago - barometer_now)
+                         (i.e., barometer_3_hours_ago - barometer_now)
  * `DESC_barometerRate`: Shipping forecast descriptions for the 3 hour change in
-                       barometer readings (e.g., "Falling Slowly').
+                         barometer readings (e.g., "Falling Slowly').
  * `FMT_barometerRate`:  Formatted baromter rate (e.g., '0.2 inHg/h').
  * `UNITS_barometerRate`:The units used in baromter rate (e.g., 'inHg_per_hour').
-                       barometer readings (e.g., "Falling Slowly').
+                         barometer readings (e.g., "Falling Slowly').
  * `LABEL_barometerRate`:The label used for baromter rate units (e.g., 'inHg/hr').
  * `windRose`          : An array of 16 directions (N,NNE,NE,ENE,E,ESE,SE,SSE,S,SSW,SW,
-                       WSW,W,WNW,NW,NNW) containing the distance traveled in each 
-                       direction.)
+                         WSW,W,WNW,NW,NNW) containing the distance traveled in each
+                         direction.)
  * `LABEL_windRose`    : The label of the units for windRose (e.g., 'm')
  * `UNITS_windRose`    : The units that windrose values are expressed in (e.g., 'mile').
 
