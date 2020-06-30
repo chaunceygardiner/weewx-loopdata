@@ -132,7 +132,9 @@ To power Steel Series gauges from WeeWX, you definitely want to use Gary's exten
 
 This section lists some likely fields.  In reality, LoopData runs through the daily
 summaries and includes all observations it finds.  The daily summaries also
-conveniently privide day high (HI_<obs>) and day low (LO_<obs>) observations.
+conveniently privide today's high (HI_<obs>), today's low (LO_<obs>),
+today's sum (SUM_<obs>), today's average (AVG_<obs>) and today's weighted average
+(WAVG_<obj> observations.
 
 In addition to these observations, LoopData also tracks 10 min. max gust,
 barometer rate and windrose data.
@@ -184,6 +186,12 @@ Next, look in the loop-data.txt file to find all of the available fields.
                          especially useful for reporting the day's rain.
  * `FMT_SUM_<obs>`     : The sum of the observation values reported today.  It is formatted
                          and includes units (e.g., 0.42 in).
+ * `AVG_<obs>`         : The average of the observation values reported today.
+ * `FMT_AVG_<obs>`     : The average of the observation values reported today.  It is formatted
+                         and includes units (e.g., 3.4 mph).
+ * `WAVG_<obs>`        : The weighted average of the observation values reported today.
+ * `FMT_WAVG_<obs>`    : The weighted average of the observation values reported today.  It is
+                         formatted and includes units (e.g., 3.4 mph).
  * `COMPASS_<obs>`     : For windDir and windGustDir, text expression for the direction
                          (.e., 'NNE').
  * `10mMaxGust`        : The maximum wind gust in the last 10m.

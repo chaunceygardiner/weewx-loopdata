@@ -1,9 +1,14 @@
 loopdata change history
 -----------------------
 
+1.3   06/29/2020
+
+Introduced AVG_/FMT_AVG_ and WAVG_/FMT_WAVG_ prefixes for today's average
+and weighted average of an observation, respectively.
+
 1.2.2 06/28/2020
 
-Introduced SUM_ and FMT_SUM_ prefixes for daily totals of observations.
+Introduced SUM_ and FMT_SUM_ prefixes for today's totals of observations.
 This is most useful for rain, where SUM_rain (or FMT_SUM_rain) will yield
 today's cumultive rainfall.
 

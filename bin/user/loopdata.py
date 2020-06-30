@@ -138,6 +138,12 @@ Installation Instructions
                                            especially useful for reporting the day's rain.
                        FMT_SUM_<obs>     : The sum of the observation values reported today.  It is formatted
                                            and includes units (e.g., 0.42 in).
+                       AVG_<obs>         : The average of the observation values reported today.
+                       FMT_AVG_<obs>     : The average of the observation values reported today.  It is formatted
+                                           and includes units (e.g., 3.4 mph).
+                       WAVG_<obs>        : The weighted average of the observation values reported today.
+                       FMT_WAVG_<obs>    : The weighted average of the observation values reported today.  It is
+                                           formatted and includes units (e.g., 3.4 mph).
                        COMPASS_<obs>     : For windDir and windGustDir, text expression for the direction
                                            (.e., 'NNE').
                        10mMaxGust        : The maximum wind gust in the last 10m.
@@ -194,7 +200,7 @@ from weewx.units import ValueTuple
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '1.2.2'
+LOOP_DATA_VERSION = '1.3'
 
 if sys.version_info[0] < 3:
     raise weewx.UnsupportedFeature(
@@ -424,7 +430,7 @@ class LoopProcessor:
         self.cfg = cfg
         self.archive_start: float = time.time()
         self.day_accum = day_accum
-        self.arc_per_accum = None
+        self.arc_per_accum: Optional[weewx.accum.Accum] = None
         self.barometer_readings: List[Reading] = barometer_readings
         self.wind_gust_readings: List[Reading] = wind_gust_readings
         self.wind_rose_readings: List[WindroseReading] = wind_rose_readings
@@ -484,8 +490,6 @@ class LoopProcessor:
                     # Try again:
                     self.arc_per_accum.addRecord(pkt)
 
-                _, _, _, _, sum, count, _, _ = self.arc_per_accum['barometer'].getStatsTuple()
-
                 # Keep 10 minutes of wind gust readings.
                 # Barometer rate is dealt with via archive records.
                 self.save_wind_gust_reading(pkt_time, to_float(pkt['windGust']))
@@ -498,12 +502,16 @@ class LoopProcessor:
                     accum = self.day_accum[obstype]
                     if isinstance(accum, weewx.accum.ScalarStats):
                         if accum.lasttime is not None:
-                            min, mintime, max, maxtime, sum, _, _, _ = accum.getStatsTuple()
+                            min, mintime, max, maxtime, sum, count, wsum, sumtime = accum.getStatsTuple()
                             pkt['T_LO_%s' % obstype] = mintime
                             pkt['LO_%s' % obstype] = min
                             pkt['T_HI_%s' % obstype] = maxtime
                             pkt['HI_%s' % obstype] = max
                             pkt['SUM_%s' % obstype] = sum
+                            if count != 0:
+                                pkt['AVG_%s' % obstype] = sum / count
+                            if sumtime != 0:
+                                pkt['WAVG_%s' % obstype] = wsum / sumtime
                             self.convert_units(pkt, obstype)
 
                 # Add barometerRate
@@ -555,7 +563,7 @@ class LoopProcessor:
             self.rsync_data(pkt['dateTime'])
 
     @staticmethod
-    def create_arc_per_accum(ts: int, arcint: int):
+    def create_arc_per_accum(ts: int, arcint: int) -> weewx.accum.Accum:
         start_ts = weeutil.weeutil.startOfInterval(ts, arcint)
         end_ts = start_ts + arcint
         return weewx.accum.Accum(weeutil.weeutil.TimeSpan(start_ts, end_ts))
@@ -652,7 +660,7 @@ class LoopProcessor:
         tmrw = datetime.datetime.now() + datetime.timedelta(days=1)
         return to_int(datetime.datetime(tmrw.year, tmrw.month, tmrw.day).timestamp())
 
-    def convert_hi_lo_sum_units(self, pkt: Dict[str, Any], obstype, unit_type, unit_group) -> None:
+    def convert_hi_lo_etc_units(self, pkt: Dict[str, Any], obstype, unit_type, unit_group) -> None:
         # convert high and low
         if 'HI_%s' % obstype not in pkt:
             log.info('pkt[HI_%s] is missing.' % obstype)
@@ -675,9 +683,23 @@ class LoopProcessor:
                 pkt['SUM_%s' % obstype], unit_type, unit_group), unit_type)
             pkt['SUM_%s' % obstype] = self.cfg.formatter.get_format_string(unit_type) % sum
             pkt['FMT_SUM_%s' % obstype] = self.cfg.formatter.toString((sum, unit_type, unit_group))
+        if 'AVG_%s' % obstype not in pkt:
+            log.info('pkt[AVG_%s] is missing.' % obstype)
+        else:
+            avg, _, _ = weewx.units.convert((
+                pkt['AVG_%s' % obstype], unit_type, unit_group), unit_type)
+            pkt['AVG_%s' % obstype] = self.cfg.formatter.get_format_string(unit_type) % avg
+            pkt['FMT_AVG_%s' % obstype] = self.cfg.formatter.toString((avg, unit_type, unit_group))
+        if 'WAVG_%s' % obstype not in pkt:
+            log.info('pkt[WAVG_%s] is missing.' % obstype)
+        else:
+            wavg, _, _ = weewx.units.convert((
+                pkt['WAVG_%s' % obstype], unit_type, unit_group), unit_type)
+            pkt['WAVG_%s' % obstype] = self.cfg.formatter.get_format_string(unit_type) % wavg
+            pkt['FMT_WAVG_%s' % obstype] = self.cfg.formatter.toString((wavg, unit_type, unit_group))
 
     def convert_barometer_rate_units(self, pkt: Dict[str, Any]) -> None:
-        self.convert_units(pkt, "barometerRate", do_hi_lo_sum=False)
+        self.convert_units(pkt, "barometerRate", do_hi_lo_etc=False)
 
     def convert_10m_max_windgust(self, pkt: Dict[str, Any]):
         obstype = '10mMaxGust'
@@ -710,7 +732,7 @@ class LoopProcessor:
         pkt['LABEL_%s' % obstype] = self.cfg.formatter.get_label_string(unit_type)
 
     def convert_units(self, pkt: Dict[str, Any],
-            obstype: str, do_hi_lo_sum = True) -> None:
+            obstype: str, do_hi_lo_etc = True) -> None:
         # Pull a switcharoo for day_rain_total else weewx doesn't know the units.
         v_t = weewx.units.as_value_tuple(
             pkt, 'rain' if obstype == 'day_rain_total' else obstype)
@@ -731,8 +753,8 @@ class LoopProcessor:
         if obstype in COMPASS_OBSERVATIONS:
             pkt['COMPASS_%s' % obstype] = self.cfg.formatter.to_ordinal_compass(
                 (value, unit_type, unit_group))
-        if do_hi_lo_sum and obstype != 'day_rain_total':
-            self.convert_hi_lo_sum_units(pkt, obstype, unit_type, unit_group)
+        if do_hi_lo_etc and obstype != 'day_rain_total':
+            self.convert_hi_lo_etc_units(pkt, obstype, unit_type, unit_group)
 
     def insert_barometer_rate_desc(self, pkt: Dict[str, Any]) -> None:
         # Shipping forecast descriptions for the 3 hour change in baromter readings.
