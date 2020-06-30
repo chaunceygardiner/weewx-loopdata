@@ -200,7 +200,7 @@ from weewx.units import ValueTuple
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '1.3'
+LOOP_DATA_VERSION = '1.3.1'
 
 if sys.version_info[0] < 3:
     raise weewx.UnsupportedFeature(
@@ -643,7 +643,7 @@ class LoopProcessor:
             remote_root = os.path.join(self.cfg.remote_dir, self.cfg.filename),
             server=self.cfg.remote_server,
             user=self.cfg.remote_user,
-            port=self.cfg.remote_port,
+            port=str(self.cfg.remote_port) if self.cfg.remote_port is not None else None,
             ssh_options=self.cfg.ssh_options,
             compress=self.cfg.compress,
             delete=False,

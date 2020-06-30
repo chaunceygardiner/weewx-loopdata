@@ -1,7 +1,12 @@
 loopdata change history
 -----------------------
 
-1.3   06/29/2020
+1.3.1 06/30/2020
+
+Fixed issue when specifying port in rsync section.  RsyncUpload was expecting a string
+for port, loopdata was passing an int.
+
+1.3 06/29/2020
 
 Introduced AVG_/FMT_AVG_ and WAVG_/FMT_WAVG_ prefixes for today's average
 and weighted average of an observation, respectively.
