@@ -221,20 +221,20 @@ Next, look in the loop-data.txt file to find all of the available fields.**
 
 ## About those Rsync Errors in the Log
 If one is using rsync, especially if the loop interval is short (e.g., 2s), it is expected that
-there will be log entries for connection timeouts, data timeouts and skipped packets.
-By default only one second is allowed to connect or transmit the data.  Also, by default,
-if the loop data is older than 3s, it is skipped.  With these settings, the remote server
-may miss receiving some loop-data packets, but it won't get caught behind trying to send a
-backlog of old loop data.
+there will be log entries for connection timeouts, transmit timeouts, write errors and skipped
+packets.  By default only one second is allowed to connect or transmit the data.  Also, by
+default, if the loop data is older than 3s, it is skipped.  With these settings, the remote
+server may miss receiving some loop-data packets, but it won't get caught behind trying to send
+a backlog of old loop data.
 
-Following are examples of a connection timeout, a data transmission timeout and a skipped packet.
-These errors are fine in moderation.  If too many packets are timing out, one might try changing
-the connection timeout or timeout values (depending on whether the timeouts are in the connection
-or the transmission).
+Following are examples of a connection timeout, transmission timeout, writer error and a skipped
+packet.  These errors are fine in moderation.  If too many packets are timing out, one might try
+changing the connection timeout or timeout values.
 ```
 Jul  1 04:12:03 charlemagne weewx[1126] ERROR weeutil.rsyncupload: [['rsync', '--archive', '--stats', '--timeout=1', '-e ssh -o ConnectTimeout=1', '/home/weewx/gauge-data/loop-data.txt', 'root@www.paloaltoweather.com:/home/weewx/gauge-data/loop-data.txt']] reported errors: ssh: connect to host www.paloaltoweather.com port 22: Connection timed out. rsync: connection unexpectedly closed (0 bytes received so far) [sender]. rsync error: unexplained error (code 255) at io.c(235) [sender=3.1.3]
 Jun 30 20:51:48 charlemagne weewx[1126] ERROR weeutil.rsyncupload: [['rsync', '--archive', '--stats', '--timeout=1', '-e ssh -o ConnectTimeout=1', '/home/weewx/gauge-data/loop-data.txt', 'root@www.paloaltoweather.com:/home/weewx/gauge-data/loop-data.txt']] reported errors: [sender] io timeout after 1 seconds -- exiting. rsync error: timeout in data send/receive (code 30) at io.c(204) [sender=3.1.3]
-Jun 21 19:16:23 charlemagne weewx[8170] INFO user.rtgd: rsync_data: skipping packet (2020-06-21 19:16:20) with age: 3
+Jun 27 10:18:37 charlemagne weewx[17982] ERROR weeutil.rsyncupload: [['rsync', '--archive', '--stats', '--timeout=1', '-e ssh -o ConnectTimeout=1', '/home/weewx/gauge-data/loop-data.txt', 'root@www.paloaltoweather.com:/home/weewx/gauge-data/loop-data.txt']] reported errors: rsync: [sender] write error: Broken pipe (32). rsync error: error in socket IO (code 10) at io.c(829) [sender=3.1.3]
+Jun 27 23:15:53 charlemagne weewx[10156] INFO user.loopdata: skipping packet (2020-06-27 23:15:50 PDT (1593324950)) with age: 3.348237
 ```
 
 ## Why require Python 3?
