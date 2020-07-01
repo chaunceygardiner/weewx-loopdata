@@ -219,7 +219,7 @@ Next, look in the loop-data.txt file to find all of the available fields.**
  * `LABEL_windRose`    : The label of the units for windRose (e.g., 'm')
  * `UNITS_windRose`    : The units that windrose values are expressed in (e.g., 'mile').
 
-## Rsync "errors" in the log:
+## About those Rsync Errors in the Log
 If one is using rsync, especially if the loop interval is short (e.g., 2s), it is expected that
 there will be log entries for connection timeouts, data timeouts and skipped packets.
 By default only one second is allowed to connect or transmit the data.  Also, by default,
