@@ -44,7 +44,7 @@ from weewx.units import ValueTuple
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '1.3.1'
+LOOP_DATA_VERSION = '1.3.2'
 
 if sys.version_info[0] < 3:
     raise weewx.UnsupportedFeature(
@@ -526,7 +526,10 @@ class LoopProcessor:
             sum, _, _ = weewx.units.convert((
                 pkt['SUM_%s' % obstype], unit_type, unit_group), unit_type)
             pkt['SUM_%s' % obstype] = self.cfg.formatter.get_format_string(unit_type) % sum
-            pkt['FMT_SUM_%s' % obstype] = self.cfg.formatter.toString((sum, unit_type, unit_group))
+            try:
+                pkt['FMT_SUM_%s' % obstype] = self.cfg.formatter.toString((sum, unit_type, unit_group))
+            except Exception as e:
+                log.error('Could not format sum for obstype: %s, unit_type: %s, unit_group: %s' % (obstype, unit_type, unit_group))
         if 'AVG_%s' % obstype not in pkt:
             log.info('pkt[AVG_%s] is missing.' % obstype)
         else:
