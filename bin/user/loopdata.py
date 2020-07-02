@@ -44,7 +44,7 @@ from weewx.units import ValueTuple
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '1.3.2'
+LOOP_DATA_VERSION = '1.3.3'
 
 if sys.version_info[0] < 3:
     raise weewx.UnsupportedFeature(
@@ -341,7 +341,8 @@ class LoopProcessor:
 
                 pkt = copy.deepcopy(pkt)
 
-                # Iterate through all scalar stats and add mins and maxes to record.
+                # Iterate through all scalar stats and add mins, maxes, sums, averages,
+                # and weighted averages to the record.
                 for obstype in self.day_accum:
                     accum = self.day_accum[obstype]
                     if isinstance(accum, weewx.accum.ScalarStats):
@@ -526,10 +527,11 @@ class LoopProcessor:
             sum, _, _ = weewx.units.convert((
                 pkt['SUM_%s' % obstype], unit_type, unit_group), unit_type)
             pkt['SUM_%s' % obstype] = self.cfg.formatter.get_format_string(unit_type) % sum
-            try:
-                pkt['FMT_SUM_%s' % obstype] = self.cfg.formatter.toString((sum, unit_type, unit_group))
-            except Exception as e:
-                log.error('Could not format sum for obstype: %s, unit_type: %s, unit_group: %s' % (obstype, unit_type, unit_group))
+            if unit_type != 'unix_epoch':
+                try:
+                    pkt['FMT_SUM_%s' % obstype] = self.cfg.formatter.toString((sum, unit_type, unit_group))
+                except Exception as e:
+                    log.error('Could not format sum for obstype: %s, unit_type: %s, unit_group: %s' % (obstype, unit_type, unit_group))
         if 'AVG_%s' % obstype not in pkt:
             log.info('pkt[AVG_%s] is missing.' % obstype)
         else:
