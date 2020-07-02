@@ -219,6 +219,23 @@ Next, look in the loop-data.txt file to find all of the available fields.**
  * `LABEL_windRose`    : The label of the units for windRose (e.g., 'm')
  * `UNITS_windRose`    : The units that windrose values are expressed in (e.g., 'mile').
 
+## Rsync isn't Working for Me, Help!
+LoopData's uses WeeWX's `weeutil.rsyncupload.RsyncUpload` utility.  If you have rsync working
+for WeeWX to push your web pages to a remote server, loopdata's rsync is likely to work too.
+First get WeeWX working with rsync before you try to get loopdata working with rsync.
+
+By the way, it's best to put loop-data.txt outside of WeeWX's html tree so that WeeWX's rsync
+and loopdata's rsync don't both write the loop-data.txt file.  If you're up for configuring
+your websever to move it elsewhere (e.g., /home/weewx/loopdata/loop-data.txt), you should
+do so.  If not, it's probably OK.  There just *might* be the rare complaint in the log
+because the WeeWX main thread and the LoopData thread both tried to sync the same file at
+the same time.
+
+## Do I have to use rsync to sync loop-data.txt to a remote server?
+You don't have to sync to a remote server; but if you do want to sync to a remote server,
+rsync is the only mechanism provided.  That's not going to change as the author believes
+rsync/ssh is the secure way to accomplish this task.
+
 ## About those Rsync Errors in the Log
 If one is using rsync, especially if the loop interval is short (e.g., 2s), it is expected that
 there will be log entries for connection timeouts, transmit timeouts, write errors and skipped
