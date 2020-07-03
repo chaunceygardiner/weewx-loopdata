@@ -1,6 +1,11 @@
 loopdata change history
 -----------------------
 
+1.3.5 07/03/2020
+
+Converting to report units was being done correctly for observations.
+This release fixes conversions for highs, lows, sums, averages and weighed averages.
+
 1.3.4 07/02/2020
 
 Installer uses FMT_SUM_rain rather than FMT_day_rain_total in LoopData section of weewx.conf.

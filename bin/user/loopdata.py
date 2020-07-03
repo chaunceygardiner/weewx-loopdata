@@ -44,7 +44,7 @@ from weewx.units import ValueTuple
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '1.3.4'
+LOOP_DATA_VERSION = '1.3.5'
 
 if sys.version_info[0] < 3:
     raise weewx.UnsupportedFeature(
@@ -116,7 +116,8 @@ class LoopData(StdService):
         include_spec_dict    = loop_config_dict.get('Include', {})
         fields_to_rename     = loop_config_dict.get('Rename', {})
 
-        # Get the unit_system
+        # Get the unit_system as specified by StdConvert->target_unit.
+        # Note: this value will be overwritten if the day accumulator has a a unit_system.
         db_binder = weewx.manager.DBBinder(config_dict)
         default_binding = config_dict.get('StdReport')['data_binding']
         dbm = db_binder.get_manager(default_binding)
@@ -209,11 +210,16 @@ class LoopData(StdService):
         day_summary = dbm._get_day_summary(time.time())
         # Init an accumulator
         timespan = weeutil.weeutil.archiveDaySpan(time.time())
+        unit_system = day_summary.unit_system
+        if unit_system is not None:
+            # Database has a unit_system already (true unless the db just got intialized.)
+            self.cfg.unit_system = unit_system
         day_accum = weewx.accum.Accum(timespan, unit_system=self.cfg.unit_system)
         for k in day_summary:
-            day_accum[k] = day_summary[k]
+            day_accum.set_stats(k, day_summary[k].getStatsTuple())
 
-        lp: LoopProcessor = LoopProcessor(self.cfg, day_accum, barometer_readings, wind_gust_readings, wind_rose_readings)
+        lp: LoopProcessor = LoopProcessor(self.cfg, day_accum, barometer_readings,
+            wind_gust_readings, wind_rose_readings)
         t: threading.Thread = threading.Thread(target=lp.process_queue)
         t.setName('LoopData')
         t.setDaemon(True)
@@ -324,13 +330,15 @@ class LoopProcessor:
                     self.day_accum.addRecord(pkt)
 
                 if self.arc_per_accum is None:
-                    self.arc_per_accum = LoopProcessor.create_arc_per_accum(pkt_time, self.cfg.archive_interval)
+                    self.arc_per_accum = LoopProcessor.create_arc_per_accum(pkt_time,
+                        self.cfg.archive_interval, self.cfg.unit_system)
 
                 try:
                   self.arc_per_accum.addRecord(pkt)
                 except weewx.accum.OutOfSpan:
                     log.debug('Creating new arc_per_accum')
-                    self.arc_per_accum = LoopProcessor.create_arc_per_accum(pkt_time, self.cfg.archive_interval)
+                    self.arc_per_accum = LoopProcessor.create_arc_per_accum(pkt_time,
+                        self.cfg.archive_interval, self.cfg.unit_system)
                     # Try again:
                     self.arc_per_accum.addRecord(pkt)
 
@@ -408,10 +416,10 @@ class LoopProcessor:
             self.rsync_data(pkt['dateTime'])
 
     @staticmethod
-    def create_arc_per_accum(ts: int, arcint: int) -> weewx.accum.Accum:
+    def create_arc_per_accum(ts: int, arcint: int, unit_system: int) -> weewx.accum.Accum:
         start_ts = weeutil.weeutil.startOfInterval(ts, arcint)
         end_ts = start_ts + arcint
-        return weewx.accum.Accum(weeutil.weeutil.TimeSpan(start_ts, end_ts))
+        return weewx.accum.Accum(weeutil.weeutil.TimeSpan(start_ts, end_ts), unit_system)
 
     @staticmethod
     def log_configuration(cfg: Configuration):
@@ -505,45 +513,47 @@ class LoopProcessor:
         tmrw = datetime.datetime.now() + datetime.timedelta(days=1)
         return to_int(datetime.datetime(tmrw.year, tmrw.month, tmrw.day).timestamp())
 
-    def convert_hi_lo_etc_units(self, pkt: Dict[str, Any], obstype, unit_type, unit_group) -> None:
+    def convert_hi_lo_etc_units(self, pkt: Dict[str, Any], obstype, original_unit_type,
+            original_unit_group, unit_type, unit_group) -> None:
         # convert high and low
         if 'HI_%s' % obstype not in pkt:
             log.info('pkt[HI_%s] is missing.' % obstype)
         else:
-            hi, _, _ = weewx.units.convert(
-                       (pkt['HI_%s' % obstype], unit_type, unit_group), unit_type)
+            hi, _, _ = self.cfg.converter.convert((
+                       pkt['HI_%s' % obstype], original_unit_type, original_unit_group))
             pkt['HI_%s' % obstype] = self.cfg.formatter.get_format_string(unit_type) % hi
             pkt['FMT_HI_%s' % obstype] = self.cfg.formatter.toString((hi, unit_type, unit_group))
         if 'LO_%s' % obstype not in pkt:
             log.info('pkt[LO_%s] is missing.' % obstype)
         else:
-            lo, _, _ = weewx.units.convert((
-                pkt['LO_%s' % obstype], unit_type, unit_group), unit_type)
+            lo, _, _ = self.cfg.converter.convert((
+                pkt['LO_%s' % obstype], original_unit_type, original_unit_group))
             pkt['LO_%s' % obstype] = self.cfg.formatter.get_format_string(unit_type) % lo
             pkt['FMT_LO_%s' % obstype] = self.cfg.formatter.toString((lo, unit_type, unit_group))
         if 'SUM_%s' % obstype not in pkt:
             log.info('pkt[SUM_%s] is missing.' % obstype)
         else:
-            sum, _, _ = weewx.units.convert((
-                pkt['SUM_%s' % obstype], unit_type, unit_group), unit_type)
+            sum, _, _ = self.cfg.converter.convert((
+                    pkt['SUM_%s' % obstype], original_unit_type, original_unit_group))
             pkt['SUM_%s' % obstype] = self.cfg.formatter.get_format_string(unit_type) % sum
             if unit_type != 'unix_epoch':
                 try:
                     pkt['FMT_SUM_%s' % obstype] = self.cfg.formatter.toString((sum, unit_type, unit_group))
                 except Exception as e:
-                    log.error('Could not format sum for obstype: %s, unit_type: %s, unit_group: %s' % (obstype, unit_type, unit_group))
+                    log.error('Could not format sum for obstype: %s, unit_type: %s, unit_group: %s' % (
+                        obstype, unit_type, unit_group))
         if 'AVG_%s' % obstype not in pkt:
             log.info('pkt[AVG_%s] is missing.' % obstype)
         else:
-            avg, _, _ = weewx.units.convert((
-                pkt['AVG_%s' % obstype], unit_type, unit_group), unit_type)
+            avg, _, _ = self.cfg.converter.convert((
+                pkt['AVG_%s' % obstype], original_unit_type, original_unit_group))
             pkt['AVG_%s' % obstype] = self.cfg.formatter.get_format_string(unit_type) % avg
             pkt['FMT_AVG_%s' % obstype] = self.cfg.formatter.toString((avg, unit_type, unit_group))
         if 'WAVG_%s' % obstype not in pkt:
             log.info('pkt[WAVG_%s] is missing.' % obstype)
         else:
-            wavg, _, _ = weewx.units.convert((
-                pkt['WAVG_%s' % obstype], unit_type, unit_group), unit_type)
+            wavg, _, _ = self.cfg.converter.convert((
+                pkt['WAVG_%s' % obstype], original_unit_type, original_unit_group))
             pkt['WAVG_%s' % obstype] = self.cfg.formatter.get_format_string(unit_type) % wavg
             pkt['FMT_WAVG_%s' % obstype] = self.cfg.formatter.toString((wavg, unit_type, unit_group))
 
@@ -580,13 +590,13 @@ class LoopProcessor:
         pkt['UNITS_%s' % obstype] = unit_type
         pkt['LABEL_%s' % obstype] = self.cfg.formatter.get_label_string(unit_type)
 
-    def convert_units(self, pkt: Dict[str, Any],
-            obstype: str, do_hi_lo_etc = True) -> None:
+    def convert_units(self, pkt: Dict[str, Any], obstype: str, do_hi_lo_etc = True) -> None:
         # Pull a switcharoo for day_rain_total else weewx doesn't know the units.
         v_t = weewx.units.as_value_tuple(
             pkt, 'rain' if obstype == 'day_rain_total' else obstype)
         if obstype == 'day_rain_total':
             v_t = weewx.units.ValueTuple(pkt['day_rain_total'], v_t.unit, v_t.group)
+        _, original_unit_type, original_unit_group = v_t
         value, unit_type, unit_group = self.cfg.converter.convert(v_t)
         # windDir and gustDir could be None.
         if value is not None:
@@ -603,7 +613,8 @@ class LoopProcessor:
             pkt['COMPASS_%s' % obstype] = self.cfg.formatter.to_ordinal_compass(
                 (value, unit_type, unit_group))
         if do_hi_lo_etc and obstype != 'day_rain_total':
-            self.convert_hi_lo_etc_units(pkt, obstype, unit_type, unit_group)
+            self.convert_hi_lo_etc_units(pkt, obstype, original_unit_type,
+                original_unit_group, unit_type, unit_group)
 
     def insert_barometer_rate_desc(self, pkt: Dict[str, Any]) -> None:
         # Shipping forecast descriptions for the 3 hour change in baromter readings.
