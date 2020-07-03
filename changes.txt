@@ -1,6 +1,11 @@
 loopdata change history
 -----------------------
 
+1.3.4 07/02/2020
+
+Installer uses FMT_SUM_rain rather than FMT_day_rain_total in LoopData section of weewx.conf.
+day_rain_total is not emitted by many drivers and was a source of confusion.
+
 1.3.3 07/02/2020
 
 Refrain from trying to format the sum of unix_epoch observations.

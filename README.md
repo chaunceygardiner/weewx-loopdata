@@ -102,7 +102,7 @@ To power Steel Series gauges from WeeWX, you definitely want to use Gary's exten
         timeout = 1
         skip_if_older_than = 3
     [[Include]]
-        fields = dateTime, COMPASS_windDir, FMT_day_rain_total, FMT_dewpoint, FMT_outTemp, FMT_rainRate, FMT_windSpeed, FMT_HI_windGust, FMT_10mMaxGust, windSpeed
+        fields = dateTime, COMPASS_windDir, FMT_SUM_rain, FMT_dewpoint, FMT_outTemp, FMT_rainRate, FMT_windSpeed, FMT_HI_windGust, FMT_10mMaxGust, windSpeed
     [[Rename]]
         windRose = WindRose
 ```
@@ -161,7 +161,7 @@ Next, look in the loop-data.txt file to find all of the available fields.**
  * `windDir`           : Wind Direction
  * `windGust`          : Wind Gust (high wind speed)
  * `windGustDir`       : Wind Gust Direction
- * `day_rain_total`    : Total rainfall today. If your driver doesn't report this, use SUM_rain (or FMT_SUM_rain) instead.
+ * `day_rain_total`    : Total rainfall today. **Many drivers don't include this.  Use SUM_rain instead!**
  * `rain`              : Rain
  * `altimeter`         : Altimeter
  * `appTemp`           : Apparent Temperature Outside

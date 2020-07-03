@@ -22,7 +22,7 @@ def loader():
 class LoopDataInstaller(ExtensionInstaller):
     def __init__(self):
         super(LoopDataInstaller, self).__init__(
-            version = "1.3.3",
+            version = "1.3.4",
             name = 'loopdata',
             description = 'Loop statistics for real time reporting.',
             author = "John A Kline",
@@ -48,7 +48,7 @@ class LoopDataInstaller(ExtensionInstaller):
                     'Include': {
                         'fields': ['dateTime','windSpeed','COMPASS_windDir',
                             'DESC_barometerRate','FMT_barometer',
-                            'FMT_day_rain_total','FMT_dewpoint','FMT_heatindex',
+                            'FMT_SUM_rain','FMT_dewpoint','FMT_heatindex',
                             'FMT_outHumidity','FMT_outTemp','FMT_rain',
                             'FMT_rainRate','FMT_windchill','FMT_windSpeed',
                             'FMT_HI_windGust','FMT_10mMaxGust']},

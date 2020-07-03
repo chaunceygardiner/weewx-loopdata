@@ -44,7 +44,7 @@ from weewx.units import ValueTuple
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '1.3.3'
+LOOP_DATA_VERSION = '1.3.4'
 
 if sys.version_info[0] < 3:
     raise weewx.UnsupportedFeature(
