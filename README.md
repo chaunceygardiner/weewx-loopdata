@@ -12,11 +12,14 @@ containing values for the observations in the loop packet; along with
 today's high, low, sum, average and weighted averages for each observation
 in the packet.
 
-Another WeeWx report is specified in the LoopData configuration (e.g.,
+Use LoopData, and some JavaScript to make your report pages
+update on every loop cycle.
+
+A WeeWX report is specified in the LoopData configuration (e.g.,
 `SeasonsReport`).  With this information, LoopData automatically converts
 all values to the units called for in the report and also formats all
 readings according to the report specified.  Thus, it is simple to replace
-the reports observations in javascript as they will already be in the
+the reports observations in JavaScript as they will already be in the
 correct units and in the correct format.  Formatted values are requested
 by prefixing the name with 'FMT_'.  For example:
   * windSpeed:        14.1
@@ -138,7 +141,7 @@ To power Steel Series gauges from WeeWX, you definitely want to use Gary's exten
 
 This section lists some likely fields.  In reality, LoopData runs through the daily
 summaries and includes all observations it finds.  The daily summaries also
-conveniently privide today's high (HI_<obs>), today's low (LO_<obs>),
+conveniently provide today's high (HI_<obs>), today's low (LO_<obs>),
 today's sum (SUM_<obs>), today's average (AVG_<obs>) and today's weighted average
 (WAVG_<obj> observations.
 
@@ -161,8 +164,7 @@ Next, look in the loop-data.txt file to find all of the available fields.**
  * `windDir`           : Wind Direction
  * `windGust`          : Wind Gust (high wind speed)
  * `windGustDir`       : Wind Gust Direction
- * `day_rain_total`    : Total rainfall today. **Many drivers don't include this.  Use SUM_rain instead!**
- * `rain`              : Rain
+ * `rain`              : Rain (rain since last loop pkt, use SUM_rain or FMT_SUM_rain for today's rainfall.)
  * `altimeter`         : Altimeter
  * `appTemp`           : Apparent Temperature Outside
  * `barometer`         : Barometer
