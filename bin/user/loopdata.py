@@ -44,7 +44,7 @@ from weewx.units import ValueTuple
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '1.3.5'
+LOOP_DATA_VERSION = '1.3.6'
 
 if sys.version_info[0] < 3:
     raise weewx.UnsupportedFeature(
@@ -365,7 +365,7 @@ class LoopProcessor:
                                 pkt['AVG_%s' % obstype] = sum / count
                             if sumtime != 0:
                                 pkt['WAVG_%s' % obstype] = wsum / sumtime
-                            self.convert_units(pkt, obstype)
+                            LoopProcessor.convert_units(self.cfg.converter, self.cfg.formatter, pkt, obstype)
 
                 # Add barometerRate
                 self.insert_barometer_rate(pkt)
@@ -509,56 +509,59 @@ class LoopProcessor:
             log.error("rsync_data: Caught exception %s: %s" % (cl, e))
 
     @staticmethod
-    def local_midnight_timestamp() -> int:
-        tmrw = datetime.datetime.now() + datetime.timedelta(days=1)
-        return to_int(datetime.datetime(tmrw.year, tmrw.month, tmrw.day).timestamp())
-
-    def convert_hi_lo_etc_units(self, pkt: Dict[str, Any], obstype, original_unit_type,
-            original_unit_group, unit_type, unit_group) -> None:
+    def convert_hi_lo_etc_units(converter: weewx.units.Converter, formatter: weewx.units.Formatter,
+            pkt: Dict[str, Any], obstype, original_unit_type, original_unit_group, target_unit_type,
+            target_unit_group) -> None:
         # convert high and low
         if 'HI_%s' % obstype not in pkt:
             log.info('pkt[HI_%s] is missing.' % obstype)
         else:
-            hi, _, _ = self.cfg.converter.convert((
-                       pkt['HI_%s' % obstype], original_unit_type, original_unit_group))
-            pkt['HI_%s' % obstype] = self.cfg.formatter.get_format_string(unit_type) % hi
-            pkt['FMT_HI_%s' % obstype] = self.cfg.formatter.toString((hi, unit_type, unit_group))
+            hi, _, _ = converter.convert(
+                (pkt['HI_%s' % obstype], original_unit_type, original_unit_group))
+            pkt['HI_%s' % obstype] = formatter.get_format_string(target_unit_type) % hi
+            pkt['FMT_HI_%s' % obstype] = formatter.toString(
+                (hi, target_unit_type, target_unit_group))
         if 'LO_%s' % obstype not in pkt:
             log.info('pkt[LO_%s] is missing.' % obstype)
         else:
-            lo, _, _ = self.cfg.converter.convert((
-                pkt['LO_%s' % obstype], original_unit_type, original_unit_group))
-            pkt['LO_%s' % obstype] = self.cfg.formatter.get_format_string(unit_type) % lo
-            pkt['FMT_LO_%s' % obstype] = self.cfg.formatter.toString((lo, unit_type, unit_group))
+            lo, _, _ = converter.convert(
+                (pkt['LO_%s' % obstype], original_unit_type, original_unit_group))
+            pkt['LO_%s' % obstype] = formatter.get_format_string(target_unit_type) % lo
+            pkt['FMT_LO_%s' % obstype] = formatter.toString(
+                (lo, target_unit_type, target_unit_group))
         if 'SUM_%s' % obstype not in pkt:
             log.info('pkt[SUM_%s] is missing.' % obstype)
         else:
-            sum, _, _ = self.cfg.converter.convert((
-                    pkt['SUM_%s' % obstype], original_unit_type, original_unit_group))
-            pkt['SUM_%s' % obstype] = self.cfg.formatter.get_format_string(unit_type) % sum
-            if unit_type != 'unix_epoch':
+            sum, _, _ = converter.convert(
+                (pkt['SUM_%s' % obstype], original_unit_type, original_unit_group))
+            pkt['SUM_%s' % obstype] = formatter.get_format_string(target_unit_type) % sum
+            if target_unit_type != 'unix_epoch':
                 try:
-                    pkt['FMT_SUM_%s' % obstype] = self.cfg.formatter.toString((sum, unit_type, unit_group))
+                    pkt['FMT_SUM_%s' % obstype] = formatter.toString(
+                        (sum, target_unit_type, target_unit_group))
                 except Exception as e:
-                    log.error('Could not format sum for obstype: %s, unit_type: %s, unit_group: %s' % (
-                        obstype, unit_type, unit_group))
+                    log.error('Could not format sum for obstype: %s, target_unit_type: %s, target_unit_group: %s' % (
+                        obstype, target_unit_type, target_unit_group))
         if 'AVG_%s' % obstype not in pkt:
             log.info('pkt[AVG_%s] is missing.' % obstype)
         else:
-            avg, _, _ = self.cfg.converter.convert((
-                pkt['AVG_%s' % obstype], original_unit_type, original_unit_group))
-            pkt['AVG_%s' % obstype] = self.cfg.formatter.get_format_string(unit_type) % avg
-            pkt['FMT_AVG_%s' % obstype] = self.cfg.formatter.toString((avg, unit_type, unit_group))
+            avg, _, _ = converter.convert(
+                (pkt['AVG_%s' % obstype], original_unit_type, original_unit_group))
+            pkt['AVG_%s' % obstype] = formatter.get_format_string(target_unit_type) % avg
+            pkt['FMT_AVG_%s' % obstype] = formatter.toString(
+                (avg, target_unit_type, target_unit_group))
         if 'WAVG_%s' % obstype not in pkt:
             log.info('pkt[WAVG_%s] is missing.' % obstype)
         else:
-            wavg, _, _ = self.cfg.converter.convert((
-                pkt['WAVG_%s' % obstype], original_unit_type, original_unit_group))
-            pkt['WAVG_%s' % obstype] = self.cfg.formatter.get_format_string(unit_type) % wavg
-            pkt['FMT_WAVG_%s' % obstype] = self.cfg.formatter.toString((wavg, unit_type, unit_group))
+            wavg, _, _ = converter.convert(
+                (pkt['WAVG_%s' % obstype], original_unit_type, original_unit_group))
+            pkt['WAVG_%s' % obstype] = formatter.get_format_string(target_unit_type) % wavg
+            pkt['FMT_WAVG_%s' % obstype] = formatter.toString(
+                (wavg, target_unit_type, target_unit_group))
 
     def convert_barometer_rate_units(self, pkt: Dict[str, Any]) -> None:
-        self.convert_units(pkt, "barometerRate", do_hi_lo_etc=False)
+        LoopProcessor.convert_units(self.cfg.converter, self.cfg.formatter,
+            pkt, "barometerRate", do_hi_lo_etc=False)
 
     def convert_10m_max_windgust(self, pkt: Dict[str, Any]):
         obstype = '10mMaxGust'
@@ -590,31 +593,33 @@ class LoopProcessor:
         pkt['UNITS_%s' % obstype] = unit_type
         pkt['LABEL_%s' % obstype] = self.cfg.formatter.get_label_string(unit_type)
 
-    def convert_units(self, pkt: Dict[str, Any], obstype: str, do_hi_lo_etc = True) -> None:
+    @staticmethod
+    def convert_units(converter: weewx.units.Converter, formatter: weewx.units.Formatter,
+            pkt: Dict[str, Any], obstype: str, do_hi_lo_etc = True) -> None:
         # Pull a switcharoo for day_rain_total else weewx doesn't know the units.
         v_t = weewx.units.as_value_tuple(
             pkt, 'rain' if obstype == 'day_rain_total' else obstype)
         if obstype == 'day_rain_total':
             v_t = weewx.units.ValueTuple(pkt['day_rain_total'], v_t.unit, v_t.group)
         _, original_unit_type, original_unit_group = v_t
-        value, unit_type, unit_group = self.cfg.converter.convert(v_t)
+        value, unit_type, unit_group = converter.convert(v_t)
         # windDir and gustDir could be None.
         if value is not None:
-            pkt[obstype] = self.cfg.formatter.get_format_string(unit_type) % value
-            pkt['FMT_%s' % obstype] = self.cfg.formatter.toString((
+            pkt[obstype] = formatter.get_format_string(unit_type) % value
+            pkt['FMT_%s' % obstype] = formatter.toString((
                 value, unit_type, unit_group))
         else:
             # TODO: Is it better to put None or leave out the observation?
             pkt[obstype] = None
             pkt['FMT_%s' % obstype] = None
         pkt['UNITS_%s' % obstype] = unit_type
-        pkt['LABEL_%s' % obstype] = self.cfg.formatter.get_label_string(unit_type)
+        pkt['LABEL_%s' % obstype] = formatter.get_label_string(unit_type)
         if obstype in COMPASS_OBSERVATIONS:
-            pkt['COMPASS_%s' % obstype] = self.cfg.formatter.to_ordinal_compass(
+            pkt['COMPASS_%s' % obstype] = formatter.to_ordinal_compass(
                 (value, unit_type, unit_group))
         if do_hi_lo_etc and obstype != 'day_rain_total':
-            self.convert_hi_lo_etc_units(pkt, obstype, original_unit_type,
-                original_unit_group, unit_type, unit_group)
+            LoopProcessor.convert_hi_lo_etc_units(converter, formatter, pkt, obstype,
+                original_unit_type, original_unit_group, unit_type, unit_group)
 
     def insert_barometer_rate_desc(self, pkt: Dict[str, Any]) -> None:
         # Shipping forecast descriptions for the 3 hour change in baromter readings.

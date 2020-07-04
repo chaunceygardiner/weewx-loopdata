@@ -1,6 +1,16 @@
 loopdata change history
 -----------------------
 
+1.3.6 07/04/2020
+
+Add tests for conversions and formatting:
+weewx.METRIC   -> metric reports
+weewx.METRIC   -> us     reports
+weewx.US       -> metric reports
+weewx.US       -> us     reports
+weewx.METRICWX -> metric reports
+weewx.METRICWX -> us     reports
+
 1.3.5 07/03/2020
 
 Converting to report units was being done correctly for observations.
