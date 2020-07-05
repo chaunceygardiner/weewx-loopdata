@@ -44,7 +44,7 @@ from weewx.units import ValueTuple
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '1.3.6'
+LOOP_DATA_VERSION = '1.3.7'
 
 if sys.version_info[0] < 3:
     raise weewx.UnsupportedFeature(
@@ -289,34 +289,21 @@ class LoopProcessor:
     def process_queue(self) -> None:
         try:
             while True:
-                event = self.cfg.queue.get()
+                event               = self.cfg.queue.get()
                 pkt: Dict[str, Any] = event.packet
-                pkt_time = to_int(pkt['dateTime'])
+                pkt_time: int       = to_int(pkt['dateTime'])
 
-                # Archive records come through just to save off pressure as we need
-                # a 3 hour trend; and WindRose data for a 24 hour trend.  This
-                # is done with archive records rather than loop records.
-                # END_ARCHIVE_PERIOD is used to save barometer and wind.
                 if event.event_type == weewx.END_ARCHIVE_PERIOD:
-                    if 'barometer' in pkt:
-                        self.save_barometer_reading(pkt_time, to_float(pkt['barometer']))
-                    else:
-                        if self.arc_per_accum is not None:
-                            log.debug('barometer not in archive pkt, using arc_per_accum')
-                            _, _, _, _, sum, count, _, _ = self.arc_per_accum['barometer'].getStatsTuple()
-                            if count > 0:
-                                avg_barometer = sum / count
-                                self.save_barometer_reading(pkt_time, avg_barometer)
-                                log.debug('saved barometer reading of %f for trend' % avg_barometer)
-
-                    if 'windSpeed' in pkt and 'windDir' in pkt:
-                        self.save_wind_rose_data(pkt_time, to_float(pkt['windSpeed']), pkt['windDir'])
-                    else:
-                        log.info('process_queue: windSpeed and/or windDir not in archive packet, nothing to save for wind rose.')
+                    # Archive records come through just to save off pressure as we need
+                    # a 3 hour trend; and WindRose data for a 24 hour trend.  This
+                    # is done with archive records rather than loop records.
+                    self.save_barometer_reading(pkt_time, pkt)
+                    self.save_wind_rose_data(pkt_time, pkt)
                     continue
 
-                log.debug('Dequeued loop event(%s): %s' % (event, timestamp_to_string(pkt_time)))
+                # This is a loop packet.
                 assert event.event_type == weewx.NEW_LOOP_PACKET
+                log.debug('Dequeued loop event(%s): %s' % (event, timestamp_to_string(pkt_time)))
 
                   # Process new packet.
                 log.debug(pkt)
@@ -343,77 +330,105 @@ class LoopProcessor:
                     self.arc_per_accum.addRecord(pkt)
 
                 # Keep 10 minutes of wind gust readings.
-                # Barometer rate is dealt with via archive records.
                 self.save_wind_gust_reading(pkt_time, to_float(pkt['windGust']))
 
-
-                pkt = copy.deepcopy(pkt)
-
-                # Iterate through all scalar stats and add mins, maxes, sums, averages,
-                # and weighted averages to the record.
-                for obstype in self.day_accum:
-                    accum = self.day_accum[obstype]
-                    if isinstance(accum, weewx.accum.ScalarStats):
-                        if accum.lasttime is not None:
-                            min, mintime, max, maxtime, sum, count, wsum, sumtime = accum.getStatsTuple()
-                            pkt['T_LO_%s' % obstype] = mintime
-                            pkt['LO_%s' % obstype] = min
-                            pkt['T_HI_%s' % obstype] = maxtime
-                            pkt['HI_%s' % obstype] = max
-                            pkt['SUM_%s' % obstype] = sum
-                            if count != 0:
-                                pkt['AVG_%s' % obstype] = sum / count
-                            if sumtime != 0:
-                                pkt['WAVG_%s' % obstype] = wsum / sumtime
-                            LoopProcessor.convert_units(self.cfg.converter, self.cfg.formatter, pkt, obstype)
+                loopdata_pkt = LoopProcessor.create_loopdata_packet(pkt,
+                    self.day_accum, self.cfg.converter, self.cfg.formatter)
 
                 # Add barometerRate
-                self.insert_barometer_rate(pkt)
-                self.convert_barometer_rate_units(pkt)
+                LoopProcessor.insert_barometer_rate(self.barometer_readings,
+                    loopdata_pkt)
+                LoopProcessor.convert_units(self.cfg.converter,
+                    self.cfg.formatter, loopdata_pkt, "barometerRate",
+                    do_hi_lo_etc=False)
 
                 # Add 10mMaxGust
-                self.insert_10m_max_windgust(pkt)
-                self.convert_10m_max_windgust(pkt)
+                LoopProcessor.insert_10m_max_windgust(self.wind_gust_readings,
+                    loopdata_pkt)
+                LoopProcessor.convert_10m_max_windgust(loopdata_pkt,
+                    self.cfg.converter, self.cfg.formatter)
 
                 # Add windRose
-                self.insert_wind_rose(pkt)
-                self.convert_wind_rose(pkt)
+                LoopProcessor.insert_wind_rose(self.wind_rose_readings,
+                    self.cfg.wind_rose_points, loopdata_pkt)
+                LoopProcessor.convert_wind_rose(loopdata_pkt,
+                    self.cfg.converter, self.cfg.formatter)
 
-                self.compose_and_write_packet(pkt)
+                selective_pkt: Dict[str, Any] = LoopProcessor.compose_selective_packet(
+                    loopdata_pkt, self.cfg.fields_to_include, self.cfg.fields_to_rename)
+                LoopProcessor.write_packet_to_file(selective_pkt,
+                    self.cfg.tmpname, self.cfg.loop_data_dir, self.cfg.filename)
+                if self.cfg.enable:
+                    LoopProcessor.rsync_data(selective_pkt['dateTime'],
+                        self.cfg.skip_if_older_than, self.cfg.loop_data_dir,
+                        self.cfg.filename, self.cfg.remote_dir,
+                        self.cfg.remote_server, self.cfg.remote_port,
+                        self.cfg.timeout, self.cfg.remote_user,
+                        self.cfg.ssh_options, self.cfg.compress,
+                        self.cfg.log_success)
+
         except Exception as e:
             weeutil.logger.log_traceback(log.critical, "    ****  ")
             raise
         finally:
             os.unlink(self.cfg.tmpname)
 
-    def compose_and_write_packet(self, pkt: Dict[str, Any]) -> None:
-        if len(self.cfg.fields_to_include) == 0 and len(self.cfg.fields_to_rename) == 0:
-            self.write_packet(pkt)
-        else:
-            selective_pkt: Dict[str, Any] = {}
-            if len(self.cfg.fields_to_include) != 0:
-                for obstype in self.cfg.fields_to_include:
-                    if obstype in pkt:
-                        selective_pkt[obstype] = pkt[obstype]
-            if len(self.cfg.fields_to_rename) != 0:
-                for obstype in self.cfg.fields_to_rename:
-                    if obstype in pkt:
-                        selective_pkt[self.cfg.fields_to_rename[obstype]] = pkt[obstype]
-            self.write_packet(selective_pkt)
+    @staticmethod
+    def create_loopdata_packet(pkt: Dict[str, Any], day_accum: weewx.accum.Accum,
+            converter: weewx.units.Converter, formatter: weewx.units.Formatter) -> Dict[str, Any]:
 
-    def write_packet(self, pkt: Dict[str, Any]) -> None:
-        log.debug('Writing packet to %s' % self.cfg.tmpname)
-        with open(self.cfg.tmpname, "w") as f:
-            f.write(json.dumps(pkt))
+        # Iterate through all scalar stats and add mins, maxes, sums, averages,
+        # and weighted averages to the record.
+
+        loopdata_pkt = copy.deepcopy(pkt)
+        for obstype in day_accum:
+            accum = day_accum[obstype]
+            if isinstance(accum, weewx.accum.ScalarStats) and accum.lasttime is not None:
+                min, mintime, max, maxtime, sum, count, wsum, sumtime = accum.getStatsTuple()
+                loopdata_pkt['T_LO_%s' % obstype] = mintime
+                loopdata_pkt['LO_%s' % obstype] = min
+                loopdata_pkt['T_HI_%s' % obstype] = maxtime
+                loopdata_pkt['HI_%s' % obstype] = max
+                loopdata_pkt['SUM_%s' % obstype] = sum
+                if count != 0:
+                    loopdata_pkt['AVG_%s' % obstype] = sum / count
+                if sumtime != 0:
+                    loopdata_pkt['WAVG_%s' % obstype] = wsum / sumtime
+                LoopProcessor.convert_units(converter, formatter, loopdata_pkt, obstype)
+        return loopdata_pkt
+
+    @staticmethod
+    def compose_selective_packet(loopdata_pkt: Dict[str, Any],
+            fields_to_include: List[str],
+            fields_to_rename: Dict[str, str]) -> Dict[str, Any]:
+
+        selective_pkt: Dict[str, Any] = {}
+
+        if len(fields_to_include) == 0 and len(fields_to_rename) == 0:
+            selective_pkt = copy.copy(loopdata_pkt)
+        else:
+            if len(fields_to_include) != 0:
+                for obstype in fields_to_include:
+                    if obstype in loopdata_pkt:
+                        selective_pkt[obstype] = loopdata_pkt[obstype]
+            if len(fields_to_rename) != 0:
+                for obstype in fields_to_rename:
+                    if obstype in loopdata_pkt:
+                        selective_pkt[fields_to_rename[obstype]] = loopdata_pkt[obstype]
+        return selective_pkt
+
+    @staticmethod
+    def write_packet_to_file(selective_pkt: Dict[str, Any], tmpname: str,
+            loop_data_dir: str, filename: str) -> None:
+        log.debug('Writing packet to %s' % tmpname)
+        with open(tmpname, "w") as f:
+            f.write(json.dumps(selective_pkt))
             f.flush()
             os.fsync(f.fileno())
-        log.debug('Wrote to %s' % self.cfg.tmpname)
+        log.debug('Wrote to %s' % tmpname)
         # move it to filename
-        shutil.move(self.cfg.tmpname, os.path.join(self.cfg.loop_data_dir, self.cfg.filename))
-        log.debug('Moved to %s' % os.path.join(self.cfg.loop_data_dir, self.cfg.filename))
-        if self.cfg.enable:
-            # rsync the data
-            self.rsync_data(pkt['dateTime'])
+        shutil.move(tmpname, os.path.join(loop_data_dir, filename))
+        log.debug('Moved to %s' % os.path.join(loop_data_dir, filename))
 
     @staticmethod
     def create_arc_per_accum(ts: int, arcint: int, unit_system: int) -> weewx.accum.Accum:
@@ -459,11 +474,17 @@ class LoopProcessor:
 
         return bucket if bucket < wind_rose_points else 0
 
-    def save_wind_rose_data(self, pkt_time: int, wind_speed: float, wind_dir: float):
+    def save_wind_rose_data(self, pkt_time: int, pkt: Dict[str, Any]) -> None:
         # Example: 3.1 mph, 202 degrees
         # archive_interval:  300 seconds
         # intervals in an hour: 3600 / 300 (12)
         # distance = 3.1 / 12 = 0.258333 miles
+        if 'windSpeed' in pkt and 'windDir' in pkt and pkt['windSpeed'] is not None and pkt['windDir'] is not None:
+            wind_speed = to_float(pkt['windSpeed'])
+            wind_dir   = to_float(pkt['windDir'])
+        else:
+            log.info('process_queue: windSpeed and/or windDir not in archive packet, nothing to save for wind rose.')
+            return
 
         if wind_speed is not None and wind_speed != 0:
             log.debug('pkt_time: %d, bucket: %d, distance: %f' % (pkt_time,
@@ -474,34 +495,41 @@ class LoopProcessor:
                 bucket    = LoopProcessor.get_wind_rose_bucket(self.cfg.wind_rose_points, wind_dir),
                 distance  = wind_speed / (3600.0 / self.cfg.archive_interval)))
 
-            # Delete old WindRose data
-            cutoff_age: float = time.time() - self.cfg.wind_rose_secs
-            del_count = 0
-            for r in self.wind_rose_readings:
-                if r.timestamp < cutoff_age:
-                    del_count += 1
-            for _ in range(del_count):
-                del self.wind_rose_readings[0]
+        self.delete_old_windrose_data()
 
-    def rsync_data(self, pktTime: int):
+    def delete_old_windrose_data(self) -> None:
+        # Delete old WindRose data
+        cutoff_age: float = time.time() - self.cfg.wind_rose_secs
+        del_count = 0
+        for r in self.wind_rose_readings:
+            if r.timestamp < cutoff_age:
+                del_count += 1
+        for _ in range(del_count):
+            del self.wind_rose_readings[0]
+
+    @staticmethod
+    def rsync_data(pktTime: int, skip_if_older_than: int, loop_data_dir: str,
+            filename: str, remote_dir: str, remote_server: str,
+            remote_port: int, timeout: int, remote_user: str, ssh_options: str,
+            compress: bool, log_success: bool) -> None:
         log.debug('rsync_data(%d) start' % pktTime)
         # Don't upload if more than skip_if_older_than seconds behind.
-        if self.cfg.skip_if_older_than != 0:
+        if skip_if_older_than != 0:
             age = time.time() - pktTime
-            if age > self.cfg.skip_if_older_than:
+            if age > skip_if_older_than:
                 log.info('skipping packet (%s) with age: %f' % (timestamp_to_string(pktTime), age))
                 return
         rsync_upload = weeutil.rsyncupload.RsyncUpload(
-            local_root= os.path.join(self.cfg.loop_data_dir, self.cfg.filename),
-            remote_root = os.path.join(self.cfg.remote_dir, self.cfg.filename),
-            server=self.cfg.remote_server,
-            user=self.cfg.remote_user,
-            port=str(self.cfg.remote_port) if self.cfg.remote_port is not None else None,
-            ssh_options=self.cfg.ssh_options,
-            compress=self.cfg.compress,
+            local_root= os.path.join(loop_data_dir, filename),
+            remote_root = os.path.join(remote_dir, filename),
+            server=remote_server,
+            user=remote_user,
+            port=str(remote_port) if remote_port is not None else None,
+            ssh_options=ssh_options,
+            compress=compress,
             delete=False,
-            log_success=self.cfg.log_success,
-            timeout=self.cfg.timeout)
+            log_success=log_success,
+            timeout=timeout)
         try:
             rsync_upload.run()
         except IOError as e:
@@ -559,39 +587,41 @@ class LoopProcessor:
             pkt['FMT_WAVG_%s' % obstype] = formatter.toString(
                 (wavg, target_unit_type, target_unit_group))
 
-    def convert_barometer_rate_units(self, pkt: Dict[str, Any]) -> None:
-        LoopProcessor.convert_units(self.cfg.converter, self.cfg.formatter,
-            pkt, "barometerRate", do_hi_lo_etc=False)
-
-    def convert_10m_max_windgust(self, pkt: Dict[str, Any]):
+    @staticmethod
+    def convert_10m_max_windgust(loopdata_pkt: Dict[str, Any],
+            converter: weewx.units.Converter,
+            formatter: weewx.units.Formatter) -> None:
         obstype = '10mMaxGust'
         # get windGust value tuple as it will give us the unit type and unit group
-        v_t = weewx.units.as_value_tuple(pkt, 'windGust')
-        wind_gust_v_t = weewx.units.ValueTuple(pkt[obstype], v_t.unit, v_t.group)
-        value, unit_type, unit_group = self.cfg.converter.convert(wind_gust_v_t)
-        pkt[obstype] = self.cfg.formatter.get_format_string(unit_type) % value
-        pkt['UNITS_%s' % obstype] = unit_type
-        pkt['FMT_%s' % obstype] = self.cfg.formatter.toString((value, unit_type, unit_group))
-        pkt['LABEL_%s' % obstype] = self.cfg.formatter.get_label_string(unit_type)
+        v_t = weewx.units.as_value_tuple(loopdata_pkt, 'windGust')
+        wind_gust_v_t = weewx.units.ValueTuple(loopdata_pkt[obstype], v_t.unit, v_t.group)
+        value, unit_type, unit_group = converter.convert(wind_gust_v_t)
+        loopdata_pkt[obstype] = formatter.get_format_string(unit_type) % value
+        loopdata_pkt['UNITS_%s' % obstype] = unit_type
+        loopdata_pkt['FMT_%s' % obstype] = formatter.toString((value, unit_type, unit_group))
+        loopdata_pkt['LABEL_%s' % obstype] = formatter.get_label_string(unit_type)
 
-    def convert_wind_rose(self, pkt: Dict[str, Any]):
+    @staticmethod
+    def convert_wind_rose(loopdata_pkt: Dict[str, Any],
+            converter: weewx.units.Converter,
+            formatter: weewx.units.Formatter) -> None:
         obstype = 'windRose'
         # The windrun observation type will yield the units we need.
-        std_unit_system = pkt['usUnits']
+        std_unit_system = loopdata_pkt['usUnits']
         (unit_type, unit_group) = weewx.units.StdUnitConverters[
             std_unit_system].getTargetUnit('windrun')
-        distances: List[float] = pkt[obstype]
+        distances: List[float] = loopdata_pkt[obstype]
         converted_distances: List[float] = []
         for i in range(len(distances)):
             distance_v_t = weewx.units.ValueTuple(
                 distances[i], unit_type, unit_group)
-            value, unit_type, unit_group = self.cfg.converter.convert(distance_v_t)
-            fmt_value = self.cfg.formatter.get_format_string(unit_type) % value
+            value, unit_type, unit_group = converter.convert(distance_v_t)
+            fmt_value = formatter.get_format_string(unit_type) % value
             converted_distances.append(fmt_value)
         log.debug('distances: %s' % distances)
-        pkt[obstype] = converted_distances
-        pkt['UNITS_%s' % obstype] = unit_type
-        pkt['LABEL_%s' % obstype] = self.cfg.formatter.get_label_string(unit_type)
+        loopdata_pkt[obstype] = converted_distances
+        loopdata_pkt['UNITS_%s' % obstype] = unit_type
+        loopdata_pkt['LABEL_%s' % obstype] = formatter.get_label_string(unit_type)
 
     @staticmethod
     def convert_units(converter: weewx.units.Converter, formatter: weewx.units.Formatter,
@@ -621,14 +651,16 @@ class LoopProcessor:
             LoopProcessor.convert_hi_lo_etc_units(converter, formatter, pkt, obstype,
                 original_unit_type, original_unit_group, unit_type, unit_group)
 
-    def insert_barometer_rate_desc(self, pkt: Dict[str, Any]) -> None:
+    @staticmethod
+    def insert_barometer_rate_desc(loopdata_pkt: Dict[str, Any]) -> None:
         # Shipping forecast descriptions for the 3 hour change in baromter readings.
         # Falling (or rising) slowly: 0.1 - 1.5mb in 3 hours
         # Falling (or rising): 1.6 - 3.5mb in 3 hours
         # Falling (or rising) quickly: 3.6 - 6.0mb in 3 hours
         # Falling (or rising) very rapidly: More than 6.0mb in 3 hours
 
-        v_t = weewx.units.as_value_tuple(pkt, 'barometerRate')
+        # Get delta in mbars as that is the standard we have for descriptions.
+        v_t = weewx.units.as_value_tuple(loopdata_pkt, 'barometerRate')
         converter = weewx.units.Converter(weewx.units.MetricUnits)
         delta_mbar, _, _ = converter.convert(v_t)
         log.debug('Converted to mbar/h: %f' % delta_mbar)
@@ -656,27 +688,46 @@ class LoopProcessor:
         else:
             desc = 'Falling Very Rapidly'
 
-        pkt['DESC_barometerRate'] = desc
+        loopdata_pkt['DESC_barometerRate'] = desc
 
-    def insert_barometer_rate(self, pkt: Dict[str, Any]) -> None:
-        if len(self.barometer_readings) != 0:
+    @staticmethod
+    def insert_barometer_rate(barometer_readings: List[Reading],
+            loopdata_pkt: Dict[str, Any]) -> None:
+        if len(barometer_readings) != 0:
             # The saved readings are used to get the starting point,
-            # but the current pkt is used for the last barometer reading.
-            delta3H = to_float(pkt['barometer']) - self.barometer_readings[0].value
+            # but the current loopdata_pkt is used for the last barometer reading.
+            delta3H = to_float(loopdata_pkt['barometer']) - barometer_readings[0].value
             # Report rate per hour
             delta = delta3H / 3.0
-            pkt['barometerRate'] = delta
+            loopdata_pkt['barometerRate'] = delta
             log.debug('insert_barometer_rate: %s' % delta)
-            self.insert_barometer_rate_desc(pkt)
+            LoopProcessor.insert_barometer_rate_desc(loopdata_pkt)
 
-    def save_barometer_reading(self, pkt_time: int, value: float) -> None:
+    def save_barometer_reading(self, pkt_time: int, pkt: Dict[str, Any]) -> None:
+        value = None
+        if 'barometer' in pkt and pkt['barometer'] is not None:
+            avg_baromter = to_float(pkt['barometer'])
+        else:
+            # No barometer in archive record, use the archival period accumulator instead
+            if self.arc_per_accum is not None:
+                log.debug('barometer not in archive pkt, using arc_per_accum')
+                _, _, _, _, sum, count, _, _ = self.arc_per_accum['barometer'].getStatsTuple()
+                if count > 0:
+                    value = sum / count
+
         if value is not None:
-            reading = Reading(timestamp = pkt_time, value = value)
+            reading: Reading = Reading(
+                timestamp = pkt_time,
+                value = value)
             self.barometer_readings.append(reading)
             log.debug('save_barometer_reading: Reading(%s): %f' % (
                 timestamp_to_string(reading.timestamp), reading.value))
         else:
-            log.debug('save_barometer_reading: Reading(%s): None' % timestamp_to_string(reading.timestamp))
+            log.debug('save_barometer_reading: Reading(%s): None' % timestamp_to_string(pkt_time))
+
+        self.trim_old_barometer_readings()
+
+    def trim_old_barometer_readings(self) -> None:
         # Trim readings older than barometer_rate_secs
         earliest: float = time.time() - self.cfg.barometer_rate_secs
         del_count: int = 0
@@ -688,23 +739,27 @@ class LoopProcessor:
                 self.barometer_readings[0].timestamp))
             del self.barometer_readings[0]
 
-    def insert_10m_max_windgust(self, pkt: Dict[str, Any]) -> None:
+    @staticmethod
+    def insert_10m_max_windgust(wind_gust_readings: List[Reading],
+            loopdata_pkt: Dict[str, Any]) -> None:
         max_gust     : float = 0.0
         max_gust_time: int = 0
-        for reading in self.wind_gust_readings:
+        for reading in wind_gust_readings:
             if reading.value > max_gust:
                 max_gust = reading.value
                 max_gust_time = reading.timestamp
-        pkt['10mMaxGust'] = max_gust
-        pkt['T_10mMaxGust'] = max_gust_time
+        loopdata_pkt['10mMaxGust'] = max_gust
+        loopdata_pkt['T_10mMaxGust'] = max_gust_time
         log.debug('insert_10m_max_windgust: ts: %d, gust: %f' % (
-                  pkt['T_10mMaxGust'], pkt['10mMaxGust']))
+                  loopdata_pkt['T_10mMaxGust'], loopdata_pkt['10mMaxGust']))
 
-    def insert_wind_rose(self, pkt: Dict[str, Any]) -> None:
-        buckets: List[float] = [0.0]*self.cfg.wind_rose_points
-        for r in self.wind_rose_readings:
+    @staticmethod
+    def insert_wind_rose(wind_rose_readings: List[WindroseReading],
+            wind_rose_points: int, loopdata_pkt: Dict[str, Any]) -> None:
+        buckets: List[float] = [0.0]*wind_rose_points
+        for r in wind_rose_readings:
             buckets[r.bucket] += r.distance
-        pkt['windRose'] = buckets
+        loopdata_pkt['windRose'] = buckets
 
     def save_wind_gust_reading(self, pkt_time: int, value: float) -> None:
         if value is not None:

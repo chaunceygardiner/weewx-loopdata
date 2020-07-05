@@ -1,6 +1,10 @@
 loopdata change history
 -----------------------
 
+1.3.7 07/04/2020
+
+Refactor loopdata.py to facilitate testing.
+
 1.3.6 07/04/2020
 
 Add tests for conversions and formatting:

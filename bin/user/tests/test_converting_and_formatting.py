@@ -94,7 +94,7 @@ class ConversionAndFormattingTests(unittest.TestCase):
             'WAVG_wind'    : 0.08,
         }
         user.loopdata.LoopProcessor.convert_units(converter, formatter, pkt, 'rain')
-        self.assertEquals(pkt['rain'], '0.04')
+        self.assertEqual(pkt['rain'], '0.04')
         self.assertEqual(pkt['FMT_SUM_rain'], '0.52 in')
         self.assertEqual(pkt['LABEL_rain'], ' in')
 
