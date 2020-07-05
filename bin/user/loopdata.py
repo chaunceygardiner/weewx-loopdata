@@ -11,6 +11,7 @@ in the packet.
 """
 
 import copy
+import configobj
 import datetime
 import json
 import logging
@@ -44,7 +45,7 @@ from weewx.units import ValueTuple
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '1.3.8'
+LOOP_DATA_VERSION = '1.3.9'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -137,8 +138,12 @@ class LoopData(StdService):
 
         # Get a target report dictionary we can use for converting units and formatting.
         target_report = formatting_spec_dict.get('target_report', 'SeasonsReport')
-        target_report_dict = std_report_dict.get(target_report)
-
+        try:
+            target_report_dict = LoopData.get_target_report_dict(
+                config_dict, target_report)
+        except Exception as e:
+            log.error('Could not find target_report: %s.  LoopData is exiting. Exception: %s' % (target_report, e))
+            return
         fields_to_include = include_spec_dict.get('fields', [])
 
 
@@ -148,10 +153,7 @@ class LoopData(StdService):
         try:
             group_unit_dict = target_report_dict['Units']['Groups']
         except KeyError:
-            try:
-                group_unit_dict = std_report_dict['Defaults']['Units']['Groups']
-            except KeyError:
-                group_unit_dict = USUnits
+            group_unit_dict = weewx.units.USUnits
         converter = weewx.units.Converter(group_unit_dict)
 
         self.cfg: Configuration = Configuration(
@@ -190,6 +192,50 @@ class LoopData(StdService):
         self.bind(weewx.PRE_LOOP, self.pre_loop)
         self.bind(weewx.END_ARCHIVE_PERIOD, self.end_archive_period)
         self.bind(weewx.NEW_LOOP_PACKET, self.new_loop)
+
+    @staticmethod
+    def get_target_report_dict(config_dict, report) -> Dict[str, Any]:
+        # This code is from WeeWX's ReportEngine. Copyright Tom Keffer
+        # TODO: See if Tome will take a PR to make this available as a staticmethod.
+        # In the meaintime, it's probably safe to copy as the cofiguration files are public API.
+        skin_dict = weeutil.config.deep_copy(weewx.defaults.defaults)
+        skin_dict['REPORT_NAME'] = report
+        skin_config_path = os.path.join(
+            config_dict['WEEWX_ROOT'],
+            config_dict['StdReport']['SKIN_ROOT'],
+            config_dict['StdReport'][report].get('skin', ''),
+            'skin.conf')
+        try:
+            merge_dict = configobj.ConfigObj(skin_config_path, file_error=True, encoding='utf-8')
+            log.debug("Found configuration file %s for report '%s'", skin_config_path, report)
+            # Merge the skin config file in:
+            weeutil.config.merge_config(skin_dict, merge_dict)
+        except IOError as e:
+            log.debug("Cannot read skin configuration file %s for report '%s': %s",
+                      skin_config_path, report, e)
+        except SyntaxError as e:
+            log.error("Failed to read skin configuration file %s for report '%s': %s",
+                      skin_config_path, report, e)
+            raise
+
+        # Now add on the [StdReport][[Defaults]] section, if present:
+        if 'Defaults' in config_dict['StdReport']:
+            # Because we will be modifying the results, make a deep copy of the [[Defaults]]
+            # section.
+            merge_dict = weeutil.config.deep_copy(config_dict['StdReport']['Defaults'])
+            weeutil.config.merge_config(skin_dict, merge_dict)
+
+        # Inject any scalar overrides. This is for backwards compatibility. These options should now go
+        # under [StdReport][[Defaults]].
+        for scalar in config_dict['StdReport'].scalars:
+            skin_dict[scalar] = config_dict['StdReport'][scalar]
+
+        # Finally, inject any overrides for this specific report. Because this is the last merge, it will have the
+        # final say.
+        weeutil.config.merge_config(skin_dict, config_dict['StdReport'][report])
+
+        log.info('returing %s' % skin_dict)
+        return skin_dict
 
     def pre_loop(self, event):
         if self.loop_proccessor_started:
@@ -331,7 +377,16 @@ class LoopProcessor:
                     self.arc_per_accum.addRecord(pkt)
 
                 # Keep 10 minutes of wind gust readings.
-                self.save_wind_gust_reading(pkt_time, to_float(pkt['windGust']))
+                # If windGust unavailable, grab the high from the archive period accum
+                try:
+                    self.save_wind_gust_reading(pkt_time, to_float(pkt['windGust']))
+                except KeyError:
+                    try:
+                        self.arc_per_accum['windSpeed'].getStatsTuple()
+                        _, _, max, maxtime, _, _, _, _ = self.arc_per_accum['windSpeed'].getStatsTuple()
+                        self.save_wind_gust_reading(maxtime, max)
+                    except KeyError:
+                        log.debug("No accumulator stats for windSpeed.  Can't get max for windGust.")
 
                 loopdata_pkt = LoopProcessor.create_loopdata_packet(pkt,
                     self.day_accum, self.cfg.converter, self.cfg.formatter)
@@ -484,7 +539,7 @@ class LoopProcessor:
             wind_speed = to_float(pkt['windSpeed'])
             wind_dir   = to_float(pkt['windDir'])
         else:
-            log.info('process_queue: windSpeed and/or windDir not in archive packet, nothing to save for wind rose.')
+            log.debug('save_wind_rose_data: windSpeed and/or windDir not in archive packet, nothing to save for wind rose.')
             return
 
         if wind_speed is not None and wind_speed != 0 and wind_dir is not None:

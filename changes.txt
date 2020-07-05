@@ -1,6 +1,16 @@
 loopdata change history
 -----------------------
 
+1.3.9 07/05/2020
+
+1. Properly construct dictionary of target_report so formatting
+   and conversion actually does what it should.
+2. Fix a problem reported by a user running pyflakes.  USUnit
+   wasn't qualified.
+3. Fix an issue reported. windGust was assumed to be in the
+   packet.  Now, if not present, max windSpeed in the archive period
+   accumulator stats is used to compute 10m gust.
+
 1.3.8 07/05/2020
 Require at least Python 3.7.
 Handle None for windSpeed and and windDir in the database (as some drivers write None rather than omitting).
