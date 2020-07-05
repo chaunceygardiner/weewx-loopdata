@@ -1,6 +1,15 @@
 loopdata change history
 -----------------------
 
+1.3.10 07/05/2020
+
+1. Redo how 10m max gust is handled when windGust not in packet.
+   Simply substitue windSpeed for windGust.
+2. Test overriding km_per_hour label in weewx.conf Defaults>Units.
+3. Add test of CC3000 packets.
+4. Add test of IP100 packets.
+5. Add test of Simulator packets.
+
 1.3.9 07/05/2020
 
 1. Properly construct dictionary of target_report so formatting

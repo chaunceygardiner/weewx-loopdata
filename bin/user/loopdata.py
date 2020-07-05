@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 import weewx
+import weewx.defaults
 import weewx.manager
 import weewx.units
 import weeutil.logger
@@ -45,7 +46,7 @@ from weewx.units import ValueTuple
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '1.3.9'
+LOOP_DATA_VERSION = '1.3.10'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -234,7 +235,6 @@ class LoopData(StdService):
         # final say.
         weeutil.config.merge_config(skin_dict, config_dict['StdReport'][report])
 
-        log.info('returing %s' % skin_dict)
         return skin_dict
 
     def pre_loop(self, event):
@@ -377,16 +377,14 @@ class LoopProcessor:
                     self.arc_per_accum.addRecord(pkt)
 
                 # Keep 10 minutes of wind gust readings.
-                # If windGust unavailable, grab the high from the archive period accum
+                # If windGust unavailable, use windSpeed.
                 try:
                     self.save_wind_gust_reading(pkt_time, to_float(pkt['windGust']))
                 except KeyError:
                     try:
-                        self.arc_per_accum['windSpeed'].getStatsTuple()
-                        _, _, max, maxtime, _, _, _, _ = self.arc_per_accum['windSpeed'].getStatsTuple()
-                        self.save_wind_gust_reading(maxtime, max)
+                        self.save_wind_gust_reading(pkt_time, to_float(pkt['windSpeed']))
                     except KeyError:
-                        log.debug("No accumulator stats for windSpeed.  Can't get max for windGust.")
+                        log.debug("No windGust nor windSpeed.  Can't save a windGust reading.")
 
                 loopdata_pkt = LoopProcessor.create_loopdata_packet(pkt,
                     self.day_accum, self.cfg.converter, self.cfg.formatter)

@@ -13,41 +13,168 @@ import weewx
 import weewx.accum
 import weewx.units
 
+from typing import Any, Dict, List, Optional
+
 import weeutil.config
-#import weeutil.logger
+import weeutil.logger
 
 import user.loopdata
+import cc3000_packets
+import ip100_packets
+import simulator_packets
 
 weewx.debug = 1
 
 log = logging.getLogger(__name__)
 
 # Set up logging using the defaults.
-#weeutil.logger.setup('test_config', {})
+weeutil.logger.setup('test_config', {})
 
 class ProcessPacketTests(unittest.TestCase):
 
-    def test_packet_processing(self):
+    def test_ip100_packet_processing(self):
 
         config_dict = ProcessPacketTests._get_config_dict('us')
 
-        day_accum = ProcessPacketTests._get_day_accum(config_dict, 1593883326)
+        first_pkt_time, pkts = ip100_packets.IP100Packets._get_packets()
+        day_accum = ProcessPacketTests._get_day_accum(config_dict, first_pkt_time)
 
         converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
-        pkt = {'dateTime': 1593883326, 'usUnits': 1, 'outTemp': 72.0, 'inTemp': 74.0, 'outHumidity': 65.0, 'pressure': 30.03, 'windSpeed': 3.5, 'windDir': 45.0, 'windGust': 4.2, 'windGustDir': 22.0, 'day_rain_total': 0.0, 'rain': 0.0, 'pm1_0': 11.621667, 'pm2_5': 21.748333000000002, 'pm10_0': 25.384999999999998, 'pm2_5_aqi': 74.0, 'pm2_5_aqic': 16774144, 'altimeter': 30.05874612262195, 'appTemp': 73.14727414149363, 'barometer': 30.055425865734495, 'beaufort': 1, 'cloudbase': 2847.2963742754514, 'dewpoint': 59.57749595318801, 'heatindex': 72.0, 'humidex': 79.50646352704942, 'maxSolarRad': 766.8834257673739, 'rainRate': 0.0, 'windchill': 72.0}
+        for pkt in pkts:
+            day_accum.addRecord(pkt)
 
-        day_accum.addRecord(pkt)
         loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(pkt,
             day_accum, converter, formatter)
         self.maxDiff = None
 
         self.assertEqual(loopdata_pkt['FMT_outTemp'], '72.0°F')
         self.assertEqual(loopdata_pkt['FMT_barometer'], '30.055 inHg')
-        self.assertEqual(loopdata_pkt['FMT_windSpeed'], '4 mph')
+        self.assertEqual(loopdata_pkt['FMT_windSpeed'], '6 mph')
         self.assertEqual(loopdata_pkt['FMT_windDir'], '45°')
+
+        self.assertEqual(loopdata_pkt['FMT_AVG_outTemp'], '72.0°F')
+        self.assertEqual(loopdata_pkt['FMT_AVG_barometer'], '30.055 inHg')
+        self.assertEqual(loopdata_pkt['FMT_AVG_windSpeed'], '3 mph')
+        self.assertEqual(loopdata_pkt['FMT_AVG_windDir'], '87°')
+
+        self.assertEqual(loopdata_pkt['FMT_WAVG_outTemp'], '72.0°F')
+        self.assertEqual(loopdata_pkt['FMT_WAVG_barometer'], '30.055 inHg')
+        self.assertEqual(loopdata_pkt['FMT_WAVG_windSpeed'], '3 mph')
+        self.assertEqual(loopdata_pkt['FMT_WAVG_windDir'], '87°')
+
+        self.assertEqual(loopdata_pkt['FMT_HI_outTemp'], '72.0°F')
+        self.assertEqual(loopdata_pkt['FMT_HI_barometer'], '30.055 inHg')
+        self.assertEqual(loopdata_pkt['FMT_HI_windSpeed'], '6 mph')
+        self.assertEqual(loopdata_pkt['FMT_HI_windDir'], '360°')
+
+        self.assertEqual(loopdata_pkt['FMT_LO_outTemp'], '72.0°F')
+        self.assertEqual(loopdata_pkt['FMT_LO_barometer'], '30.055 inHg')
+        self.assertEqual(loopdata_pkt['FMT_LO_windSpeed'], '1 mph')
+        self.assertEqual(loopdata_pkt['FMT_LO_windDir'], '22°')
+
+        self.assertEqual(loopdata_pkt['LABEL_outTemp'], '°F')
+        self.assertEqual(loopdata_pkt['LABEL_barometer'], ' inHg')
+        self.assertEqual(loopdata_pkt['LABEL_windSpeed'], ' mph')
+        self.assertEqual(loopdata_pkt['LABEL_windDir'], '°')
+
+    def test_cc3000_packet_processing(self):
+
+        config_dict = ProcessPacketTests._get_config_dict('us')
+
+        first_pkt_time, pkts = cc3000_packets.CC3000Packets._get_packets()
+        day_accum = ProcessPacketTests._get_day_accum(config_dict, first_pkt_time)
+
+        converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
+        self.assertEqual(type(converter), weewx.units.Converter)
+        self.assertEqual(type(formatter), weewx.units.Formatter)
+
+        for pkt in pkts:
+            day_accum.addRecord(pkt)
+
+        loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(pkt,
+            day_accum, converter, formatter)
+        self.maxDiff = None
+
+        self.assertEqual(loopdata_pkt['FMT_outTemp'], '75.4°F')
+        self.assertEqual(loopdata_pkt['FMT_barometer'], '30.005 inHg')
+        self.assertEqual(loopdata_pkt['FMT_windSpeed'], '2 mph')
+        self.assertEqual(loopdata_pkt['FMT_windDir'], '45°')
+
+        self.assertEqual(loopdata_pkt['FMT_AVG_outTemp'], '75.4°F')
+        self.assertEqual(loopdata_pkt['FMT_AVG_barometer'], '30.005 inHg')
+        self.assertEqual(loopdata_pkt['FMT_AVG_windSpeed'], '4 mph')
+        self.assertEqual(loopdata_pkt['FMT_AVG_windDir'], '166°')
+
+        self.assertEqual(loopdata_pkt['FMT_WAVG_outTemp'], '75.4°F')
+        self.assertEqual(loopdata_pkt['FMT_WAVG_barometer'], '30.005 inHg')
+        self.assertEqual(loopdata_pkt['FMT_WAVG_windSpeed'], '4 mph')
+        self.assertEqual(loopdata_pkt['FMT_WAVG_windDir'], '166°')
+
+        self.assertEqual(loopdata_pkt['FMT_HI_outTemp'], '75.4°F')
+        self.assertEqual(loopdata_pkt['FMT_HI_barometer'], '30.005 inHg')
+        self.assertEqual(loopdata_pkt['FMT_HI_windSpeed'], '7 mph')
+        self.assertEqual(loopdata_pkt['FMT_HI_windDir'], '360°')
+
+        self.assertEqual(loopdata_pkt['FMT_LO_outTemp'], '75.3°F')
+        self.assertEqual(loopdata_pkt['FMT_LO_barometer'], '30.005 inHg')
+        self.assertEqual(loopdata_pkt['FMT_LO_windSpeed'], '0 mph')
+        self.assertEqual(loopdata_pkt['FMT_LO_windDir'], '22°')
+
+        self.assertEqual(loopdata_pkt['LABEL_outTemp'], '°F')
+        self.assertEqual(loopdata_pkt['LABEL_barometer'], ' inHg')
+        self.assertEqual(loopdata_pkt['LABEL_windSpeed'], ' mph')
+        self.assertEqual(loopdata_pkt['LABEL_windDir'], '°')
+
+    def test_simulator_packet_processing(self):
+
+        config_dict = ProcessPacketTests._get_config_dict('metric')
+
+        first_pkt_time, pkts = simulator_packets.SimulatorPackets._get_packets()
+        day_accum = ProcessPacketTests._get_day_accum(config_dict, first_pkt_time)
+
+        converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
+        self.assertEqual(type(converter), weewx.units.Converter)
+        self.assertEqual(type(formatter), weewx.units.Formatter)
+
+        for pkt in pkts:
+            day_accum.addRecord(pkt)
+
+        loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(pkt,
+            day_accum, converter, formatter)
+        self.maxDiff = None
+
+        self.assertEqual(loopdata_pkt['FMT_outTemp'], '0.0°C')
+        self.assertEqual(loopdata_pkt['FMT_barometer'], '1053.1 mbar')
+        self.assertEqual(loopdata_pkt['FMT_windSpeed'], '0 kph')
+        self.assertEqual(loopdata_pkt['FMT_windDir'], '360°')
+
+        self.assertEqual(loopdata_pkt['FMT_AVG_outTemp'], '0.2°C')
+        self.assertEqual(loopdata_pkt['FMT_AVG_barometer'], '1053.2 mbar')
+        self.assertEqual(loopdata_pkt['FMT_AVG_windSpeed'], '0 kph')
+        self.assertEqual(loopdata_pkt['FMT_AVG_windDir'], '360°')
+
+        self.assertEqual(loopdata_pkt['FMT_WAVG_outTemp'], '0.2°C')
+        self.assertEqual(loopdata_pkt['FMT_WAVG_barometer'], '1053.2 mbar')
+        self.assertEqual(loopdata_pkt['FMT_WAVG_windSpeed'], '0 kph')
+        self.assertEqual(loopdata_pkt['FMT_WAVG_windDir'], '360°')
+
+        self.assertEqual(loopdata_pkt['FMT_HI_outTemp'], '0.4°C')
+        self.assertEqual(loopdata_pkt['FMT_HI_barometer'], '1053.2 mbar')
+        self.assertEqual(loopdata_pkt['FMT_HI_windSpeed'], '0 kph')
+        self.assertEqual(loopdata_pkt['FMT_HI_windDir'], '360°')
+
+        self.assertEqual(loopdata_pkt['FMT_LO_outTemp'], '0.0°C')
+        self.assertEqual(loopdata_pkt['FMT_LO_barometer'], '1053.1 mbar')
+        self.assertEqual(loopdata_pkt['FMT_LO_windSpeed'], '0 kph')
+        self.assertEqual(loopdata_pkt['FMT_LO_windDir'], '360°')
+
+        self.assertEqual(loopdata_pkt['LABEL_outTemp'], '°C')
+        self.assertEqual(loopdata_pkt['LABEL_barometer'], ' mbar')
+        self.assertEqual(loopdata_pkt['LABEL_windSpeed'], ' kph')
+        self.assertEqual(loopdata_pkt['LABEL_windDir'], '°')
 
     @staticmethod
     def _get_day_accum(config_dict, dateTime):
