@@ -3,7 +3,7 @@
 
 Copyright (C)2020 by John A Kline (john@johnkline.com)
 
-**This extension requires Python 3 and WeeWX 4.**
+**This extension requires Python 3.7 or later and WeeWX 4.**
 
 ## Description
 
@@ -256,10 +256,11 @@ Jun 27 10:18:37 charlemagne weewx[17982] ERROR weeutil.rsyncupload: [['rsync', '
 Jun 27 23:15:53 charlemagne weewx[10156] INFO user.loopdata: skipping packet (2020-06-27 23:15:50 PDT (1593324950)) with age: 3.348237
 ```
 
-## Why require Python 3?
+## Why require Python 3.7 or later?
 
 LoopData is a new extension.  The author believes software written after Python 2 end of life
-should not target Python 2.
+should not target Python 2.  The code includes type annotation which do not work with Python 2,
+nor earlier versions of Python 3.
 
 ## Licensing
 

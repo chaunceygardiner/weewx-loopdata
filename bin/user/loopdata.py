@@ -44,11 +44,11 @@ from weewx.units import ValueTuple
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '1.3.7'
+LOOP_DATA_VERSION = '1.3.8'
 
-if sys.version_info[0] < 3:
+if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
-        "weewx-loopdata requires Python 3, found %s" % sys.version_info[0])
+        "weewx-loopdata requires Python 3.7 or later, found %s.%s" % (sys.version_info[0], sys.version_info[1]))
 
 if weewx.__version__ < "4":
     raise weewx.UnsupportedFeature(
@@ -242,9 +242,10 @@ class LoopData(StdService):
         for cols in dbm.genSql('SELECT dateTime, windGust FROM ' \
                 'archive WHERE dateTime >= %d ORDER BY dateTime ASC' % earliest):
             reading: Reading = Reading(timestamp = cols[0], value = cols[1])
-            wind_gust_readings.append(reading)
-            log.debug('fill_in_10m_wind_gust_readings_at_startup: Reading(%s): %f' % (
-                      timestamp_to_string(reading.timestamp), reading.value))
+            if reading.value is not None:
+                wind_gust_readings.append(reading)
+                log.debug('fill_in_10m_wind_gust_readings_at_startup: Reading(%s): %f' % (
+                          timestamp_to_string(reading.timestamp), reading.value))
         return wind_gust_readings
 
     def fill_in_wind_rose_readings_at_startup(self, dbm) -> List[WindroseReading]:
@@ -255,7 +256,7 @@ class LoopData(StdService):
             dateTime  = cols[0]
             windSpeed = cols[1]
             windDir   = cols[2]
-            if windSpeed != 0:
+            if windSpeed is not None and windSpeed != 0 and windDir is not None:
                 reading = WindroseReading(
                     timestamp = dateTime,
                     bucket    = LoopProcessor.get_wind_rose_bucket(self.cfg.wind_rose_points, windDir),
@@ -486,7 +487,7 @@ class LoopProcessor:
             log.info('process_queue: windSpeed and/or windDir not in archive packet, nothing to save for wind rose.')
             return
 
-        if wind_speed is not None and wind_speed != 0:
+        if wind_speed is not None and wind_speed != 0 and wind_dir is not None:
             log.debug('pkt_time: %d, bucket: %d, distance: %f' % (pkt_time,
                 LoopProcessor.get_wind_rose_bucket(self.cfg.wind_rose_points, wind_dir), wind_speed / (
                 3600.0 / self.cfg.archive_interval)))

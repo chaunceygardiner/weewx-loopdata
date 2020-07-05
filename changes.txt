@@ -1,6 +1,12 @@
 loopdata change history
 -----------------------
 
+1.3.8 07/05/2020
+Require at least Python 3.7.
+Handle None for windSpeed and and windDir in the database (as some drivers write None rather than omitting).
+More tests.
+
+
 1.3.7 07/04/2020
 
 Refactor loopdata.py to facilitate testing.
