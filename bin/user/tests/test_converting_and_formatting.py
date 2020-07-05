@@ -335,7 +335,7 @@ class ConversionAndFormattingTests(unittest.TestCase):
         try:
             group_unit_dict = target_report_dict['Units']['Groups']
         except KeyError:
-            group_unit_dict = USUnits
+            group_unit_dict = weewx.units.USUnits
         converter = weewx.units.Converter(group_unit_dict)
 
         formatter = weewx.units.Formatter.fromSkinDict(target_report_dict)

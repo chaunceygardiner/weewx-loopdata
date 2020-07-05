@@ -6,14 +6,11 @@
 
 import configobj
 import logging
-import time
 import unittest
 
 import weewx
 import weewx.accum
 import weewx.units
-
-from typing import Any, Dict, List, Optional
 
 import weeutil.config
 import weeutil.logger
@@ -148,32 +145,32 @@ class ProcessPacketTests(unittest.TestCase):
 
         self.assertEqual(loopdata_pkt['FMT_outTemp'], '0.0°C')
         self.assertEqual(loopdata_pkt['FMT_barometer'], '1053.1 mbar')
-        self.assertEqual(loopdata_pkt['FMT_windSpeed'], '0 kph')
+        self.assertEqual(loopdata_pkt['FMT_windSpeed'], '0 km/h')
         self.assertEqual(loopdata_pkt['FMT_windDir'], '360°')
 
         self.assertEqual(loopdata_pkt['FMT_AVG_outTemp'], '0.2°C')
         self.assertEqual(loopdata_pkt['FMT_AVG_barometer'], '1053.2 mbar')
-        self.assertEqual(loopdata_pkt['FMT_AVG_windSpeed'], '0 kph')
+        self.assertEqual(loopdata_pkt['FMT_AVG_windSpeed'], '0 km/h')
         self.assertEqual(loopdata_pkt['FMT_AVG_windDir'], '360°')
 
         self.assertEqual(loopdata_pkt['FMT_WAVG_outTemp'], '0.2°C')
         self.assertEqual(loopdata_pkt['FMT_WAVG_barometer'], '1053.2 mbar')
-        self.assertEqual(loopdata_pkt['FMT_WAVG_windSpeed'], '0 kph')
+        self.assertEqual(loopdata_pkt['FMT_WAVG_windSpeed'], '0 km/h')
         self.assertEqual(loopdata_pkt['FMT_WAVG_windDir'], '360°')
 
         self.assertEqual(loopdata_pkt['FMT_HI_outTemp'], '0.4°C')
         self.assertEqual(loopdata_pkt['FMT_HI_barometer'], '1053.2 mbar')
-        self.assertEqual(loopdata_pkt['FMT_HI_windSpeed'], '0 kph')
+        self.assertEqual(loopdata_pkt['FMT_HI_windSpeed'], '0 km/h')
         self.assertEqual(loopdata_pkt['FMT_HI_windDir'], '360°')
 
         self.assertEqual(loopdata_pkt['FMT_LO_outTemp'], '0.0°C')
         self.assertEqual(loopdata_pkt['FMT_LO_barometer'], '1053.1 mbar')
-        self.assertEqual(loopdata_pkt['FMT_LO_windSpeed'], '0 kph')
+        self.assertEqual(loopdata_pkt['FMT_LO_windSpeed'], '0 km/h')
         self.assertEqual(loopdata_pkt['FMT_LO_windDir'], '360°')
 
         self.assertEqual(loopdata_pkt['LABEL_outTemp'], '°C')
         self.assertEqual(loopdata_pkt['LABEL_barometer'], ' mbar')
-        self.assertEqual(loopdata_pkt['LABEL_windSpeed'], ' kph')
+        self.assertEqual(loopdata_pkt['LABEL_windSpeed'], ' km/h')
         self.assertEqual(loopdata_pkt['LABEL_windDir'], '°')
 
     @staticmethod
@@ -191,16 +188,12 @@ class ProcessPacketTests(unittest.TestCase):
 
     @staticmethod
     def _get_converter_and_formatter(config_dict):
-        std_report_dict      = config_dict.get('StdReport', {})
-        target_report_dict = std_report_dict.get('SeasonsReport')
+        target_report_dict = user.loopdata.LoopData.get_target_report_dict(config_dict, 'SeasonsReport')
 
         try:
             group_unit_dict = target_report_dict['Units']['Groups']
         except KeyError:
-            try:
-                group_unit_dict = std_report_dict['Defaults']['Units']['Groups']
-            except KeyError:
-                group_unit_dict = USUnits
+            group_unit_dict = weewx.units.USUnits
         converter = weewx.units.Converter(group_unit_dict)
 
         formatter = weewx.units.Formatter.fromSkinDict(target_report_dict)

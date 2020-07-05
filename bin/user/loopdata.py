@@ -12,7 +12,6 @@ in the packet.
 
 import copy
 import configobj
-import datetime
 import json
 import logging
 import os
@@ -22,9 +21,8 @@ import sys
 import tempfile
 import threading
 import time
-import types
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 import weewx
@@ -41,12 +39,11 @@ from weeutil.weeutil import to_bool
 from weeutil.weeutil import to_float
 from weeutil.weeutil import to_int
 from weewx.engine import StdService
-from weewx.units import ValueTuple
 
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '1.3.10'
+LOOP_DATA_VERSION = '1.3.11'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -421,7 +418,7 @@ class LoopProcessor:
                         self.cfg.ssh_options, self.cfg.compress,
                         self.cfg.log_success)
 
-        except Exception as e:
+        except Exception:
             weeutil.logger.log_traceback(log.critical, "    ****  ")
             raise
         finally:
@@ -622,8 +619,8 @@ class LoopProcessor:
                     pkt['FMT_SUM_%s' % obstype] = formatter.toString(
                         (sum, target_unit_type, target_unit_group))
                 except Exception as e:
-                    log.error('Could not format sum for obstype: %s, target_unit_type: %s, target_unit_group: %s' % (
-                        obstype, target_unit_type, target_unit_group))
+                    log.error('Could not format sum for obstype: %s, target_unit_type: %s, target_unit_group: %s, exception: %s' % (
+                        obstype, target_unit_type, target_unit_group, e))
         if 'AVG_%s' % obstype not in pkt:
             log.info('pkt[AVG_%s] is missing.' % obstype)
         else:
@@ -760,7 +757,7 @@ class LoopProcessor:
     def save_barometer_reading(self, pkt_time: int, pkt: Dict[str, Any]) -> None:
         value = None
         if 'barometer' in pkt and pkt['barometer'] is not None:
-            avg_baromter = to_float(pkt['barometer'])
+            value = to_float(pkt['barometer'])
         else:
             # No barometer in archive record, use the archival period accumulator instead
             if self.arc_per_accum is not None:

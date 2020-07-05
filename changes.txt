@@ -1,6 +1,11 @@
 loopdata change history
 -----------------------
 
+1.3.11 07/05/2020
+
+1. pyflakes found some issues including lots of unused imports.
+2. Update one test.
+
 1.3.10 07/05/2020
 
 1. Redo how 10m max gust is handled when windGust not in packet.
