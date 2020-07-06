@@ -44,7 +44,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '1.3.12'
+LOOP_DATA_VERSION = '1.3.13'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -197,7 +197,11 @@ class LoopData(StdService):
         # This code is from WeeWX's ReportEngine. Copyright Tom Keffer
         # TODO: See if Tome will take a PR to make this available as a staticmethod.
         # In the meaintime, it's probably safe to copy as the cofiguration files are public API.
-        skin_dict = weeutil.config.deep_copy(weewx.defaults.defaults)
+        try:
+            skin_dict = weeutil.config.deep_copy(weewx.defaults.defaults)
+        except Exception:
+            # Fall back to copy.deepcopy for earlier weewx 4 installs.
+            skin_dict = copy.deepcopy(weewx.defaults.defaults)
         skin_dict['REPORT_NAME'] = report
         skin_config_path = os.path.join(
             config_dict['WEEWX_ROOT'],
@@ -221,7 +225,11 @@ class LoopData(StdService):
         if 'Defaults' in config_dict['StdReport']:
             # Because we will be modifying the results, make a deep copy of the [[Defaults]]
             # section.
-            merge_dict = weeutil.config.deep_copy(config_dict['StdReport']['Defaults'])
+            try:
+                merge_dict = weeutil.config.deep_copy(config_dict['StdReport']['Defaults'])
+            except Exception:
+                # Fall back to copy.deepcopy for earlier weewx 4 installs.
+                merge_dict = copy.deepcopy(config_dict['StdReport']['Defaults'])
             weeutil.config.merge_config(skin_dict, merge_dict)
 
         # Inject any scalar overrides. This is for backwards compatibility. These options should now go
