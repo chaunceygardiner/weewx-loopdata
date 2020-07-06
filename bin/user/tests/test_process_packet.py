@@ -12,7 +12,6 @@ import weewx
 import weewx.accum
 import weewx.units
 
-import weeutil.config
 import weeutil.logger
 
 import user.loopdata
