@@ -11,7 +11,6 @@ import unittest
 import weewx
 import weewx.units
 
-import weeutil.config
 import weeutil.logger
 
 import user.loopdata

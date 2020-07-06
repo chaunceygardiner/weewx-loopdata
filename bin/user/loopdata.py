@@ -29,7 +29,6 @@ import weewx
 import weewx.defaults
 import weewx.manager
 import weewx.units
-import weeutil.config
 import weeutil.logger
 import weeutil.rsyncupload
 import weeutil.weeutil
