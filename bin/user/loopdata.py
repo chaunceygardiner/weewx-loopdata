@@ -29,6 +29,7 @@ import weewx
 import weewx.defaults
 import weewx.manager
 import weewx.units
+import weeutil.config
 import weeutil.logger
 import weeutil.rsyncupload
 import weeutil.weeutil
@@ -43,7 +44,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '1.3.11'
+LOOP_DATA_VERSION = '1.3.12'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
