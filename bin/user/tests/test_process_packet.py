@@ -76,6 +76,22 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['LABEL_windSpeed'], ' mph')
         self.assertEqual(loopdata_pkt['LABEL_windDir'], '°')
 
+        self.assertEqual(loopdata_pkt['FMT_AVG_wind'], '3 mph')
+        self.assertEqual(loopdata_pkt['UNITS_AVG_wind'], 'mile_per_hour')
+        self.assertEqual(loopdata_pkt['LABEL_AVG_wind'], ' mph')
+
+        self.assertEqual(loopdata_pkt['FMT_RMS_wind'], '4 mph')
+        self.assertEqual(loopdata_pkt['UNITS_RMS_wind'], 'mile_per_hour')
+        self.assertEqual(loopdata_pkt['LABEL_RMS_wind'], ' mph')
+
+        self.assertEqual(loopdata_pkt['FMT_VECAVG_wind'], '3 mph')
+        self.assertEqual(loopdata_pkt['UNITS_VECAVG_wind'], 'mile_per_hour')
+        self.assertEqual(loopdata_pkt['LABEL_VECAVG_wind'], ' mph')
+
+        self.assertEqual(loopdata_pkt['FMT_VECDIR_wind'], '28°')
+        self.assertEqual(loopdata_pkt['UNITS_VECDIR_wind'], 'degree_compass')
+        self.assertEqual(loopdata_pkt['LABEL_VECDIR_wind'], '°')
+
     def test_cc3000_packet_processing(self):
 
         config_dict = ProcessPacketTests._get_config_dict('us')
@@ -124,6 +140,22 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['LABEL_windSpeed'], ' mph')
         self.assertEqual(loopdata_pkt['LABEL_windDir'], '°')
 
+        self.assertEqual(loopdata_pkt['FMT_AVG_wind'], '4 mph')
+        self.assertEqual(loopdata_pkt['UNITS_AVG_wind'], 'mile_per_hour')
+        self.assertEqual(loopdata_pkt['LABEL_AVG_wind'], ' mph')
+
+        self.assertEqual(loopdata_pkt['FMT_RMS_wind'], '4 mph')
+        self.assertEqual(loopdata_pkt['UNITS_RMS_wind'], 'mile_per_hour')
+        self.assertEqual(loopdata_pkt['LABEL_RMS_wind'], ' mph')
+
+        self.assertEqual(loopdata_pkt['FMT_VECAVG_wind'], '3 mph')
+        self.assertEqual(loopdata_pkt['UNITS_VECAVG_wind'], 'mile_per_hour')
+        self.assertEqual(loopdata_pkt['LABEL_VECAVG_wind'], ' mph')
+
+        self.assertEqual(loopdata_pkt['FMT_VECDIR_wind'], '22°')
+        self.assertEqual(loopdata_pkt['UNITS_VECDIR_wind'], 'degree_compass')
+        self.assertEqual(loopdata_pkt['LABEL_VECDIR_wind'], '°')
+
     def test_simulator_packet_processing(self):
 
         config_dict = ProcessPacketTests._get_config_dict('metric')
@@ -171,6 +203,22 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['LABEL_barometer'], ' mbar')
         self.assertEqual(loopdata_pkt['LABEL_windSpeed'], ' km/h')
         self.assertEqual(loopdata_pkt['LABEL_windDir'], '°')
+
+        self.assertEqual(loopdata_pkt['FMT_AVG_wind'], '0 km/h')
+        self.assertEqual(loopdata_pkt['UNITS_AVG_wind'], 'km_per_hour')
+        self.assertEqual(loopdata_pkt['LABEL_AVG_wind'], ' km/h')
+
+        self.assertEqual(loopdata_pkt['FMT_RMS_wind'], '0 km/h')
+        self.assertEqual(loopdata_pkt['UNITS_RMS_wind'], 'km_per_hour')
+        self.assertEqual(loopdata_pkt['LABEL_RMS_wind'], ' km/h')
+
+        self.assertEqual(loopdata_pkt['FMT_VECAVG_wind'], '0 km/h')
+        self.assertEqual(loopdata_pkt['UNITS_VECAVG_wind'], 'km_per_hour')
+        self.assertEqual(loopdata_pkt['LABEL_VECAVG_wind'], ' km/h')
+
+        self.assertEqual(loopdata_pkt['FMT_VECDIR_wind'], '360°')
+        self.assertEqual(loopdata_pkt['UNITS_VECDIR_wind'], 'degree_compass')
+        self.assertEqual(loopdata_pkt['LABEL_VECDIR_wind'], '°')
 
     @staticmethod
     def _get_day_accum(config_dict, dateTime):

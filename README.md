@@ -9,8 +9,9 @@ Copyright (C)2020 by John A Kline (john@johnkline.com)
 
 LoopData is a WeeWX service that generates a json file (loop-data.txt)
 containing values for the observations in the loop packet; along with
-today's high, low, sum, average and weighted averages for each observation
-in the packet.
+today's high, low, sum, average and weighted averages for each scalar
+observation in the packet.  For vector observations (wind), average,
+RMS average, vector average and vector direction is available.
 
 Use LoopData, and some JavaScript to make your report pages
 update on every loop cycle.
@@ -48,7 +49,7 @@ be generated on every loop with observations, hights, lows, sums, averages and
 weighted averages will formatted and converted for that report.  That is, the
 units and format for observations areappropriate for the specified the report.
 
-From there, just write javascript to load the json file on a regular basis
+From there, just write JavaScript to load the json file on a regular basis
 (typically, at the same rate as loop packets are generated in WeeWX) and update
 your report's html page.
 
@@ -160,6 +161,12 @@ Next, look in the loop-data.txt file to find all of the available fields.**
  * `inTemp`            : Inside temperature.
  * `outHumidity`       : Outside humidity.
  * `pressure`          : Pressure
+ * `wind`              : Wind is a special case as it is stored in VectorStats.  The following
+ *                       fields are available:
+ *                       AVG_wind   : average (also, FMT_AVG_wind, UNITS_AVG_wind, LABEL_AVG_wind)
+ *                       RMS_wind   : root mean square (also, FMT_RMS_wind, UNITS_RMS_wind, LABEL_RMS_wind)
+ *                       VECAVG_wind: vector average (also, FMT_VECAVG_wind, UNITS_VECAVG_wind, LABEL_VECAVG_wind)
+ *                       VECDIR_wind: vector direction (also, FMT_VECDIR_wind, UNITS_VECDIR_wind, LABEL_VECDIR_wind)
  * `windSpeed`         : Wind Speed
  * `windDir`           : Wind Direction
  * `windGust`          : Wind Gust (high wind speed)

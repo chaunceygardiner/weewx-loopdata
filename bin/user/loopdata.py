@@ -44,7 +44,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '1.3.13'
+LOOP_DATA_VERSION = '1.3.14'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -455,6 +455,20 @@ class LoopProcessor:
                 if sumtime != 0:
                     loopdata_pkt['WAVG_%s' % obstype] = wsum / sumtime
                 LoopProcessor.convert_units(converter, formatter, loopdata_pkt, obstype)
+            elif isinstance(accum, weewx.accum.VecStats) and accum.count != 0:
+                loopdata_pkt['AVG_%s' % obstype] = accum.avg
+                loopdata_pkt['RMS_%s' % obstype] = accum.rms
+                loopdata_pkt['VECAVG_%s' % obstype] = accum.vec_avg
+                loopdata_pkt['VECDIR_%s' % obstype] = accum.vec_dir
+                LoopProcessor.convert_vector_units(converter, formatter, loopdata_pkt, obstype)
+            elif isinstance(accum, weewx.accum.FirstLastAccum) and accum.first is not None:
+                first, firsttime, last, lasttime = accum.getStatsTuple()
+                loopdata_pkt['T_FIRST_%s' % obstype] = firsttime
+                loopdata_pkt['FIRST_%s' % obstype] = first
+                loopdata_pkt['T_LAST_%s' % obstype] = lasttime
+                loopdata_pkt['LAST_%s' % obstype] = last
+                # No formatting and conversions for FirstLastAccum
+
         return loopdata_pkt
 
     @staticmethod
@@ -686,11 +700,7 @@ class LoopProcessor:
     @staticmethod
     def convert_units(converter: weewx.units.Converter, formatter: weewx.units.Formatter,
             pkt: Dict[str, Any], obstype: str, do_hi_lo_etc = True) -> None:
-        # Pull a switcharoo for day_rain_total else weewx doesn't know the units.
-        v_t = weewx.units.as_value_tuple(
-            pkt, 'rain' if obstype == 'day_rain_total' else obstype)
-        if obstype == 'day_rain_total':
-            v_t = weewx.units.ValueTuple(pkt['day_rain_total'], v_t.unit, v_t.group)
+        v_t = weewx.units.as_value_tuple(pkt, obstype)
         _, original_unit_type, original_unit_group = v_t
         value, unit_type, unit_group = converter.convert(v_t)
         # windDir and gustDir could be None.
@@ -699,7 +709,6 @@ class LoopProcessor:
             pkt['FMT_%s' % obstype] = formatter.toString((
                 value, unit_type, unit_group))
         else:
-            # TODO: Is it better to put None or leave out the observation?
             pkt[obstype] = None
             pkt['FMT_%s' % obstype] = None
         pkt['UNITS_%s' % obstype] = unit_type
@@ -707,9 +716,37 @@ class LoopProcessor:
         if obstype in COMPASS_OBSERVATIONS:
             pkt['COMPASS_%s' % obstype] = formatter.to_ordinal_compass(
                 (value, unit_type, unit_group))
-        if do_hi_lo_etc and obstype != 'day_rain_total':
+        if do_hi_lo_etc:
             LoopProcessor.convert_hi_lo_etc_units(converter, formatter, pkt, obstype,
                 original_unit_type, original_unit_group, unit_type, unit_group)
+
+    @staticmethod
+    def convert_vector_units(converter: weewx.units.Converter, formatter: weewx.units.Formatter,
+            pkt: Dict[str, Any], obstype: str, do_hi_lo_etc = True) -> None:
+        """ Special conversion and formatting for vector stats (aka, wind). """
+
+        for agg_type in ['avg', 'rms', 'vecavg', 'vecdir']:
+            try:
+                value = pkt['%s_%s' % (agg_type.upper(), obstype)]
+            except KeyError:
+                log.info('pkt[%s_%s] does not exist' % (agg_type.upper(), obstype))
+                continue
+            std_unit_system = pkt['usUnits']
+            (orig_unit_type, orig_unit_group) = weewx.units.StdUnitConverters[
+                std_unit_system].getTargetUnit(obstype, agg_type=agg_type)
+
+            value, unit_type, unit_group = converter.convert((value, orig_unit_type, orig_unit_group))
+
+            if value is not None:
+                pkt['%s_%s'     % (agg_type.upper(), obstype)] = formatter.get_format_string(unit_type) % value
+                pkt['FMT_%s_%s' % (agg_type.upper(), obstype)] = formatter.toString(
+                    ((value, unit_type, unit_group)))
+            else:
+                pkt['%s_%s'     % (agg_type.upper(), obstype)] = None
+                pkt['FMT_%s_%s' % (agg_type.upper(), obstype)] = None
+
+            pkt['UNITS_%s_%s' % (agg_type.upper(), obstype)] = unit_type
+            pkt['LABEL_%s_%s' % (agg_type.upper(), obstype)] = formatter.get_label_string(unit_type)
 
     @staticmethod
     def insert_barometer_rate_desc(loopdata_pkt: Dict[str, Any]) -> None:
