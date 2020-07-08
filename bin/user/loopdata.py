@@ -44,7 +44,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '1.3.14'
+LOOP_DATA_VERSION = '1.3.15'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -441,6 +441,10 @@ class LoopProcessor:
         # and weighted averages to the record.
 
         loopdata_pkt = copy.deepcopy(pkt)
+
+        loopdata_pkt['FMT_dateTime'] = formatter.toString(
+            (loopdata_pkt['dateTime'], 'unix_epoch', 'group_time'))
+
         for obstype in day_accum:
             accum = day_accum[obstype]
             if isinstance(accum, weewx.accum.ScalarStats) and accum.lasttime is not None:
@@ -456,10 +460,16 @@ class LoopProcessor:
                     loopdata_pkt['WAVG_%s' % obstype] = wsum / sumtime
                 LoopProcessor.convert_units(converter, formatter, loopdata_pkt, obstype)
             elif isinstance(accum, weewx.accum.VecStats) and accum.count != 0:
+                min, mintime, max, maxtime, _, _, _, _, max_dir, _, _, _, _, _ = accum.getStatsTuple()
+                loopdata_pkt['HI_%s' % obstype] = accum.max
+                loopdata_pkt['HI_DIR_%s' % obstype] = accum.max_dir
+                loopdata_pkt['T_HI_%s' % obstype] = accum.maxtime
+                loopdata_pkt['LO_%s' % obstype] = accum.min
+                loopdata_pkt['T_LO_%s' % obstype] = accum.mintime
                 loopdata_pkt['AVG_%s' % obstype] = accum.avg
                 loopdata_pkt['RMS_%s' % obstype] = accum.rms
-                loopdata_pkt['VECAVG_%s' % obstype] = accum.vec_avg
-                loopdata_pkt['VECDIR_%s' % obstype] = accum.vec_dir
+                loopdata_pkt['VEC_AVG_%s' % obstype] = accum.vec_avg
+                loopdata_pkt['VEC_DIR_%s' % obstype] = accum.vec_dir
                 LoopProcessor.convert_vector_units(converter, formatter, loopdata_pkt, obstype)
             elif isinstance(accum, weewx.accum.FirstLastAccum) and accum.first is not None:
                 first, firsttime, last, lasttime = accum.getStatsTuple()
@@ -623,6 +633,9 @@ class LoopProcessor:
             pkt['HI_%s' % obstype] = formatter.get_format_string(target_unit_type) % hi
             pkt['FMT_HI_%s' % obstype] = formatter.toString(
                 (hi, target_unit_type, target_unit_group))
+            if 'T_HI_%s' % obstype in pkt:
+                pkt['FMT_T_HI_%s' % obstype] = formatter.toString(
+                    (pkt['T_HI_%s' % obstype], 'unix_epoch', 'group_time'))
         if 'LO_%s' % obstype not in pkt:
             log.info('pkt[LO_%s] is missing.' % obstype)
         else:
@@ -631,6 +644,9 @@ class LoopProcessor:
             pkt['LO_%s' % obstype] = formatter.get_format_string(target_unit_type) % lo
             pkt['FMT_LO_%s' % obstype] = formatter.toString(
                 (lo, target_unit_type, target_unit_group))
+            if 'T_LO_%s' % obstype in pkt:
+                pkt['FMT_T_LO_%s' % obstype] = formatter.toString(
+                    (pkt['T_LO_%s' % obstype], 'unix_epoch', 'group_time'))
         if 'SUM_%s' % obstype not in pkt:
             log.info('pkt[SUM_%s] is missing.' % obstype)
         else:
@@ -722,31 +738,45 @@ class LoopProcessor:
 
     @staticmethod
     def convert_vector_units(converter: weewx.units.Converter, formatter: weewx.units.Formatter,
-            pkt: Dict[str, Any], obstype: str, do_hi_lo_etc = True) -> None:
+            pkt: Dict[str, Any], obstype: str) -> None:
         """ Special conversion and formatting for vector stats (aka, wind). """
+        kv = {
+            'T_HI_%s'    % obstype: 'maxtime',
+            'HI_%s'      % obstype: None,
+            'HI_DIR_%s'  % obstype: '%sDir' % obstype,
+            'T_LO_%s'    % obstype: 'mintime',
+            'LO_%s'      % obstype: None,
+            'AVG_%s'     % obstype: 'avg',
+            'RMS_%s'     % obstype: 'rms',
+            'VEC_AVG_%s' % obstype: 'vecavg',
+            'VEC_DIR_%s' % obstype: 'vecdir'}
 
-        for agg_type in ['avg', 'rms', 'vecavg', 'vecdir']:
+        for key in kv:
             try:
-                value = pkt['%s_%s' % (agg_type.upper(), obstype)]
+                value = pkt[key]
             except KeyError:
-                log.info('pkt[%s_%s] does not exist' % (agg_type.upper(), obstype))
+                log.info('pkt[%s] does not exist' % key)
                 continue
             std_unit_system = pkt['usUnits']
+            if key.startswith('HI_DIR_'):
+                obstype_for_converter = '%sDir' % obstype
+            else:
+                obstype_for_converter = obstype
             (orig_unit_type, orig_unit_group) = weewx.units.StdUnitConverters[
-                std_unit_system].getTargetUnit(obstype, agg_type=agg_type)
+                std_unit_system].getTargetUnit(obstype_for_converter, agg_type=kv[key])
 
             value, unit_type, unit_group = converter.convert((value, orig_unit_type, orig_unit_group))
 
             if value is not None:
-                pkt['%s_%s'     % (agg_type.upper(), obstype)] = formatter.get_format_string(unit_type) % value
-                pkt['FMT_%s_%s' % (agg_type.upper(), obstype)] = formatter.toString(
+                pkt['key'] = formatter.get_format_string(unit_type) % value
+                pkt['FMT_%s' % key] = formatter.toString(
                     ((value, unit_type, unit_group)))
             else:
-                pkt['%s_%s'     % (agg_type.upper(), obstype)] = None
-                pkt['FMT_%s_%s' % (agg_type.upper(), obstype)] = None
+                pkt[key] = None
+                pkt['FMT_%s' % key] = None
 
-            pkt['UNITS_%s_%s' % (agg_type.upper(), obstype)] = unit_type
-            pkt['LABEL_%s_%s' % (agg_type.upper(), obstype)] = formatter.get_label_string(unit_type)
+            pkt['UNITS_%s' % key] = unit_type
+            pkt['LABEL_%s' % key] = formatter.get_label_string(unit_type)
 
     @staticmethod
     def insert_barometer_rate_desc(loopdata_pkt: Dict[str, Any]) -> None:

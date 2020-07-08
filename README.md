@@ -8,13 +8,17 @@ Copyright (C)2020 by John A Kline (john@johnkline.com)
 ## Description
 
 LoopData is a WeeWX service that generates a json file (loop-data.txt)
-containing values for the observations in the loop packet; along with
-today's high, low, sum, average and weighted averages for each scalar
-observation in the packet.  For vector observations (wind), average,
-RMS average, vector average and vector direction is available.
+containing values for the observations in the loop packet.
 
-Use LoopData, and some JavaScript to make your report pages
-update on every loop cycle.
+For scalar observations (i.e., everything but wind), today's high, low,
+sum, average and weighted averages are also availble.
+
+For vector observations (i.e. wind), today's high speed/direction and
+today's low speed are available.  Additionally available are average,
+RMS average, vector average and vector direction.
+
+Use LoopData, and some JavaScript to make your report pages update on
+every loop cycle.
 
 A WeeWX report is specified in the LoopData configuration (e.g.,
 `SeasonsReport`).  With this information, LoopData automatically converts
@@ -23,10 +27,10 @@ readings according to the report specified.  Thus, it is simple to replace
 the reports observations in JavaScript as they will already be in the
 correct units and in the correct format.  Formatted values are requested
 by prefixing the name with 'FMT_'.  For example:
-  * windSpeed:        14.1
-  * FMT_windSpeed     14.1 mph
-  * AVG_windSpeed     7.6
-  * FMT_AVG_windSpeed 7.6 mph
+  * outsideTemp:        79.2
+  * FMT_outsideTemp     79.2°F
+  * AVG_outsideTemp     64.7
+  * FMT_AVG_outsideTemp 64.7°F
 
 Typically, loop packets are generated frequently in WeeWX
 (e.g, every 2s).  With the constantly updating loop-data.txt file, one
@@ -154,6 +158,7 @@ a full list of fields,  comment out the fields line in the LoopData section of w
 Next, look in the loop-data.txt file to find all of the available fields.**
 
  * `dateTime`          : The time of this loop packet (seconds since the epoch).
+ * `FMT_dateTime`      : The time of this loop packet (formatted per the target report).
  * `usUnits`           : The units system all obeservations are expressed in.
                          This will be the unit system of the report specified by
                          target_report in weewx.conf.
@@ -161,12 +166,18 @@ Next, look in the loop-data.txt file to find all of the available fields.**
  * `inTemp`            : Inside temperature.
  * `outHumidity`       : Outside humidity.
  * `pressure`          : Pressure
- * `wind`              : Wind is a special case as it is stored in VectorStats.  The following
- *                       fields are available:
- *                       AVG_wind   : average (also, FMT_AVG_wind, UNITS_AVG_wind, LABEL_AVG_wind)
- *                       RMS_wind   : root mean square (also, FMT_RMS_wind, UNITS_RMS_wind, LABEL_RMS_wind)
- *                       VECAVG_wind: vector average (also, FMT_VECAVG_wind, UNITS_VECAVG_wind, LABEL_VECAVG_wind)
- *                       VECDIR_wind: vector direction (also, FMT_VECDIR_wind, UNITS_VECDIR_wind, LABEL_VECDIR_wind)
+ * `wind`              : Wind is a special case. These fields are available:
+ *                       HI_wind      : today's highest windspeed
+ *                       HI_DIR_wind  : directrion of today's highest windspeed
+ *                       T_HI_wind    : time of today's highest windspeed
+ *                       FMT_T_HI_wind: formatted time of today's highest windspeed
+ *                       LO_wind      : today's lowest windspeed
+ *                       T_LO_wind    : time of today's lowest windspeed
+ *                       FMT_T_LO_wind: formatted time of today's lowest windspeed
+ *                       AVG_wind     : average
+ *                       RMS_wind     : root mean square
+ *                       VEC_AVG_wind : vector average
+ *                       VEC_DIR_wind: vector direction
  * `windSpeed`         : Wind Speed
  * `windDir`           : Wind Direction
  * `windGust`          : Wind Gust (high wind speed)
@@ -193,10 +204,12 @@ Next, look in the loop-data.txt file to find all of the available fields.**
  * `FMT_LO_<obs>`      : The low observation expressed as a formatted value, including
                          the units (e.g., '4.8 mph').
  * `T_LO<obs>`         : The time of the daily minimum observation.
+ * `FMT_T_LO<obs>`     : The formatted time of the daily minimum observation.
  * `HI_<obs>`          : The maximum value of the observation today.
  * `FMT_HI_<obs>`      : The high observation expressed as a formatted value, including
                          the units (e.g., '4.8 mph').
  * `T_HI<obs>`         : The time of the daily maximum observation.
+ * `FMT_T_HI<obs>`     : The formatted time of the daily maximum observation.
  * `SUM_<obs>`         : The sum of the observation values reported today.  SUM_rain is
                          especially useful for reporting the day's rain.
  * `FMT_SUM_<obs>`     : The sum of the observation values reported today.  It is formatted
