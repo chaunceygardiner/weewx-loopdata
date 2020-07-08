@@ -1,10 +1,15 @@
 loopdata change history
 -----------------------
 
-1.3.15 07/07/2020
+1.3.16 07/07/2020
 
 1. Add missing highs and lows for vector stats (aka, wind).
 2. Add formatting for all times (e.g., FMT_dateTime, FMT_T_HI_wind)
+
+1.3.15 07/06/2020
+
+Fix OutOfSpan error caused by creating accumulator with current time
+rather than packet time.
 
 1.3.14 07/06/2020
 

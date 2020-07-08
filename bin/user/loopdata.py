@@ -44,7 +44,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '1.3.15'
+LOOP_DATA_VERSION = '1.3.16'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -364,7 +364,7 @@ class LoopProcessor:
                 try:
                   self.day_accum.addRecord(pkt)
                 except weewx.accum.OutOfSpan:
-                    timespan = weeutil.weeutil.archiveDaySpan(time.time())
+                    timespan = weeutil.weeutil.archiveDaySpan(pkt['dateTime'])
                     self.day_accum = weewx.accum.Accum(timespan, unit_system=self.cfg.unit_system)
                     # Try again:
                     self.day_accum.addRecord(pkt)
