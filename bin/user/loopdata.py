@@ -44,7 +44,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '1.3.18'
+LOOP_DATA_VERSION = '1.3.19'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -246,36 +246,41 @@ class LoopData(StdService):
     def pre_loop(self, event):
         if self.loop_proccessor_started:
             return
-
         # Start the loop processor thread.
         self.loop_proccessor_started = True
-        binder = weewx.manager.DBBinder(self.config_dict)
-        binding = self.config_dict.get('StdReport')['data_binding']
-        dbm = binder.get_manager(binding)
 
-        # Init barometer, windgust, windrose and day_accumulator from the database
-        barometer_readings = self.fill_in_barometer_readings_at_startup(dbm)
-        wind_gust_readings = self.fill_in_10m_wind_gust_readings_at_startup(dbm)
-        wind_rose_readings = self.fill_in_wind_rose_readings_at_startup(dbm)
+        try:
+            binder = weewx.manager.DBBinder(self.config_dict)
+            binding = self.config_dict.get('StdReport')['data_binding']
+            dbm = binder.get_manager(binding)
 
-        # Init day accumulator from day_summary
-        day_summary = dbm._get_day_summary(time.time())
-        # Init an accumulator
-        timespan = weeutil.weeutil.archiveDaySpan(time.time())
-        unit_system = day_summary.unit_system
-        if unit_system is not None:
-            # Database has a unit_system already (true unless the db just got intialized.)
-            self.cfg.unit_system = unit_system
-        day_accum = weewx.accum.Accum(timespan, unit_system=self.cfg.unit_system)
-        for k in day_summary:
-            day_accum.set_stats(k, day_summary[k].getStatsTuple())
+            # Init barometer, windgust, windrose and day_accumulator from the database
+            barometer_readings = self.fill_in_barometer_readings_at_startup(dbm)
+            wind_gust_readings = self.fill_in_10m_wind_gust_readings_at_startup(dbm)
+            wind_rose_readings = self.fill_in_wind_rose_readings_at_startup(dbm)
 
-        lp: LoopProcessor = LoopProcessor(self.cfg, day_accum, barometer_readings,
-            wind_gust_readings, wind_rose_readings)
-        t: threading.Thread = threading.Thread(target=lp.process_queue)
-        t.setName('LoopData')
-        t.setDaemon(True)
-        t.start()
+            # Init day accumulator from day_summary
+            day_summary = dbm._get_day_summary(time.time())
+            # Init an accumulator
+            timespan = weeutil.weeutil.archiveDaySpan(time.time())
+            unit_system = day_summary.unit_system
+            if unit_system is not None:
+                # Database has a unit_system already (true unless the db just got intialized.)
+                self.cfg.unit_system = unit_system
+            day_accum = weewx.accum.Accum(timespan, unit_system=self.cfg.unit_system)
+            for k in day_summary:
+                day_accum.set_stats(k, day_summary[k].getStatsTuple())
+
+            lp: LoopProcessor = LoopProcessor(self.cfg, day_accum, barometer_readings,
+                wind_gust_readings, wind_rose_readings)
+            t: threading.Thread = threading.Thread(target=lp.process_queue)
+            t.setName('LoopData')
+            t.setDaemon(True)
+            t.start()
+        except Exception as e:
+            # Print problem to log and give up.
+            log.error('Error in LoopData setup.  LoopData is exiting. Exception: %s' % e)
+            weeutil.logger.log_traceback(log.error, "    ****  ")
 
     def fill_in_barometer_readings_at_startup(self, dbm) -> List[Reading]:
         barometer_readings = []

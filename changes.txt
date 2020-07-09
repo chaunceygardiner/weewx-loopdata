@@ -1,7 +1,11 @@
 loopdata change history
 -----------------------
 
-1.3.18 07/08/2020
+1.3.19 07/09/2020
+
+1. Catch and log setup errors.  Allow WeeWX to continue with LoopData.
+
+1.3.18 07/09/2020
 
 1. Handle null barometer values in database.
 
