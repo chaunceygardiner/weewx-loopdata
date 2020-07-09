@@ -1,6 +1,14 @@
 loopdata change history
 -----------------------
 
+1.3.17 07/08/2020
+
+1. Bug fix for wind (not FMT_) version of day stats.
+   The values were not being formatted to the proper
+   number of decimal places.
+
+1. Add missing highs and lows for vector stats (aka, wind).
+
 1.3.16 07/07/2020
 
 1. Add missing highs and lows for vector stats (aka, wind).

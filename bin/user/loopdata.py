@@ -44,7 +44,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '1.3.16'
+LOOP_DATA_VERSION = '1.3.17'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -768,7 +768,7 @@ class LoopProcessor:
             value, unit_type, unit_group = converter.convert((value, orig_unit_type, orig_unit_group))
 
             if value is not None:
-                pkt['key'] = formatter.get_format_string(unit_type) % value
+                pkt[key] = formatter.get_format_string(unit_type) % value
                 pkt['FMT_%s' % key] = formatter.toString(
                     ((value, unit_type, unit_group)))
             else:

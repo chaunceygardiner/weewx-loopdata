@@ -31,7 +31,7 @@ class ConversionAndFormattingTests(unittest.TestCase):
             'dateTime'     : 1594179999,
             'usUnits'      : weewx.METRIC,
 
-            'rain'         : 0.10, # cm
+            'rain'         : 0.10003, # cm
             'LO_rain'      : 0.00,
             'HI_rain'      : 0.20,
             'SUM_rain'     : 1.31,
@@ -57,15 +57,19 @@ class ConversionAndFormattingTests(unittest.TestCase):
         }
         user.loopdata.LoopProcessor.convert_units(converter, formatter, pkt, 'rain')
         self.assertEqual(pkt['rain'], '1.0')
+        self.assertEqual(pkt['FMT_rain'], '1.0 mm')
         self.assertEqual(pkt['FMT_SUM_rain'], '13.1 mm')
         self.assertEqual(pkt['LABEL_rain'], ' mm')
-        self.assertEqual(pkt['FMT_rain'], '1.0 mm')
         self.assertEqual(pkt['UNITS_rain'], 'mm')
 
         user.loopdata.LoopProcessor.convert_units(converter, formatter, pkt, 'rainRate')
+        self.assertEqual(pkt['rainRate'], '12.1')
         self.assertEqual(pkt['FMT_rainRate'], '12.1 mm/h')
+        self.assertEqual(pkt['LO_rainRate'], '0.1')
         self.assertEqual(pkt['FMT_LO_rainRate'], '0.1 mm/h')
+        self.assertEqual(pkt['AVG_rainRate'], '0.8')
         self.assertEqual(pkt['FMT_AVG_rainRate'], '0.8 mm/h')
+        self.assertEqual(pkt['WAVG_rainRate'], '0.7')
         self.assertEqual(pkt['FMT_WAVG_rainRate'], '0.7 mm/h')
         self.assertEqual(pkt['UNITS_rainRate'], 'mm_per_hour')
 
@@ -75,9 +79,13 @@ class ConversionAndFormattingTests(unittest.TestCase):
         self.assertEqual(pkt['FMT_HI_DIR_wind'], '270°')
         self.assertEqual(pkt['FMT_T_LO_wind'], '07/07/20 18:17:18')
         self.assertEqual(pkt['FMT_LO_wind'], '0 km/h')
+        self.assertEqual(pkt['AVG_wind'], '3')
         self.assertEqual(pkt['FMT_AVG_wind'], '3 km/h')
+        self.assertEqual(pkt['RMS_wind'], '4')
         self.assertEqual(pkt['FMT_RMS_wind'], '4 km/h')
+        self.assertEqual(pkt['VEC_AVG_wind'], '3')
         self.assertEqual(pkt['FMT_VEC_AVG_wind'], '3 km/h')
+        self.assertEqual(pkt['VEC_DIR_wind'], '28')
         self.assertEqual(pkt['FMT_VEC_DIR_wind'], '28°')
 
     def test_METRIC_to_MODIFIED_METRIC(self):
@@ -118,8 +126,8 @@ class ConversionAndFormattingTests(unittest.TestCase):
         user.loopdata.LoopProcessor.convert_units(converter, formatter, pkt, 'rain')
         self.assertEqual(pkt['rain'], '1.0')
         self.assertEqual(pkt['FMT_SUM_rain'], '13.1 mm')
-        self.assertEqual(pkt['LABEL_rain'], ' mm')
         self.assertEqual(pkt['FMT_rain'], '1.0 mm')
+        self.assertEqual(pkt['LABEL_rain'], ' mm')
         self.assertEqual(pkt['UNITS_rain'], 'mm')
 
         user.loopdata.LoopProcessor.convert_units(converter, formatter, pkt, 'rainRate')
@@ -131,13 +139,20 @@ class ConversionAndFormattingTests(unittest.TestCase):
 
         user.loopdata.LoopProcessor.convert_vector_units(converter, formatter, pkt, 'wind')
         self.assertEqual(pkt['FMT_T_HI_wind'], '07/07/20 19:57:18')
+        self.assertEqual(pkt['HI_wind'], '12')
         self.assertEqual(pkt['FMT_HI_wind'], '12 kph')
+        self.assertEqual(pkt['HI_DIR_wind'], '270')
         self.assertEqual(pkt['FMT_HI_DIR_wind'], '270°')
         self.assertEqual(pkt['FMT_T_LO_wind'], '07/07/20 18:17:18')
+        self.assertEqual(pkt['LO_wind'], '0')
         self.assertEqual(pkt['FMT_LO_wind'], '0 kph')
+        self.assertEqual(pkt['AVG_wind'], '3')
         self.assertEqual(pkt['FMT_AVG_wind'], '3 kph')
+        self.assertEqual(pkt['RMS_wind'], '4')
         self.assertEqual(pkt['FMT_RMS_wind'], '4 kph')
+        self.assertEqual(pkt['VEC_AVG_wind'], '3')
         self.assertEqual(pkt['FMT_VEC_AVG_wind'], '3 kph')
+        self.assertEqual(pkt['VEC_DIR_wind'], '28')
         self.assertEqual(pkt['FMT_VEC_DIR_wind'], '28°')
 
     def test_METRIC_to_US(self):
@@ -184,17 +199,25 @@ class ConversionAndFormattingTests(unittest.TestCase):
         self.assertEqual(pkt['FMT_WAVG_rainRate'], '0.03 in/h')
         self.assertEqual(pkt['UNITS_rainRate'], 'inch_per_hour')
 
-        user.loopdata.LoopProcessor.convert_vector_units(converter, formatter, pkt, 'wind')
-        self.assertEqual(pkt['FMT_T_HI_wind'], '07/07/20 19:57:18')
-        self.assertEqual(pkt['FMT_HI_wind'], '8 mph')
-        self.assertEqual(pkt['FMT_HI_DIR_wind'], '270°')
-        self.assertEqual(pkt['FMT_T_LO_wind'], '07/07/20 18:17:18')
-        self.assertEqual(pkt['FMT_LO_wind'], '0 mph')
         unit_type, unit_group = converter.getTargetUnit('wind', 'avg')
         self.assertEqual(unit_type, 'mile_per_hour')
+
+        user.loopdata.LoopProcessor.convert_vector_units(converter, formatter, pkt, 'wind')
+        self.assertEqual(pkt['FMT_T_HI_wind'], '07/07/20 19:57:18')
+        self.assertEqual(pkt['HI_wind'], '8')
+        self.assertEqual(pkt['FMT_HI_wind'], '8 mph')
+        self.assertEqual(pkt['HI_DIR_wind'], '270')
+        self.assertEqual(pkt['FMT_HI_DIR_wind'], '270°')
+        self.assertEqual(pkt['FMT_T_LO_wind'], '07/07/20 18:17:18')
+        self.assertEqual(pkt['LO_wind'], '0')
+        self.assertEqual(pkt['FMT_LO_wind'], '0 mph')
+        self.assertEqual(pkt['AVG_wind'], '2')
         self.assertEqual(pkt['FMT_AVG_wind'], '2 mph')
+        self.assertEqual(pkt['RMS_wind'], '3')
         self.assertEqual(pkt['FMT_RMS_wind'], '3 mph')
+        self.assertEqual(pkt['VEC_AVG_wind'], '2')
         self.assertEqual(pkt['FMT_VEC_AVG_wind'], '2 mph')
+        self.assertEqual(pkt['VEC_DIR_wind'], '28')
         self.assertEqual(pkt['FMT_VEC_DIR_wind'], '28°')
 
     def test_US_to_US(self):
@@ -232,6 +255,7 @@ class ConversionAndFormattingTests(unittest.TestCase):
         self.assertEqual(pkt['rain'], '0.10')
         self.assertEqual(pkt['FMT_SUM_rain'], '1.31 in')
         self.assertEqual(pkt['LABEL_rain'], ' in')
+        self.assertEqual(pkt['UNITS_rain'], 'inch')
 
         user.loopdata.LoopProcessor.convert_units(converter, formatter, pkt, 'rainRate')
         self.assertEqual(pkt['FMT_rainRate'], '1.21 in/h')
@@ -241,13 +265,20 @@ class ConversionAndFormattingTests(unittest.TestCase):
 
         user.loopdata.LoopProcessor.convert_vector_units(converter, formatter, pkt, 'wind')
         self.assertEqual(pkt['FMT_T_HI_wind'], '07/07/20 19:57:18')
+        self.assertEqual(pkt['HI_wind'], '12')
         self.assertEqual(pkt['FMT_HI_wind'], '12 mph')
+        self.assertEqual(pkt['HI_DIR_wind'], '270')
         self.assertEqual(pkt['FMT_HI_DIR_wind'], '270°')
         self.assertEqual(pkt['FMT_T_LO_wind'], '07/07/20 18:17:18')
+        self.assertEqual(pkt['LO_wind'], '0')
         self.assertEqual(pkt['FMT_LO_wind'], '0 mph')
+        self.assertEqual(pkt['AVG_wind'], '3')
         self.assertEqual(pkt['FMT_AVG_wind'], '3 mph')
+        self.assertEqual(pkt['RMS_wind'], '4')
         self.assertEqual(pkt['FMT_RMS_wind'], '4 mph')
+        self.assertEqual(pkt['VEC_AVG_wind'], '3')
         self.assertEqual(pkt['FMT_VEC_AVG_wind'], '3 mph')
+        self.assertEqual(pkt['VEC_DIR_wind'], '28')
         self.assertEqual(pkt['FMT_VEC_DIR_wind'], '28°')
 
     def test_US_to_METRIC(self):
@@ -285,7 +316,7 @@ class ConversionAndFormattingTests(unittest.TestCase):
         self.assertEqual(pkt['rain'], '2.5')
         self.assertEqual(pkt['FMT_SUM_rain'], '33.3 mm')
         self.assertEqual(pkt['LABEL_rain'], ' mm')
-        self.assertEqual(pkt['LABEL_rain'], ' mm')
+        self.assertEqual(pkt['UNITS_rain'], 'mm')
 
         user.loopdata.LoopProcessor.convert_units(converter, formatter, pkt, 'rainRate')
         self.assertEqual(pkt['FMT_rainRate'], '30.7 mm/h')
@@ -296,13 +327,20 @@ class ConversionAndFormattingTests(unittest.TestCase):
 
         user.loopdata.LoopProcessor.convert_vector_units(converter, formatter, pkt, 'wind')
         self.assertEqual(pkt['FMT_T_HI_wind'], '07/07/20 19:57:18')
+        self.assertEqual(pkt['HI_wind'], '19')
         self.assertEqual(pkt['FMT_HI_wind'], '19 km/h')
+        self.assertEqual(pkt['HI_DIR_wind'], '270')
         self.assertEqual(pkt['FMT_HI_DIR_wind'], '270°')
         self.assertEqual(pkt['FMT_T_LO_wind'], '07/07/20 18:17:18')
+        self.assertEqual(pkt['LO_wind'], '0')
         self.assertEqual(pkt['FMT_LO_wind'], '0 km/h')
+        self.assertEqual(pkt['AVG_wind'], '5')
         self.assertEqual(pkt['FMT_AVG_wind'], '5 km/h')
+        self.assertEqual(pkt['RMS_wind'], '7')
         self.assertEqual(pkt['FMT_RMS_wind'], '7 km/h')
+        self.assertEqual(pkt['VEC_AVG_wind'], '5')
         self.assertEqual(pkt['FMT_VEC_AVG_wind'], '5 km/h')
+        self.assertEqual(pkt['VEC_DIR_wind'], '28')
         self.assertEqual(pkt['FMT_VEC_DIR_wind'], '28°')
 
     def test_METRICWX_to_METRIC(self):
@@ -340,7 +378,7 @@ class ConversionAndFormattingTests(unittest.TestCase):
         self.assertEqual(pkt['rain'], '0.1')
         self.assertEqual(pkt['FMT_SUM_rain'], '1.3 mm')
         self.assertEqual(pkt['LABEL_rain'], ' mm')
-        self.assertEqual(pkt['LABEL_rain'], ' mm')
+        self.assertEqual(pkt['UNITS_rain'], 'mm')
 
         user.loopdata.LoopProcessor.convert_units(converter, formatter, pkt, 'rainRate')
         self.assertEqual(pkt['FMT_rainRate'], '1.2 mm/h')
@@ -351,13 +389,20 @@ class ConversionAndFormattingTests(unittest.TestCase):
 
         user.loopdata.LoopProcessor.convert_vector_units(converter, formatter, pkt, 'wind')
         self.assertEqual(pkt['FMT_T_HI_wind'], '07/07/20 19:57:18')
+        self.assertEqual(pkt['HI_wind'], '44')
         self.assertEqual(pkt['FMT_HI_wind'], '44 km/h')
+        self.assertEqual(pkt['HI_DIR_wind'], '270')
         self.assertEqual(pkt['FMT_HI_DIR_wind'], '270°')
         self.assertEqual(pkt['FMT_T_LO_wind'], '07/07/20 18:17:18')
+        self.assertEqual(pkt['LO_wind'], '0')
         self.assertEqual(pkt['FMT_LO_wind'], '0 km/h')
+        self.assertEqual(pkt['AVG_wind'], '11')
         self.assertEqual(pkt['FMT_AVG_wind'], '11 km/h')
+        self.assertEqual(pkt['RMS_wind'], '15')
         self.assertEqual(pkt['FMT_RMS_wind'], '15 km/h')
+        self.assertEqual(pkt['VEC_AVG_wind'], '11')
         self.assertEqual(pkt['FMT_VEC_AVG_wind'], '11 km/h')
+        self.assertEqual(pkt['VEC_DIR_wind'], '28')
         self.assertEqual(pkt['FMT_VEC_DIR_wind'], '28°')
 
     def test_METRICWX_to_US(self):
@@ -393,9 +438,11 @@ class ConversionAndFormattingTests(unittest.TestCase):
         }
         user.loopdata.LoopProcessor.convert_units(converter, formatter, pkt, 'rain')
         self.assertEqual(pkt['rain'], '0.00')
+        self.assertEqual(pkt['FMT_rain'], '0.00 in')
+        self.assertEqual(pkt['SUM_rain'], '0.05')
         self.assertEqual(pkt['FMT_SUM_rain'], '0.05 in')
         self.assertEqual(pkt['LABEL_rain'], ' in')
-        self.assertEqual(pkt['LABEL_rain'], ' in')
+        self.assertEqual(pkt['UNITS_rain'], 'inch')
 
         user.loopdata.LoopProcessor.convert_units(converter, formatter, pkt, 'rainRate')
         self.assertEqual(pkt['FMT_rainRate'], '0.05 in/h')
@@ -406,13 +453,20 @@ class ConversionAndFormattingTests(unittest.TestCase):
 
         user.loopdata.LoopProcessor.convert_vector_units(converter, formatter, pkt, 'wind')
         self.assertEqual(pkt['FMT_T_HI_wind'], '07/07/20 19:57:18')
+        self.assertEqual(pkt['HI_wind'], '27')
         self.assertEqual(pkt['FMT_HI_wind'], '27 mph')
+        self.assertEqual(pkt['HI_DIR_wind'], '270')
         self.assertEqual(pkt['FMT_HI_DIR_wind'], '270°')
         self.assertEqual(pkt['FMT_T_LO_wind'], '07/07/20 18:17:18')
+        self.assertEqual(pkt['LO_wind'], '0')
         self.assertEqual(pkt['FMT_LO_wind'], '0 mph')
+        self.assertEqual(pkt['AVG_wind'], '7')
         self.assertEqual(pkt['FMT_AVG_wind'], '7 mph')
+        self.assertEqual(pkt['RMS_wind'], '9')
         self.assertEqual(pkt['FMT_RMS_wind'], '9 mph')
+        self.assertEqual(pkt['VEC_AVG_wind'], '7')
         self.assertEqual(pkt['FMT_VEC_AVG_wind'], '7 mph')
+        self.assertEqual(pkt['VEC_DIR_wind'], '28')
         self.assertEqual(pkt['FMT_VEC_DIR_wind'], '28°')
 
     @staticmethod
