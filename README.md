@@ -167,22 +167,22 @@ Next, look in the loop-data.txt file to find all of the available fields.**
  * `outHumidity`       : Outside humidity.
  * `pressure`          : Pressure
  * `wind`              : Wind is a special case. These fields are available:
-                         * `HI_wind`      : today's highest windspeed
-                         * `HI_DIR_wind`  : directrion of today's highest windspeed
-                         * `T_HI_wind`    : time of today's highest windspeed
-                         * `FMT_T_HI_wind`: formatted time of today's highest windspeed
-                         * `LO_wind`      : today's lowest windspeed
-                         * `T_LO_wind`    : time of today's lowest windspeed
-                         * `FMT_T_LO_wind`: formatted time of today's lowest windspeed
-                         * `AVG_wind`     : average
-                         * `RMS_wind`     : root mean square
-                         * `VEC_AVG_wind` : vector average
-                         * `VEC_DIR_wind` : vector direction
+   * `HI_wind`      : today's highest windspeed
+   * `HI_DIR_wind`  : directrion of today's highest windspeed
+   * `T_HI_wind`    : time of today's highest windspeed
+   * `FMT_T_HI_wind`: formatted time of today's highest windspeed
+   * `LO_wind`      : today's lowest windspeed
+   * `T_LO_wind`    : time of today's lowest windspeed
+   * `FMT_T_LO_wind`: formatted time of today's lowest windspeed
+   * `AVG_wind`     : average
+   * `RMS_wind`     : root mean square
+   * `VEC_AVG_wind` : vector average
+   * `VEC_DIR_wind` : vector direction
  * `windSpeed`         : Wind Speed
  * `windDir`           : Wind Direction
  * `windGust`          : Wind Gust (high wind speed)
  * `windGustDir`       : Wind Gust Direction
- * `rain`              : Rain (rain since last loop pkt, use SUM_rain or FMT_SUM_rain for today's rainfall.)
+ * `rain`              : Rain (rain since last loop pkt, use `SUM_rain` or `FMT_SUM_rain` for today's rainfall.)
  * `altimeter`         : Altimeter
  * `appTemp`           : Apparent Temperature Outside
  * `barometer`         : Barometer
