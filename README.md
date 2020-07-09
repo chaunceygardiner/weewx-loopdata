@@ -241,6 +241,12 @@ Next, look in the loop-data.txt file to find all of the available fields.**
  * `LABEL_windRose`    : The label of the units for windRose (e.g., 'm')
  * `UNITS_windRose`    : The units that windrose values are expressed in (e.g., 'mile').
 
+## What's next?
+A later release of LoopData will support more cheetah like keys for observations and
+include support for week, month and year.  For example, week high outside temperature
+with a label will be week.outTemp.max.  Current outside temperature will be
+current.outTemp.
+
 ## Rsync isn't Working for Me, Help!
 LoopData's uses WeeWX's `weeutil.rsyncupload.RsyncUpload` utility.  If you have rsync working
 for WeeWX to push your web pages to a remote server, loopdata's rsync is likely to work too.
