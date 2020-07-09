@@ -282,7 +282,7 @@ class LoopData(StdService):
         earliest: int = to_int(time.time() - self.cfg.barometer_rate_secs)
         for cols in dbm.genSql('SELECT dateTime, barometer FROM archive' \
                 ' WHERE dateTime >= %d ORDER BY dateTime ASC' % earliest):
-            if reading is not None:
+            if cols[1] is not None:
                 reading: Reading = Reading(timestamp = cols[0], value = cols[1])
                 barometer_readings.append(reading)
                 log.debug('fill_in_barometer_readings_at_startup: Reading(%s): %f' % (
