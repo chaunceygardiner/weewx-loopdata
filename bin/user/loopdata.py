@@ -44,7 +44,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '1.3.17'
+LOOP_DATA_VERSION = '1.3.18'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -282,10 +282,11 @@ class LoopData(StdService):
         earliest: int = to_int(time.time() - self.cfg.barometer_rate_secs)
         for cols in dbm.genSql('SELECT dateTime, barometer FROM archive' \
                 ' WHERE dateTime >= %d ORDER BY dateTime ASC' % earliest):
-            reading: Reading = Reading(timestamp = cols[0], value = cols[1])
-            barometer_readings.append(reading)
-            log.debug('fill_in_barometer_readings_at_startup: Reading(%s): %f' % (
-                timestamp_to_string(reading.timestamp), reading.value))
+            if reading is not None:
+                reading: Reading = Reading(timestamp = cols[0], value = cols[1])
+                barometer_readings.append(reading)
+                log.debug('fill_in_barometer_readings_at_startup: Reading(%s): %f' % (
+                    timestamp_to_string(reading.timestamp), reading.value))
         return barometer_readings
 
     def fill_in_10m_wind_gust_readings_at_startup(self, dbm) -> List[Reading]:
