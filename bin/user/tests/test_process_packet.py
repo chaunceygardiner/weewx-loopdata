@@ -19,6 +19,8 @@ import cc3000_packets
 import ip100_packets
 import simulator_packets
 
+from weeutil.weeutil import to_float
+
 weewx.debug = 1
 
 log = logging.getLogger(__name__)
@@ -28,12 +30,251 @@ weeutil.logger.setup('test_config', {})
 
 class ProcessPacketTests(unittest.TestCase):
 
+    def test_parse_cname(self):
+        self.maxDiff = None
+
+        cname = user.loopdata.LoopProcessor.parse_cname('unit.label.outTemp')
+        self.assertEqual(cname.field, 'unit.label.outTemp')
+        self.assertEqual(cname.prefix, 'unit')
+        self.assertEqual(cname.prefix2, 'label')
+        self.assertEqual(cname.period, None)
+        self.assertEqual(cname.obstype, 'outTemp')
+        self.assertEqual(cname.agg_type, None)
+        self.assertEqual(cname.format_spec, None)
+
+        cname = user.loopdata.LoopProcessor.parse_cname('10m.windGust.max.raw')
+        self.assertEqual(cname.field, '10m.windGust.max.raw')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, '10m')
+        self.assertEqual(cname.obstype, 'windGust')
+        self.assertEqual(cname.agg_type, 'max')
+        self.assertEqual(cname.format_spec, 'raw')
+
+        cname = user.loopdata.LoopProcessor.parse_cname('10m.windGust.max.formatted')
+        self.assertEqual(cname.field, '10m.windGust.max.formatted')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, '10m')
+        self.assertEqual(cname.obstype, 'windGust')
+        self.assertEqual(cname.agg_type, 'max')
+        self.assertEqual(cname.format_spec, 'formatted')
+
+        cname = user.loopdata.LoopProcessor.parse_cname('10m.windGust.maxtime')
+        self.assertEqual(cname.field, '10m.windGust.maxtime')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, '10m')
+        self.assertEqual(cname.obstype, 'windGust')
+        self.assertEqual(cname.agg_type, 'maxtime')
+        self.assertEqual(cname.format_spec, None)
+
+        cname = user.loopdata.LoopProcessor.parse_cname('unit.label.wind')
+        self.assertEqual(cname.field, 'unit.label.wind')
+        self.assertEqual(cname.prefix, 'unit')
+        self.assertEqual(cname.prefix2, 'label')
+        self.assertEqual(cname.period, None)
+        self.assertEqual(cname.obstype, 'wind')
+        self.assertEqual(cname.agg_type, None)
+        self.assertEqual(cname.format_spec, None)
+
+        cname = user.loopdata.LoopProcessor.parse_cname('trend.barometer')
+        self.assertEqual(cname.field, 'trend.barometer')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'trend')
+        self.assertEqual(cname.obstype, 'barometer')
+        self.assertEqual(cname.agg_type, None)
+        self.assertEqual(cname.format_spec, None)
+
+        cname = user.loopdata.LoopProcessor.parse_cname('trend.barometer.formatted')
+        self.assertEqual(cname.field, 'trend.barometer.formatted')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'trend')
+        self.assertEqual(cname.obstype, 'barometer')
+        self.assertEqual(cname.agg_type, None)
+        self.assertEqual(cname.format_spec, 'formatted')
+
+        cname = user.loopdata.LoopProcessor.parse_cname('trend.barometer.desc')
+        self.assertEqual(cname.field, 'trend.barometer.desc')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'trend')
+        self.assertEqual(cname.obstype, 'barometer')
+        self.assertEqual(cname.agg_type, None)
+        self.assertEqual(cname.format_spec, 'desc')
+
+        cname = user.loopdata.LoopProcessor.parse_cname('current.outTemp')
+        self.assertEqual(cname.field, 'current.outTemp')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'current')
+        self.assertEqual(cname.obstype, 'outTemp')
+        self.assertEqual(cname.agg_type, None)
+        self.assertEqual(cname.format_spec, None)
+
+        cname = user.loopdata.LoopProcessor.parse_cname('current.dateTime')
+        self.assertEqual(cname.field, 'current.dateTime')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'current')
+        self.assertEqual(cname.obstype, 'dateTime')
+        self.assertEqual(cname.agg_type, None)
+        self.assertEqual(cname.format_spec, None)
+
+        cname = user.loopdata.LoopProcessor.parse_cname('current.dateTime.raw')
+        self.assertEqual(cname.field, 'current.dateTime.raw')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'current')
+        self.assertEqual(cname.obstype, 'dateTime')
+        self.assertEqual(cname.agg_type, None)
+        self.assertEqual(cname.format_spec, 'raw')
+
+        cname = user.loopdata.LoopProcessor.parse_cname('current.windSpeed')
+        self.assertEqual(cname.field, 'current.windSpeed')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'current')
+        self.assertEqual(cname.obstype, 'windSpeed')
+        self.assertEqual(cname.agg_type, None)
+        self.assertEqual(cname.format_spec, None)
+
+        cname = user.loopdata.LoopProcessor.parse_cname('current.windSpeed.ordinal_compass')
+        self.assertEqual(cname.field, 'current.windSpeed.ordinal_compass')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'current')
+        self.assertEqual(cname.obstype, 'windSpeed')
+        self.assertEqual(cname.agg_type, None)
+        self.assertEqual(cname.format_spec, 'ordinal_compass')
+
+        cname = user.loopdata.LoopProcessor.parse_cname('day.rain.sum')
+        self.assertEqual(cname.field, 'day.rain.sum')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'day')
+        self.assertEqual(cname.obstype, 'rain')
+        self.assertEqual(cname.agg_type, 'sum')
+        self.assertEqual(cname.format_spec, None)
+
+        cname = user.loopdata.LoopProcessor.parse_cname('day.rain.sum.raw')
+        self.assertEqual(cname.field, 'day.rain.sum.raw')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'day')
+        self.assertEqual(cname.obstype, 'rain')
+        self.assertEqual(cname.agg_type, 'sum')
+        self.assertEqual(cname.format_spec, 'raw')
+
+        cname = user.loopdata.LoopProcessor.parse_cname('day.rain.formatted')
+        self.assertEqual(cname, None)
+
+        cname = user.loopdata.LoopProcessor.parse_cname('day.windGust.max')
+        self.assertEqual(cname.field, 'day.windGust.max')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'day')
+        self.assertEqual(cname.obstype, 'windGust')
+        self.assertEqual(cname.agg_type, 'max')
+        self.assertEqual(cname.format_spec, None)
+
+        cname = user.loopdata.LoopProcessor.parse_cname('day.windDir.max')
+        self.assertEqual(cname.field, 'day.windDir.max')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'day')
+        self.assertEqual(cname.obstype, 'windDir')
+        self.assertEqual(cname.agg_type, 'max')
+        self.assertEqual(cname.format_spec, None)
+
+        cname = user.loopdata.LoopProcessor.parse_cname('day.wind.maxtime')
+        self.assertEqual(cname.field, 'day.wind.maxtime')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'day')
+        self.assertEqual(cname.obstype, 'wind')
+        self.assertEqual(cname.agg_type, 'maxtime')
+        self.assertEqual(cname.format_spec, None)
+
+        cname = user.loopdata.LoopProcessor.parse_cname('day.wind.max')
+        self.assertEqual(cname.field, 'day.wind.max')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'day')
+        self.assertEqual(cname.obstype, 'wind')
+        self.assertEqual(cname.agg_type, 'max')
+        self.assertEqual(cname.format_spec, None)
+
+        cname = user.loopdata.LoopProcessor.parse_cname('day.wind.gustdir')
+        self.assertEqual(cname.field, 'day.wind.gustdir')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'day')
+        self.assertEqual(cname.obstype, 'wind')
+        self.assertEqual(cname.agg_type, 'gustdir')
+        self.assertEqual(cname.format_spec, None)
+
+        cname = user.loopdata.LoopProcessor.parse_cname('day.wind.vecavg')
+        self.assertEqual(cname.field, 'day.wind.vecavg')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'day')
+        self.assertEqual(cname.obstype, 'wind')
+        self.assertEqual(cname.agg_type, 'vecavg')
+        self.assertEqual(cname.format_spec, None)
+
+        cname = user.loopdata.LoopProcessor.parse_cname('day.wind.vecdir')
+        self.assertEqual(cname.field, 'day.wind.vecdir')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'day')
+        self.assertEqual(cname.obstype, 'wind')
+        self.assertEqual(cname.agg_type, 'vecdir')
+        self.assertEqual(cname.format_spec, None)
+
+        cname = user.loopdata.LoopProcessor.parse_cname('day.wind.rms')
+        self.assertEqual(cname.field, 'day.wind.rms')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'day')
+        self.assertEqual(cname.obstype, 'wind')
+        self.assertEqual(cname.agg_type, 'rms')
+        self.assertEqual(cname.format_spec, None)
+
+
+        cname = user.loopdata.LoopProcessor.parse_cname('day.wind.avg')
+        self.assertEqual(cname.field, 'day.wind.avg')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'day')
+        self.assertEqual(cname.obstype, 'wind')
+        self.assertEqual(cname.agg_type, 'avg')
+        self.assertEqual(cname.format_spec, None)
+
     def test_ip100_packet_processing(self):
 
         config_dict = ProcessPacketTests._get_config_dict('us')
 
         first_pkt_time, pkts = ip100_packets.IP100Packets._get_packets()
         day_accum = ProcessPacketTests._get_day_accum(config_dict, first_pkt_time)
+
+        barometer_readings = []
+        wind_gust_readings = []
+        wind_rose_readings = []
+        for pkt in pkts:
+            barometer_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['barometer']))
+            wind_gust_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['windGust']))
+            if 'windSpeed' in pkt and 'windDir' in pkt and pkt['windSpeed'] is not None and pkt['windDir'] is not None:
+                wind_speed = to_float(pkt['windSpeed'])
+                wind_dir   = to_float(pkt['windDir'])
+                if wind_speed is not None and wind_speed != 0 and wind_dir is not None:
+                    bucket = user.loopdata.LoopProcessor.get_wind_rose_bucket(16, wind_dir), wind_speed / (3600.0 / 300)
+                    wind_rose_readings.append(user.loopdata.WindroseReading(
+                        timestamp = pkt['dateTime'],
+                        bucket    = user.loopdata.LoopProcessor.get_wind_rose_bucket(16, wind_dir),
+                        distance  = wind_speed / (3600.0 / 300)))
 
         converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
         self.assertEqual(type(converter), weewx.units.Converter)
@@ -42,75 +283,139 @@ class ProcessPacketTests(unittest.TestCase):
         for pkt in pkts:
             day_accum.addRecord(pkt)
 
-        loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(pkt,
+        fields_to_include = [
+            '10m.windGust.max',
+            '10m.windGust.max.formatted',
+            '10m.windGust.max.raw',
+            '10m.windGust.maxtime',
+            '10m.windGust.maxtime.raw',
+            'current.dateTime.raw',
+            'current.dateTime',
+            'unit.label.outTemp',
+            'current.outTemp',
+            'current.barometer',
+            'current.windSpeed',
+            'current.windDir',
+            'current.windDir.ordinal_compass',
+            'day.barometer.avg',
+            'day.barometer.max',
+            'day.barometer.min',
+            'day.outTemp.avg',
+            'day.outTemp.min',
+            'day.outTemp.max',
+            'day.rain.sum',
+            'day.rain.sum.formatted',
+            'day.wind.avg',
+            'day.wind.avg.formatted',
+            'day.wind.max',
+            'day.wind.max.formatted',
+            'day.wind.gustdir',
+            'day.wind.gustdir.formatted',
+            'day.wind.gustdir.ordinal_compass',
+            'day.wind.maxtime',
+            'day.wind.min',
+            'day.wind.min.formatted',
+            'day.wind.mintime',
+            'day.wind.rms',
+            'day.wind.rms.formatted',
+            'day.wind.vecavg',
+            'day.wind.vecavg.formatted',
+            'day.wind.vecdir',
+            'day.wind.vecdir.formatted',
+            'day.windDir.avg',
+            'day.windDir.max',
+            'day.windDir.min',
+            'day.windSpeed.avg',
+            'day.windSpeed.max',
+            'day.windSpeed.min',
+            'trend.barometer',
+            'trend.barometer.raw',
+            'trend.barometer.formatted',
+            'trend.barometer.desc',
+            'unit.label.barometer',
+            'unit.label.rain',
+            'unit.label.wind',
+            'unit.label.windDir',
+            'unit.label.windSpeed',
+            ]
+
+        loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(
+            pkt, fields_to_include,
+            barometer_readings, wind_gust_readings, wind_rose_readings,
             day_accum, converter, formatter)
+
         self.maxDiff = None
 
-        self.assertEqual(loopdata_pkt['FMT_outTemp'], '72.0°F')
-        self.assertEqual(loopdata_pkt['FMT_barometer'], '30.055 inHg')
-        self.assertEqual(loopdata_pkt['FMT_windSpeed'], '6 mph')
-        self.assertEqual(loopdata_pkt['FMT_windDir'], '45°')
+        self.assertEqual(loopdata_pkt['unit.label.outTemp'], '°F')
 
-        self.assertEqual(loopdata_pkt['FMT_AVG_outTemp'], '72.0°F')
-        self.assertEqual(loopdata_pkt['FMT_AVG_barometer'], '30.055 inHg')
-        self.assertEqual(loopdata_pkt['FMT_AVG_windSpeed'], '3 mph')
-        self.assertEqual(loopdata_pkt['FMT_AVG_windDir'], '87°')
+        self.assertEqual(loopdata_pkt['current.dateTime.raw'], 1593883332)
+        self.assertEqual(loopdata_pkt['current.dateTime'], '07/04/20 10:22:12')
 
-        self.assertEqual(loopdata_pkt['FMT_WAVG_outTemp'], '72.0°F')
-        self.assertEqual(loopdata_pkt['FMT_WAVG_barometer'], '30.055 inHg')
-        self.assertEqual(loopdata_pkt['FMT_WAVG_windSpeed'], '3 mph')
-        self.assertEqual(loopdata_pkt['FMT_WAVG_windDir'], '87°')
+        self.assertEqual(loopdata_pkt['10m.windGust.max'], '6 mph')
+        self.assertEqual(loopdata_pkt['10m.windGust.max.formatted'], '6')
+        self.assertEqual(loopdata_pkt['10m.windGust.max.raw'], 6.5)
+        self.assertEqual(loopdata_pkt['10m.windGust.maxtime'], '07/04/20 10:18:20')
+        self.assertEqual(loopdata_pkt['10m.windGust.maxtime.raw'], 1593883100)
 
-        self.assertEqual(loopdata_pkt['FMT_HI_outTemp'], '72.0°F')
-        self.assertEqual(loopdata_pkt['FMT_HI_barometer'], '30.055 inHg')
-        self.assertEqual(loopdata_pkt['FMT_HI_windSpeed'], '6 mph')
-        self.assertEqual(loopdata_pkt['FMT_HI_windDir'], '360°')
+        self.assertEqual(loopdata_pkt['current.outTemp'], '72.0°F')
+        self.assertEqual(loopdata_pkt['current.barometer'], '30.055 inHg')
+        self.assertEqual(loopdata_pkt['current.windSpeed'], '6 mph')
+        self.assertEqual(loopdata_pkt['current.windDir'], '45°')
+        self.assertEqual(loopdata_pkt['current.windDir.ordinal_compass'], 'NE')
 
-        self.assertEqual(loopdata_pkt['FMT_LO_outTemp'], '72.0°F')
-        self.assertEqual(loopdata_pkt['FMT_LO_barometer'], '30.055 inHg')
-        self.assertEqual(loopdata_pkt['FMT_LO_windSpeed'], '1 mph')
-        self.assertEqual(loopdata_pkt['FMT_LO_windDir'], '22°')
+        self.assertEqual(loopdata_pkt['trend.barometer'], '0.000 inHg')
+        self.assertEqual(loopdata_pkt['trend.barometer.raw'], 0.0)
+        self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '0.000')
+        self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Steady')
 
-        self.assertEqual(loopdata_pkt['LABEL_outTemp'], '°F')
-        self.assertEqual(loopdata_pkt['LABEL_barometer'], ' inHg')
-        self.assertEqual(loopdata_pkt['LABEL_windSpeed'], ' mph')
-        self.assertEqual(loopdata_pkt['LABEL_windDir'], '°')
+        self.assertEqual(loopdata_pkt['day.rain.sum'], '0.00 in')
+        self.assertEqual(loopdata_pkt['day.rain.sum.formatted'], '0.00')
+        self.assertEqual(loopdata_pkt['unit.label.rain'], ' in')
 
-        self.assertEqual(loopdata_pkt['FMT_T_HI_wind'], '07/04/20 10:18:20')
-        self.assertEqual(loopdata_pkt['HI_wind'], '6')
-        self.assertEqual(loopdata_pkt['FMT_HI_wind'], '6 mph')
-        self.assertEqual(loopdata_pkt['UNITS_HI_wind'], 'mile_per_hour')
-        self.assertEqual(loopdata_pkt['LABEL_HI_wind'], ' mph')
-        self.assertEqual(loopdata_pkt['HI_DIR_wind'], '45')
-        self.assertEqual(loopdata_pkt['FMT_HI_DIR_wind'], '45°')
-        self.assertEqual(loopdata_pkt['UNITS_HI_DIR_wind'], 'degree_compass')
-        self.assertEqual(loopdata_pkt['LABEL_HI_DIR_wind'], '°')
+        self.assertEqual(loopdata_pkt['day.outTemp.avg'], '72.0°F')
+        self.assertEqual(loopdata_pkt['day.barometer.avg'], '30.055 inHg')
+        self.assertEqual(loopdata_pkt['day.windSpeed.avg'], '3 mph')
+        self.assertEqual(loopdata_pkt['day.windDir.avg'], '87°')
 
-        self.assertEqual(loopdata_pkt['FMT_T_LO_wind'], '07/04/20 10:17:48')
-        self.assertEqual(loopdata_pkt['LO_wind'], '1')
-        self.assertEqual(loopdata_pkt['FMT_LO_wind'], '1 mph')
-        self.assertEqual(loopdata_pkt['UNITS_LO_wind'], 'mile_per_hour')
-        self.assertEqual(loopdata_pkt['LABEL_LO_wind'], ' mph')
+        self.assertEqual(loopdata_pkt['day.outTemp.max'], '72.0°F')
+        self.assertEqual(loopdata_pkt['day.barometer.max'], '30.055 inHg')
+        self.assertEqual(loopdata_pkt['day.windSpeed.max'], '6 mph')
+        self.assertEqual(loopdata_pkt['day.windDir.max'], '360°')
 
-        self.assertEqual(loopdata_pkt['AVG_wind'], '3')
-        self.assertEqual(loopdata_pkt['FMT_AVG_wind'], '3 mph')
-        self.assertEqual(loopdata_pkt['UNITS_AVG_wind'], 'mile_per_hour')
-        self.assertEqual(loopdata_pkt['LABEL_AVG_wind'], ' mph')
+        self.assertEqual(loopdata_pkt['day.outTemp.min'], '72.0°F')
+        self.assertEqual(loopdata_pkt['day.barometer.min'], '30.055 inHg')
+        self.assertEqual(loopdata_pkt['day.windSpeed.min'], '1 mph')
+        self.assertEqual(loopdata_pkt['day.windDir.min'], '22°')
 
-        self.assertEqual(loopdata_pkt['RMS_wind'], '4')
-        self.assertEqual(loopdata_pkt['FMT_RMS_wind'], '4 mph')
-        self.assertEqual(loopdata_pkt['UNITS_RMS_wind'], 'mile_per_hour')
-        self.assertEqual(loopdata_pkt['LABEL_RMS_wind'], ' mph')
+        self.assertEqual(loopdata_pkt['unit.label.outTemp'], '°F')
+        self.assertEqual(loopdata_pkt['unit.label.barometer'], ' inHg')
+        self.assertEqual(loopdata_pkt['unit.label.windSpeed'], ' mph')
+        self.assertEqual(loopdata_pkt['unit.label.windDir'], '°')
 
-        self.assertEqual(loopdata_pkt['VEC_AVG_wind'], '3')
-        self.assertEqual(loopdata_pkt['FMT_VEC_AVG_wind'], '3 mph')
-        self.assertEqual(loopdata_pkt['UNITS_VEC_AVG_wind'], 'mile_per_hour')
-        self.assertEqual(loopdata_pkt['LABEL_VEC_AVG_wind'], ' mph')
+        self.assertEqual(loopdata_pkt['unit.label.wind'], ' mph')
+        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '07/04/20 10:18:20')
+        self.assertEqual(loopdata_pkt['day.wind.max.formatted'], '6')
+        self.assertEqual(loopdata_pkt['day.wind.max'], '6 mph')
+        self.assertEqual(loopdata_pkt['day.wind.gustdir.formatted'], '45')
+        self.assertEqual(loopdata_pkt['day.wind.gustdir.ordinal_compass'], 'NE')
+        self.assertEqual(loopdata_pkt['day.wind.gustdir'], '45°')
 
-        self.assertEqual(loopdata_pkt['VEC_DIR_wind'], '28')
-        self.assertEqual(loopdata_pkt['FMT_VEC_DIR_wind'], '28°')
-        self.assertEqual(loopdata_pkt['UNITS_VEC_DIR_wind'], 'degree_compass')
-        self.assertEqual(loopdata_pkt['LABEL_VEC_DIR_wind'], '°')
+        self.assertEqual(loopdata_pkt['day.wind.mintime'], '07/04/20 10:17:48')
+        self.assertEqual(loopdata_pkt['day.wind.min.formatted'], '1')
+        self.assertEqual(loopdata_pkt['day.wind.min'], '1 mph')
+        self.assertEqual(loopdata_pkt['unit.label.wind'], ' mph')
+
+        self.assertEqual(loopdata_pkt['day.wind.avg.formatted'], '3')
+        self.assertEqual(loopdata_pkt['day.wind.avg'], '3 mph')
+
+        self.assertEqual(loopdata_pkt['day.wind.rms.formatted'], '4')
+        self.assertEqual(loopdata_pkt['day.wind.rms'], '4 mph')
+
+        self.assertEqual(loopdata_pkt['day.wind.vecavg.formatted'], '3')
+        self.assertEqual(loopdata_pkt['day.wind.vecavg'], '3 mph')
+
+        self.assertEqual(loopdata_pkt['day.wind.vecdir.formatted'], '28')
+        self.assertEqual(loopdata_pkt['day.wind.vecdir'], '28°')
 
     def test_cc3000_packet_processing(self):
 
@@ -119,6 +424,22 @@ class ProcessPacketTests(unittest.TestCase):
         first_pkt_time, pkts = cc3000_packets.CC3000Packets._get_packets()
         day_accum = ProcessPacketTests._get_day_accum(config_dict, first_pkt_time)
 
+        barometer_readings = []
+        wind_gust_readings = []
+        wind_rose_readings = []
+        for pkt in pkts:
+            barometer_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['barometer']))
+            wind_gust_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['windGust']))
+            if 'windSpeed' in pkt and 'windDir' in pkt and pkt['windSpeed'] is not None and pkt['windDir'] is not None:
+                wind_speed = to_float(pkt['windSpeed'])
+                wind_dir   = to_float(pkt['windDir'])
+                if wind_speed is not None and wind_speed != 0 and wind_dir is not None:
+                    bucket = user.loopdata.LoopProcessor.get_wind_rose_bucket(16, wind_dir), wind_speed / (3600.0 / 300)
+                    wind_rose_readings.append(user.loopdata.WindroseReading(
+                        timestamp = pkt['dateTime'],
+                        bucket    = user.loopdata.LoopProcessor.get_wind_rose_bucket(16, wind_dir),
+                        distance  = wind_speed / (3600.0 / 300)))
+
         converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
@@ -126,75 +447,139 @@ class ProcessPacketTests(unittest.TestCase):
         for pkt in pkts:
             day_accum.addRecord(pkt)
 
-        loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(pkt,
+        fields_to_include = [
+            '10m.windGust.max',
+            '10m.windGust.max.formatted',
+            '10m.windGust.max.raw',
+            '10m.windGust.maxtime',
+            '10m.windGust.maxtime.raw',
+            'current.dateTime.raw',
+            'current.dateTime',
+            'unit.label.outTemp',
+            'current.outTemp',
+            'current.barometer',
+            'current.windSpeed',
+            'current.windDir',
+            'current.windDir.ordinal_compass',
+            'day.barometer.avg',
+            'day.barometer.max',
+            'day.barometer.min',
+            'day.outTemp.avg',
+            'day.outTemp.min',
+            'day.outTemp.max',
+            'day.rain.sum',
+            'day.rain.sum.formatted',
+            'day.wind.avg',
+            'day.wind.avg.formatted',
+            'day.wind.max',
+            'day.wind.max.formatted',
+            'day.wind.gustdir',
+            'day.wind.gustdir.formatted',
+            'day.wind.gustdir.ordinal_compass',
+            'day.wind.maxtime',
+            'day.wind.min',
+            'day.wind.min.formatted',
+            'day.wind.mintime',
+            'day.wind.rms',
+            'day.wind.rms.formatted',
+            'day.wind.vecavg',
+            'day.wind.vecavg.formatted',
+            'day.wind.vecdir',
+            'day.wind.vecdir.formatted',
+            'day.windDir.avg',
+            'day.windDir.max',
+            'day.windDir.min',
+            'day.windSpeed.avg',
+            'day.windSpeed.max',
+            'day.windSpeed.min',
+            'trend.barometer',
+            'trend.barometer.raw',
+            'trend.barometer.formatted',
+            'trend.barometer.desc',
+            'unit.label.barometer',
+            'unit.label.rain',
+            'unit.label.wind',
+            'unit.label.windDir',
+            'unit.label.windSpeed',
+            ]
+
+        loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(
+            pkt, fields_to_include,
+            barometer_readings, wind_gust_readings, wind_rose_readings,
             day_accum, converter, formatter)
+
         self.maxDiff = None
 
-        self.assertEqual(loopdata_pkt['FMT_outTemp'], '75.4°F')
-        self.assertEqual(loopdata_pkt['FMT_barometer'], '30.005 inHg')
-        self.assertEqual(loopdata_pkt['FMT_windSpeed'], '2 mph')
-        self.assertEqual(loopdata_pkt['FMT_windDir'], '45°')
+        self.assertEqual(loopdata_pkt['unit.label.outTemp'], '°F')
 
-        self.assertEqual(loopdata_pkt['FMT_AVG_outTemp'], '75.4°F')
-        self.assertEqual(loopdata_pkt['FMT_AVG_barometer'], '30.005 inHg')
-        self.assertEqual(loopdata_pkt['FMT_AVG_windSpeed'], '4 mph')
-        self.assertEqual(loopdata_pkt['FMT_AVG_windDir'], '166°')
+        self.assertEqual(loopdata_pkt['current.dateTime.raw'], 1593975366)
+        self.assertEqual(loopdata_pkt['current.dateTime'], '07/05/20 11:56:06')
 
-        self.assertEqual(loopdata_pkt['FMT_WAVG_outTemp'], '75.4°F')
-        self.assertEqual(loopdata_pkt['FMT_WAVG_barometer'], '30.005 inHg')
-        self.assertEqual(loopdata_pkt['FMT_WAVG_windSpeed'], '4 mph')
-        self.assertEqual(loopdata_pkt['FMT_WAVG_windDir'], '166°')
+        self.assertEqual(loopdata_pkt['10m.windGust.max'], '7 mph')
+        self.assertEqual(loopdata_pkt['10m.windGust.max.formatted'], '7')
+        self.assertEqual(loopdata_pkt['10m.windGust.max.raw'], 7.2)
+        self.assertEqual(loopdata_pkt['10m.windGust.maxtime'], '07/05/20 11:50:30')
+        self.assertEqual(loopdata_pkt['10m.windGust.maxtime.raw'], 1593975030)
 
-        self.assertEqual(loopdata_pkt['FMT_HI_outTemp'], '75.4°F')
-        self.assertEqual(loopdata_pkt['FMT_HI_barometer'], '30.005 inHg')
-        self.assertEqual(loopdata_pkt['FMT_HI_windSpeed'], '7 mph')
-        self.assertEqual(loopdata_pkt['FMT_HI_windDir'], '360°')
+        self.assertEqual(loopdata_pkt['current.outTemp'], '75.4°F')
+        self.assertEqual(loopdata_pkt['current.barometer'], '30.005 inHg')
+        self.assertEqual(loopdata_pkt['current.windSpeed'], '2 mph')
+        self.assertEqual(loopdata_pkt['current.windDir'], '45°')
+        self.assertEqual(loopdata_pkt['current.windDir.ordinal_compass'], 'NE')
 
-        self.assertEqual(loopdata_pkt['FMT_LO_outTemp'], '75.3°F')
-        self.assertEqual(loopdata_pkt['FMT_LO_barometer'], '30.005 inHg')
-        self.assertEqual(loopdata_pkt['FMT_LO_windSpeed'], '0 mph')
-        self.assertEqual(loopdata_pkt['FMT_LO_windDir'], '22°')
+        self.assertEqual(loopdata_pkt['trend.barometer'], '0.000 inHg')
+        self.assertEqual(loopdata_pkt['trend.barometer.raw'], 0.0)
+        self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '0.000')
+        self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Steady')
 
-        self.assertEqual(loopdata_pkt['LABEL_outTemp'], '°F')
-        self.assertEqual(loopdata_pkt['LABEL_barometer'], ' inHg')
-        self.assertEqual(loopdata_pkt['LABEL_windSpeed'], ' mph')
-        self.assertEqual(loopdata_pkt['LABEL_windDir'], '°')
+        self.assertEqual(loopdata_pkt['day.rain.sum'], '0.00 in')
+        self.assertEqual(loopdata_pkt['day.rain.sum.formatted'], '0.00')
+        self.assertEqual(loopdata_pkt['unit.label.rain'], ' in')
 
-        self.assertEqual(loopdata_pkt['FMT_T_HI_wind'], '07/05/20 11:50:30')
-        self.assertEqual(loopdata_pkt['HI_wind'], '7')
-        self.assertEqual(loopdata_pkt['FMT_HI_wind'], '7 mph')
-        self.assertEqual(loopdata_pkt['UNITS_HI_wind'], 'mile_per_hour')
-        self.assertEqual(loopdata_pkt['LABEL_HI_wind'], ' mph')
-        self.assertEqual(loopdata_pkt['HI_DIR_wind'], '22')
-        self.assertEqual(loopdata_pkt['FMT_HI_DIR_wind'], '22°')
-        self.assertEqual(loopdata_pkt['UNITS_HI_DIR_wind'], 'degree_compass')
-        self.assertEqual(loopdata_pkt['LABEL_HI_DIR_wind'], '°')
+        self.assertEqual(loopdata_pkt['day.outTemp.avg'], '75.4°F')
+        self.assertEqual(loopdata_pkt['day.barometer.avg'], '30.005 inHg')
+        self.assertEqual(loopdata_pkt['day.windSpeed.avg'], '4 mph')
+        self.assertEqual(loopdata_pkt['day.windDir.avg'], '166°')
 
-        self.assertEqual(loopdata_pkt['FMT_T_LO_wind'], '07/05/20 11:51:58')
-        self.assertEqual(loopdata_pkt['LO_wind'], '0')
-        self.assertEqual(loopdata_pkt['FMT_LO_wind'], '0 mph')
-        self.assertEqual(loopdata_pkt['UNITS_LO_wind'], 'mile_per_hour')
-        self.assertEqual(loopdata_pkt['LABEL_LO_wind'], ' mph')
+        self.assertEqual(loopdata_pkt['day.outTemp.max'], '75.4°F')
+        self.assertEqual(loopdata_pkt['day.barometer.max'], '30.005 inHg')
+        self.assertEqual(loopdata_pkt['day.windSpeed.max'], '7 mph')
+        self.assertEqual(loopdata_pkt['day.windDir.max'], '360°')
 
-        self.assertEqual(loopdata_pkt['AVG_wind'], '4')
-        self.assertEqual(loopdata_pkt['FMT_AVG_wind'], '4 mph')
-        self.assertEqual(loopdata_pkt['UNITS_AVG_wind'], 'mile_per_hour')
-        self.assertEqual(loopdata_pkt['LABEL_AVG_wind'], ' mph')
+        self.assertEqual(loopdata_pkt['day.outTemp.min'], '75.3°F')
+        self.assertEqual(loopdata_pkt['day.barometer.min'], '30.005 inHg')
+        self.assertEqual(loopdata_pkt['day.windSpeed.min'], '0 mph')
+        self.assertEqual(loopdata_pkt['day.windDir.min'], '22°')
 
-        self.assertEqual(loopdata_pkt['RMS_wind'], '4')
-        self.assertEqual(loopdata_pkt['FMT_RMS_wind'], '4 mph')
-        self.assertEqual(loopdata_pkt['UNITS_RMS_wind'], 'mile_per_hour')
-        self.assertEqual(loopdata_pkt['LABEL_RMS_wind'], ' mph')
+        self.assertEqual(loopdata_pkt['unit.label.outTemp'], '°F')
+        self.assertEqual(loopdata_pkt['unit.label.barometer'], ' inHg')
+        self.assertEqual(loopdata_pkt['unit.label.windSpeed'], ' mph')
+        self.assertEqual(loopdata_pkt['unit.label.windDir'], '°')
 
-        self.assertEqual(loopdata_pkt['VEC_AVG_wind'], '3')
-        self.assertEqual(loopdata_pkt['FMT_VEC_AVG_wind'], '3 mph')
-        self.assertEqual(loopdata_pkt['UNITS_VEC_AVG_wind'], 'mile_per_hour')
-        self.assertEqual(loopdata_pkt['LABEL_VEC_AVG_wind'], ' mph')
+        self.assertEqual(loopdata_pkt['unit.label.wind'], ' mph')
+        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '07/05/20 11:50:30')
+        self.assertEqual(loopdata_pkt['day.wind.max.formatted'], '7')
+        self.assertEqual(loopdata_pkt['day.wind.max'], '7 mph')
+        self.assertEqual(loopdata_pkt['day.wind.gustdir.formatted'], '22')
+        self.assertEqual(loopdata_pkt['day.wind.gustdir.ordinal_compass'], 'NNE')
+        self.assertEqual(loopdata_pkt['day.wind.gustdir'], '22°')
 
-        self.assertEqual(loopdata_pkt['VEC_DIR_wind'], '22')
-        self.assertEqual(loopdata_pkt['FMT_VEC_DIR_wind'], '22°')
-        self.assertEqual(loopdata_pkt['UNITS_VEC_DIR_wind'], 'degree_compass')
-        self.assertEqual(loopdata_pkt['LABEL_VEC_DIR_wind'], '°')
+        self.assertEqual(loopdata_pkt['day.wind.mintime'], '07/05/20 11:51:58')
+        self.assertEqual(loopdata_pkt['day.wind.min.formatted'], '0')
+        self.assertEqual(loopdata_pkt['day.wind.min'], '0 mph')
+        self.assertEqual(loopdata_pkt['unit.label.wind'], ' mph')
+
+        self.assertEqual(loopdata_pkt['day.wind.avg.formatted'], '4')
+        self.assertEqual(loopdata_pkt['day.wind.avg'], '4 mph')
+
+        self.assertEqual(loopdata_pkt['day.wind.rms.formatted'], '4')
+        self.assertEqual(loopdata_pkt['day.wind.rms'], '4 mph')
+
+        self.assertEqual(loopdata_pkt['day.wind.vecavg.formatted'], '3')
+        self.assertEqual(loopdata_pkt['day.wind.vecavg'], '3 mph')
+
+        self.assertEqual(loopdata_pkt['day.wind.vecdir.formatted'], '22')
+        self.assertEqual(loopdata_pkt['day.wind.vecdir'], '22°')
 
     def test_simulator_packet_processing(self):
 
@@ -203,6 +588,22 @@ class ProcessPacketTests(unittest.TestCase):
         first_pkt_time, pkts = simulator_packets.SimulatorPackets._get_packets()
         day_accum = ProcessPacketTests._get_day_accum(config_dict, first_pkt_time)
 
+        barometer_readings = []
+        wind_gust_readings = []
+        wind_rose_readings = []
+        for pkt in pkts:
+            barometer_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['barometer']))
+            wind_gust_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['windGust']))
+            if 'windSpeed' in pkt and 'windDir' in pkt and pkt['windSpeed'] is not None and pkt['windDir'] is not None:
+                wind_speed = to_float(pkt['windSpeed'])
+                wind_dir   = to_float(pkt['windDir'])
+                if wind_speed is not None and wind_speed != 0 and wind_dir is not None:
+                    bucket = user.loopdata.LoopProcessor.get_wind_rose_bucket(16, wind_dir), wind_speed / (3600.0 / 300)
+                    wind_rose_readings.append(user.loopdata.WindroseReading(
+                        timestamp = pkt['dateTime'],
+                        bucket    = user.loopdata.LoopProcessor.get_wind_rose_bucket(16, wind_dir),
+                        distance  = wind_speed / (3600.0 / 300)))
+
         converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
@@ -210,77 +611,139 @@ class ProcessPacketTests(unittest.TestCase):
         for pkt in pkts:
             day_accum.addRecord(pkt)
 
-        loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(pkt,
+        fields_to_include = [
+            '10m.windGust.max',
+            '10m.windGust.max.formatted',
+            '10m.windGust.max.raw',
+            '10m.windGust.maxtime',
+            '10m.windGust.maxtime.raw',
+            'current.dateTime.raw',
+            'current.dateTime',
+            'unit.label.outTemp',
+            'current.outTemp',
+            'current.barometer',
+            'current.windSpeed',
+            'current.windDir',
+            'current.windDir.ordinal_compass',
+            'day.barometer.avg',
+            'day.barometer.max',
+            'day.barometer.min',
+            'day.outTemp.avg',
+            'day.outTemp.min',
+            'day.outTemp.max',
+            'day.rain.sum',
+            'day.rain.sum.formatted',
+            'day.wind.avg',
+            'day.wind.avg.formatted',
+            'day.wind.max',
+            'day.wind.max.formatted',
+            'day.wind.gustdir',
+            'day.wind.gustdir.formatted',
+            'day.wind.gustdir.ordinal_compass',
+            'day.wind.maxtime',
+            'day.wind.min',
+            'day.wind.min.formatted',
+            'day.wind.mintime',
+            'day.wind.rms',
+            'day.wind.rms.formatted',
+            'day.wind.vecavg',
+            'day.wind.vecavg.formatted',
+            'day.wind.vecdir',
+            'day.wind.vecdir.formatted',
+            'day.windDir.avg',
+            'day.windDir.max',
+            'day.windDir.min',
+            'day.windSpeed.avg',
+            'day.windSpeed.max',
+            'day.windSpeed.min',
+            'trend.barometer',
+            'trend.barometer.raw',
+            'trend.barometer.formatted',
+            'trend.barometer.desc',
+            'unit.label.barometer',
+            'unit.label.rain',
+            'unit.label.wind',
+            'unit.label.windDir',
+            'unit.label.windSpeed',
+            ]
+
+        loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(
+            pkt, fields_to_include,
+            barometer_readings, wind_gust_readings, wind_rose_readings,
             day_accum, converter, formatter)
+
         self.maxDiff = None
 
-        self.assertEqual(loopdata_pkt['FMT_outTemp'], '0.0°C')
-        self.assertEqual(loopdata_pkt['FMT_barometer'], '1053.1 mbar')
-        self.assertEqual(loopdata_pkt['FMT_windSpeed'], '0 km/h')
-        self.assertEqual(loopdata_pkt['FMT_windDir'], '360°')
+        self.assertEqual(loopdata_pkt['unit.label.outTemp'], '°C')
 
-        self.assertEqual(loopdata_pkt['FMT_AVG_outTemp'], '0.2°C')
-        self.assertEqual(loopdata_pkt['FMT_AVG_barometer'], '1053.2 mbar')
-        self.assertEqual(loopdata_pkt['FMT_AVG_windSpeed'], '0 km/h')
-        self.assertEqual(loopdata_pkt['FMT_AVG_windDir'], '360°')
+        self.assertEqual(loopdata_pkt['current.dateTime.raw'], 1593977615)
+        self.assertEqual(loopdata_pkt['current.dateTime'], '07/05/20 12:33:35')
 
-        self.assertEqual(loopdata_pkt['FMT_WAVG_outTemp'], '0.2°C')
-        self.assertEqual(loopdata_pkt['FMT_WAVG_barometer'], '1053.2 mbar')
-        self.assertEqual(loopdata_pkt['FMT_WAVG_windSpeed'], '0 km/h')
-        self.assertEqual(loopdata_pkt['FMT_WAVG_windDir'], '360°')
+        self.assertEqual(loopdata_pkt['10m.windGust.max'], '0 km/h')
+        self.assertEqual(loopdata_pkt['10m.windGust.max.formatted'], '0')
+        self.assertTrue(loopdata_pkt['10m.windGust.max.raw'] > 0.0052 and loopdata_pkt['10m.windGust.max.raw'] < 0.0053)
+        self.assertEqual(loopdata_pkt['10m.windGust.maxtime'], '07/05/20 12:33:35')
+        self.assertEqual(loopdata_pkt['10m.windGust.maxtime.raw'], 1593977615)
 
-        self.assertEqual(loopdata_pkt['FMT_T_HI_outTemp'], '07/05/20 12:18:29')
-        self.assertEqual(loopdata_pkt['FMT_HI_outTemp'], '0.4°C')
-        self.assertEqual(loopdata_pkt['FMT_HI_barometer'], '1053.2 mbar')
-        self.assertEqual(loopdata_pkt['FMT_HI_windSpeed'], '0 km/h')
-        self.assertEqual(loopdata_pkt['FMT_HI_windDir'], '360°')
+        self.assertEqual(loopdata_pkt['current.outTemp'], '0.0°C')
+        self.assertEqual(loopdata_pkt['current.barometer'], '1053.1 mbar')
+        self.assertEqual(loopdata_pkt['current.windSpeed'], '0 km/h')
+        self.assertEqual(loopdata_pkt['current.windDir'], '360°')
+        self.assertEqual(loopdata_pkt['current.windDir.ordinal_compass'], 'N')
 
-        self.assertEqual(loopdata_pkt['FMT_T_LO_outTemp'], '07/05/20 12:33:35')
-        self.assertEqual(loopdata_pkt['FMT_LO_outTemp'], '0.0°C')
-        self.assertEqual(loopdata_pkt['FMT_LO_barometer'], '1053.1 mbar')
-        self.assertEqual(loopdata_pkt['FMT_LO_windSpeed'], '0 km/h')
-        self.assertEqual(loopdata_pkt['FMT_LO_windDir'], '360°')
+        self.assertEqual(loopdata_pkt['trend.barometer'], '-0.0 mbar')
+        self.assertTrue(loopdata_pkt['trend.barometer.raw'] < -0.006138 and loopdata_pkt['trend.barometer.raw'] > -0.006139)
+        self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '-0.0')
+        self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Steady')
 
-        self.assertEqual(loopdata_pkt['LABEL_outTemp'], '°C')
-        self.assertEqual(loopdata_pkt['LABEL_barometer'], ' mbar')
-        self.assertEqual(loopdata_pkt['LABEL_windSpeed'], ' km/h')
-        self.assertEqual(loopdata_pkt['LABEL_windDir'], '°')
+        self.assertEqual(loopdata_pkt['day.rain.sum'], '0.0 mm')
+        self.assertEqual(loopdata_pkt['day.rain.sum.formatted'], '0.0')
+        self.assertEqual(loopdata_pkt['unit.label.rain'], ' mm')
 
-        self.assertEqual(loopdata_pkt['FMT_T_HI_wind'], '07/05/20 12:33:35')
-        self.assertEqual(loopdata_pkt['HI_wind'], '0')
-        self.assertEqual(loopdata_pkt['FMT_HI_wind'], '0 km/h')
-        self.assertEqual(loopdata_pkt['UNITS_HI_wind'], 'km_per_hour')
-        self.assertEqual(loopdata_pkt['LABEL_HI_wind'], ' km/h')
-        self.assertEqual(loopdata_pkt['HI_DIR_wind'], '360')
-        self.assertEqual(loopdata_pkt['FMT_HI_DIR_wind'], '360°')
-        self.assertEqual(loopdata_pkt['UNITS_HI_DIR_wind'], 'degree_compass')
-        self.assertEqual(loopdata_pkt['LABEL_HI_DIR_wind'], '°')
+        self.assertEqual(loopdata_pkt['day.outTemp.avg'], '0.2°C')
+        self.assertEqual(loopdata_pkt['day.barometer.avg'], '1053.2 mbar')
+        self.assertEqual(loopdata_pkt['day.windSpeed.avg'], '0 km/h')
+        self.assertEqual(loopdata_pkt['day.windDir.avg'], '360°')
 
-        self.assertEqual(loopdata_pkt['FMT_T_LO_wind'], '07/05/20 12:18:29')
-        self.assertEqual(loopdata_pkt['LO_wind'], '0')
-        self.assertEqual(loopdata_pkt['FMT_LO_wind'], '0 km/h')
-        self.assertEqual(loopdata_pkt['UNITS_LO_wind'], 'km_per_hour')
-        self.assertEqual(loopdata_pkt['LABEL_LO_wind'], ' km/h')
+        self.assertEqual(loopdata_pkt['day.outTemp.max'], '0.4°C')
+        self.assertEqual(loopdata_pkt['day.barometer.max'], '1053.2 mbar')
+        self.assertEqual(loopdata_pkt['day.windSpeed.max'], '0 km/h')
+        self.assertEqual(loopdata_pkt['day.windDir.max'], '360°')
 
-        self.assertEqual(loopdata_pkt['AVG_wind'], '0')
-        self.assertEqual(loopdata_pkt['FMT_AVG_wind'], '0 km/h')
-        self.assertEqual(loopdata_pkt['UNITS_AVG_wind'], 'km_per_hour')
-        self.assertEqual(loopdata_pkt['LABEL_AVG_wind'], ' km/h')
+        self.assertEqual(loopdata_pkt['day.outTemp.min'], '0.0°C')
+        self.assertEqual(loopdata_pkt['day.barometer.min'], '1053.1 mbar')
+        self.assertEqual(loopdata_pkt['day.windSpeed.min'], '0 km/h')
+        self.assertEqual(loopdata_pkt['day.windDir.min'], '360°')
 
-        self.assertEqual(loopdata_pkt['RMS_wind'], '0')
-        self.assertEqual(loopdata_pkt['FMT_RMS_wind'], '0 km/h')
-        self.assertEqual(loopdata_pkt['UNITS_RMS_wind'], 'km_per_hour')
-        self.assertEqual(loopdata_pkt['LABEL_RMS_wind'], ' km/h')
+        self.assertEqual(loopdata_pkt['unit.label.outTemp'], '°C')
+        self.assertEqual(loopdata_pkt['unit.label.barometer'], ' mbar')
+        self.assertEqual(loopdata_pkt['unit.label.windSpeed'], ' km/h')
+        self.assertEqual(loopdata_pkt['unit.label.windDir'], '°')
 
-        self.assertEqual(loopdata_pkt['VEC_AVG_wind'], '0')
-        self.assertEqual(loopdata_pkt['FMT_VEC_AVG_wind'], '0 km/h')
-        self.assertEqual(loopdata_pkt['UNITS_VEC_AVG_wind'], 'km_per_hour')
-        self.assertEqual(loopdata_pkt['LABEL_VEC_AVG_wind'], ' km/h')
+        self.assertEqual(loopdata_pkt['unit.label.wind'], ' km/h')
+        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '07/05/20 12:33:35')
+        self.assertEqual(loopdata_pkt['day.wind.max.formatted'], '0')
+        self.assertEqual(loopdata_pkt['day.wind.max'], '0 km/h')
+        self.assertEqual(loopdata_pkt['day.wind.gustdir.formatted'], '360')
+        self.assertEqual(loopdata_pkt['day.wind.gustdir.ordinal_compass'], 'N')
+        self.assertEqual(loopdata_pkt['day.wind.gustdir'], '360°')
 
-        self.assertEqual(loopdata_pkt['VEC_DIR_wind'], '360')
-        self.assertEqual(loopdata_pkt['FMT_VEC_DIR_wind'], '360°')
-        self.assertEqual(loopdata_pkt['UNITS_VEC_DIR_wind'], 'degree_compass')
-        self.assertEqual(loopdata_pkt['LABEL_VEC_DIR_wind'], '°')
+        self.assertEqual(loopdata_pkt['day.wind.mintime'], '07/05/20 12:18:29')
+        self.assertEqual(loopdata_pkt['day.wind.min.formatted'], '0')
+        self.assertEqual(loopdata_pkt['day.wind.min'], '0 km/h')
+        self.assertEqual(loopdata_pkt['unit.label.wind'], ' km/h')
+
+        self.assertEqual(loopdata_pkt['day.wind.avg.formatted'], '0')
+        self.assertEqual(loopdata_pkt['day.wind.avg'], '0 km/h')
+
+        self.assertEqual(loopdata_pkt['day.wind.rms.formatted'], '0')
+        self.assertEqual(loopdata_pkt['day.wind.rms'], '0 km/h')
+
+        self.assertEqual(loopdata_pkt['day.wind.vecavg.formatted'], '0')
+        self.assertEqual(loopdata_pkt['day.wind.vecavg'], '0 km/h')
+
+        self.assertEqual(loopdata_pkt['day.wind.vecdir.formatted'], '360')
+        self.assertEqual(loopdata_pkt['day.wind.vecdir'], '360°')
 
     @staticmethod
     def _get_day_accum(config_dict, dateTime):

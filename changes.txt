@@ -1,6 +1,13 @@
 loopdata change history
 -----------------------
 
+2.0.b1 07/11/2020
+
+1. Rewritten to use cheetah like identifiers for fields (e.g., $day.rain.sum).
+
+2. Old names are NOT supported.  For existing installations, fields need to be
+   renamed in weewx.conf (LoopData fields), your Cheetah templates/JavasScript.
+
 1.3.19 07/09/2020
 
 1. Catch and log setup errors.  Allow WeeWX to continue with LoopData.
