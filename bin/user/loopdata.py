@@ -44,7 +44,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '2.0.b2'
+LOOP_DATA_VERSION = '2.0.b3'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -53,9 +53,6 @@ if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] 
 if weewx.__version__ < "4":
     raise weewx.UnsupportedFeature(
         "WeeWX 4 is required, found %s" % weewx.__version__)
-
-# Note: These two observations are also included below.
-COMPASS_OBSERVATIONS: List[str] = ['windDir', 'windGustDir']
 
 @dataclass
 class Configuration:
@@ -836,7 +833,10 @@ class LoopProcessor:
         if len(barometer_readings) != 0:
             # The saved readings are used to get the starting point,
             # but the current loopdata_pkt is used for the last barometer reading.
-            delta3H = to_float(pkt['barometer']) - barometer_readings[0].value
+            if 'barometer' in pkt:
+                delta3H = to_float(pkt['barometer']) - barometer_readings[0].value
+            else:
+                delta3H = barometer_readings[len(barometer_readings)-1] - barometer_readings[0].value
             # Report rate per hour
             delta = delta3H / 3.0
             log.debug('barometer trend: %f' % delta)
@@ -851,8 +851,9 @@ class LoopProcessor:
         else:
             # No barometer in archive record, use the archival period accumulator instead
             if self.arc_per_accum is not None:
-                log.debug('barometer not in archive pkt, using arc_per_accum')
-                value = self.arc_per_accum['barometer'].avg
+                if 'barometer' in self.arc_per_accum:
+                    log.debug('barometer not in archive pkt, using arc_per_accum')
+                    value = self.arc_per_accum['barometer'].avg
 
         if value is not None:
             reading: Reading = Reading(

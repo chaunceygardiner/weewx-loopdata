@@ -1,6 +1,10 @@
 loopdata change history
 -----------------------
 
+2.0.b3 07/12/2020
+
+1. Handle stations with no barometer.
+
 2.0.b2 07/12/2020
 
 1. Watch for None when formatting.
