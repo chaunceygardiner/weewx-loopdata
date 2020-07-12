@@ -23,7 +23,7 @@ import threading
 import time
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import weewx
 import weewx.defaults
@@ -44,7 +44,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '2.0.b1'
+LOOP_DATA_VERSION = '2.0.b2'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -84,14 +84,13 @@ class Configuration:
 
 @dataclass
 class CheetahName:
-    field      : str  # $day.outTemp.avg.formatted
-    prefix     : str  # unit or None
-    prefix2    : str  # label or None
-    period     : str  # obs, 10m, day, current, trend
-    obstype    : str  # outTemp
-    agg_type   : str  # avg, sum, etc. (required for day, else None)
-    format_spec: str  # formatted (formatted value sans label), raw or ordinal_compass (could be on direction), or None
-
+    field      : str           # $day.outTemp.avg.formatted
+    prefix     : Optional[str] # unit or None
+    prefix2    : Optional[str] # label or None
+    period     : Optional[str] # obs, 10m, day, current, trend
+    obstype    : str           # outTemp
+    agg_type   : Optional[str] # avg, sum, etc. (required for day, else None)
+    format_spec: Optional[str] # formatted (formatted value sans label), raw or ordinal_compass (could be on direction), or None
 
 @dataclass
 class Reading:
@@ -397,7 +396,7 @@ class LoopProcessor:
             os.unlink(self.cfg.tmpname)
 
     @staticmethod
-    def parse_cname(field: str) -> CheetahName:
+    def parse_cname(field: str) -> Optional[CheetahName]:
         valid_prefixes    : List[str] = [ 'unit' ]
         valid_prefixes2   : List[str] = [ 'label' ]
         valid_periods     : List[str] = [ 'current', '10m', 'day', 'trend' ]
@@ -477,7 +476,7 @@ class LoopProcessor:
             format_spec = format_spec)
 
     @staticmethod
-    def add_unit_obstype(cname: CheetahName, loopdata_pkt: [str, Any],
+    def add_unit_obstype(cname: CheetahName, loopdata_pkt: Dict[str, Any],
             converter: weewx.units.Converter,
             formatter: weewx.units.Formatter) -> None:
 
@@ -489,7 +488,7 @@ class LoopProcessor:
 
     @staticmethod
     def add_current_obstype(cname: CheetahName, pkt: Dict[str, Any],
-            loopdata_pkt: [str, Any], converter: weewx.units.Converter,
+            loopdata_pkt: Dict[str, Any], converter: weewx.units.Converter,
             formatter: weewx.units.Formatter) -> None:
 
         if cname.obstype not in pkt:
@@ -506,7 +505,11 @@ class LoopProcessor:
 
         if cname.format_spec == 'formatted':
             fmt_str = formatter.get_format_string(unit_type)
-            loopdata_pkt[cname.field] = fmt_str % value
+            try:
+                loopdata_pkt[cname.field] = fmt_str % value
+            except Exception as e:
+                loopdata_pkt[cname.field] = 'N/A'
+                log.debug('%s: %s, %s, %s' % (e, cname.field, fmt_str, value))
             return
 
         if cname.format_spec == 'raw':
@@ -517,7 +520,7 @@ class LoopProcessor:
 
     @staticmethod
     def add_day_obstype(cname: CheetahName, day_accum: weewx.accum.Accum,
-            loopdata_pkt: [str, Any], converter: weewx.units.Converter,
+            loopdata_pkt: Dict[str, Any], converter: weewx.units.Converter,
             formatter: weewx.units.Formatter) -> None:
 
         if cname.obstype not in day_accum:
@@ -585,7 +588,11 @@ class LoopProcessor:
 
         if cname.format_spec == 'formatted':
             fmt_str = formatter.get_format_string(tgt_type)
-            loopdata_pkt[cname.field] = fmt_str % tgt_value
+            try:
+                loopdata_pkt[cname.field] = fmt_str % tgt_value
+            except Exception as e:
+                loopdata_pkt[cname.field] = 'N/A'
+                log.debug('%s: %s, %s, %s' % (e, cname.field, fmt_str, tgt_value))
             return
 
         if cname.format_spec == 'raw':
@@ -596,7 +603,7 @@ class LoopProcessor:
 
     @staticmethod
     def add_10m_obstype(cname: CheetahName, wind_gust_readings: List[Reading],
-            unit_system: int, loopdata_pkt: [str, Any], converter: weewx.units.Converter,
+            unit_system: int, loopdata_pkt: Dict[str, Any], converter: weewx.units.Converter,
             formatter: weewx.units.Formatter) -> None:
         """Only windGust.max and windGust.maxtime is supported for 10m observations."""
 
@@ -605,7 +612,7 @@ class LoopProcessor:
 
         maxtime, max = LoopProcessor.get_10m_max_windgust(wind_gust_readings)
         if cname.agg_type == 'maxtime':
-            src_value = maxtime
+            src_value: Any = maxtime
         elif cname.agg_type == 'max':
             src_value = max
         else:
@@ -617,7 +624,11 @@ class LoopProcessor:
 
         if cname.format_spec == 'formatted':
             fmt_str = formatter.get_format_string(tgt_type)
-            loopdata_pkt[cname.field] = fmt_str % tgt_value
+            try:
+                loopdata_pkt[cname.field] = fmt_str % tgt_value
+            except Exception as e:
+                loopdata_pkt[cname.field] = 'N/A'
+                log.debug('%s: %s, %s, %s' % (e, cname.field, fmt_str, tgt_value))
             return
 
         if cname.format_spec == 'raw':
@@ -647,7 +658,11 @@ class LoopProcessor:
 
         if cname.format_spec == 'formatted':
             fmt_str = formatter.get_format_string(unit_type)
-            loopdata_pkt[cname.field] = fmt_str % value
+            try:
+                loopdata_pkt[cname.field] = fmt_str % value
+            except Exception as e:
+                loopdata_pkt[cname.field] = 'N/A'
+                log.debug('%s: %s, %s, %s' % (e, cname.field, fmt_str, value))
             return
 
         if cname.format_spec == 'raw':
@@ -659,7 +674,7 @@ class LoopProcessor:
 
     @staticmethod
     def convert_current_obs(converter: weewx.units.Converter,
-            formatter: weewx.units.Formatter, obstype: str, pkt: Dict[str, Any]) -> (Any, Any, Any):
+            formatter: weewx.units.Formatter, obstype: str, pkt: Dict[str, Any]) -> Tuple[Any, Any, Any]:
         """ Returns value, format_str, label_str """
 
         v_t = weewx.units.as_value_tuple(pkt, obstype)
@@ -680,7 +695,7 @@ class LoopProcessor:
         for field in fields_to_include:
             # If the field is not understood, the name of the field will be its value.
             loopdata_pkt[field] = field
-            cname: CheetahName = LoopProcessor.parse_cname(field)
+            cname: Optional[CheetahName] = LoopProcessor.parse_cname(field)
             if cname is None:
                 continue
             if cname.prefix == 'unit':
@@ -864,7 +879,7 @@ class LoopProcessor:
             del self.barometer_readings[0]
 
     @staticmethod
-    def get_10m_max_windgust(wind_gust_readings: List[Reading]) -> (int, float):
+    def get_10m_max_windgust(wind_gust_readings: List[Reading]) -> Tuple[int, float]:
         """ Return maxtime and max of highest windGust. """
         maxtime: int = 0
         max    : float = 0.0

@@ -262,19 +262,9 @@ class ProcessPacketTests(unittest.TestCase):
 
         barometer_readings = []
         wind_gust_readings = []
-        wind_rose_readings = []
         for pkt in pkts:
             barometer_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['barometer']))
             wind_gust_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['windGust']))
-            if 'windSpeed' in pkt and 'windDir' in pkt and pkt['windSpeed'] is not None and pkt['windDir'] is not None:
-                wind_speed = to_float(pkt['windSpeed'])
-                wind_dir   = to_float(pkt['windDir'])
-                if wind_speed is not None and wind_speed != 0 and wind_dir is not None:
-                    bucket = user.loopdata.LoopProcessor.get_wind_rose_bucket(16, wind_dir), wind_speed / (3600.0 / 300)
-                    wind_rose_readings.append(user.loopdata.WindroseReading(
-                        timestamp = pkt['dateTime'],
-                        bucket    = user.loopdata.LoopProcessor.get_wind_rose_bucket(16, wind_dir),
-                        distance  = wind_speed / (3600.0 / 300)))
 
         converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
         self.assertEqual(type(converter), weewx.units.Converter)
@@ -340,8 +330,7 @@ class ProcessPacketTests(unittest.TestCase):
             ]
 
         loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(
-            pkt, fields_to_include,
-            barometer_readings, wind_gust_readings, wind_rose_readings,
+            pkt, fields_to_include, barometer_readings, wind_gust_readings,
             day_accum, converter, formatter)
 
         self.maxDiff = None
@@ -426,19 +415,9 @@ class ProcessPacketTests(unittest.TestCase):
 
         barometer_readings = []
         wind_gust_readings = []
-        wind_rose_readings = []
         for pkt in pkts:
             barometer_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['barometer']))
             wind_gust_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['windGust']))
-            if 'windSpeed' in pkt and 'windDir' in pkt and pkt['windSpeed'] is not None and pkt['windDir'] is not None:
-                wind_speed = to_float(pkt['windSpeed'])
-                wind_dir   = to_float(pkt['windDir'])
-                if wind_speed is not None and wind_speed != 0 and wind_dir is not None:
-                    bucket = user.loopdata.LoopProcessor.get_wind_rose_bucket(16, wind_dir), wind_speed / (3600.0 / 300)
-                    wind_rose_readings.append(user.loopdata.WindroseReading(
-                        timestamp = pkt['dateTime'],
-                        bucket    = user.loopdata.LoopProcessor.get_wind_rose_bucket(16, wind_dir),
-                        distance  = wind_speed / (3600.0 / 300)))
 
         converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
         self.assertEqual(type(converter), weewx.units.Converter)
@@ -504,8 +483,7 @@ class ProcessPacketTests(unittest.TestCase):
             ]
 
         loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(
-            pkt, fields_to_include,
-            barometer_readings, wind_gust_readings, wind_rose_readings,
+            pkt, fields_to_include, barometer_readings, wind_gust_readings,
             day_accum, converter, formatter)
 
         self.maxDiff = None
@@ -590,19 +568,9 @@ class ProcessPacketTests(unittest.TestCase):
 
         barometer_readings = []
         wind_gust_readings = []
-        wind_rose_readings = []
         for pkt in pkts:
             barometer_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['barometer']))
             wind_gust_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['windGust']))
-            if 'windSpeed' in pkt and 'windDir' in pkt and pkt['windSpeed'] is not None and pkt['windDir'] is not None:
-                wind_speed = to_float(pkt['windSpeed'])
-                wind_dir   = to_float(pkt['windDir'])
-                if wind_speed is not None and wind_speed != 0 and wind_dir is not None:
-                    bucket = user.loopdata.LoopProcessor.get_wind_rose_bucket(16, wind_dir), wind_speed / (3600.0 / 300)
-                    wind_rose_readings.append(user.loopdata.WindroseReading(
-                        timestamp = pkt['dateTime'],
-                        bucket    = user.loopdata.LoopProcessor.get_wind_rose_bucket(16, wind_dir),
-                        distance  = wind_speed / (3600.0 / 300)))
 
         converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
         self.assertEqual(type(converter), weewx.units.Converter)
@@ -668,8 +636,7 @@ class ProcessPacketTests(unittest.TestCase):
             ]
 
         loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(
-            pkt, fields_to_include,
-            barometer_readings, wind_gust_readings, wind_rose_readings,
+            pkt, fields_to_include, barometer_readings, wind_gust_readings,
             day_accum, converter, formatter)
 
         self.maxDiff = None

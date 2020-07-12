@@ -1,6 +1,12 @@
 loopdata change history
 -----------------------
 
+2.0.b2 07/12/2020
+
+1. Watch for None when formatting.
+
+2. pyflakes and mypy cleanup.
+
 2.0.b1 07/11/2020
 
 1. Rewritten to use cheetah like identifiers for fields (e.g., $day.rain.sum).
