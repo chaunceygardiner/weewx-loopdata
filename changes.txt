@@ -1,6 +1,12 @@
 loopdata change history
 -----------------------
 
+2.0.b5 07/12/2020
+
+1. Fix for case where barometer is reported intermittently.
+2. LoopData now tested in simulator for both intermittent case and
+   when batometer/pressure never reported.
+
 2.0.b4 07/12/2020
 
 1. If not observation available, the key/value pair

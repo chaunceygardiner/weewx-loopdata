@@ -44,7 +44,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '2.0.b4'
+LOOP_DATA_VERSION = '2.0.b5'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -847,7 +847,7 @@ class LoopProcessor:
             if 'barometer' in pkt:
                 delta3H = to_float(pkt['barometer']) - barometer_readings[0].value
             else:
-                delta3H = barometer_readings[len(barometer_readings)-1] - barometer_readings[0].value
+                delta3H = barometer_readings[len(barometer_readings)-1].value - barometer_readings[0].value
             # Report rate per hour
             delta = delta3H / 3.0
             log.debug('barometer trend: %f' % delta)
