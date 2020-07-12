@@ -44,7 +44,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '2.0.b3'
+LOOP_DATA_VERSION = '2.0.b4'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -495,6 +495,10 @@ class LoopProcessor:
         value, unit_type, unit_group = LoopProcessor.convert_current_obs(
                 converter, formatter, cname.obstype, pkt)
 
+        if value is None:
+            log.debug('%s not found in loop packet.' % cname.field)
+            return
+
         if cname.format_spec == 'ordinal_compass':
             loopdata_pkt[cname.field] = formatter.to_ordinal_compass(
                 (value, unit_type, unit_group))
@@ -505,7 +509,6 @@ class LoopProcessor:
             try:
                 loopdata_pkt[cname.field] = fmt_str % value
             except Exception as e:
-                loopdata_pkt[cname.field] = 'N/A'
                 log.debug('%s: %s, %s, %s' % (e, cname.field, fmt_str, value))
             return
 
@@ -521,7 +524,7 @@ class LoopProcessor:
             formatter: weewx.units.Formatter) -> None:
 
         if cname.obstype not in day_accum:
-            log.debug('%s not found in day accumulator, skipping %s' % (cname.obstype, cname.field))
+            log.debug('No day stats for %s, skipping %s' % (cname.obstype, cname.field))
             return
 
         stats = day_accum[cname.obstype]
@@ -574,6 +577,10 @@ class LoopProcessor:
             # firstlast not currently supported
             return
 
+        if src_value is None:
+            log.debug('Currently no day stats for %s.' % cname.field)
+            return
+
         src_type, src_group = weewx.units.getStandardUnitType(day_accum.unit_system, cname.obstype, agg_type=cname.agg_type)
 
         tgt_value, tgt_type, tgt_group = converter.convert((src_value, src_type, src_group))
@@ -588,7 +595,6 @@ class LoopProcessor:
             try:
                 loopdata_pkt[cname.field] = fmt_str % tgt_value
             except Exception as e:
-                loopdata_pkt[cname.field] = 'N/A'
                 log.debug('%s: %s, %s, %s' % (e, cname.field, fmt_str, tgt_value))
             return
 
@@ -604,7 +610,12 @@ class LoopProcessor:
             formatter: weewx.units.Formatter) -> None:
         """Only windGust.max and windGust.maxtime is supported for 10m observations."""
 
-        if cname.obstype != 'windGust' or len(wind_gust_readings) == 0:
+        if cname.obstype != 'windGust':
+            log.debug('10m.<obs> only available for windGust: %s.' % cname.field)
+            return
+
+        if len(wind_gust_readings) == 0:
+            log.debug('No windGust readings: %s.' % cname.field)
             return
 
         maxtime, max = LoopProcessor.get_10m_max_windgust(wind_gust_readings)
@@ -624,7 +635,6 @@ class LoopProcessor:
             try:
                 loopdata_pkt[cname.field] = fmt_str % tgt_value
             except Exception as e:
-                loopdata_pkt[cname.field] = 'N/A'
                 log.debug('%s: %s, %s, %s' % (e, cname.field, fmt_str, tgt_value))
             return
 
@@ -643,6 +653,10 @@ class LoopProcessor:
             log.info('Only trend.barometer is supported, found %s.' % cname.field)
             return
 
+        if len(barometer_readings) == 0:
+            log.debug('No barometer readings: %s.' % cname.field)
+            return
+
         value = LoopProcessor.get_barometer_trend(pkt, barometer_readings)
 
         value, unit_type, unit_group = LoopProcessor.convert_current_obs(
@@ -658,7 +672,6 @@ class LoopProcessor:
             try:
                 loopdata_pkt[cname.field] = fmt_str % value
             except Exception as e:
-                loopdata_pkt[cname.field] = 'N/A'
                 log.debug('%s: %s, %s, %s' % (e, cname.field, fmt_str, value))
             return
 
@@ -690,8 +703,6 @@ class LoopProcessor:
 
         # Iterate through fields.
         for field in fields_to_include:
-            # If the field is not understood, the name of the field will be its value.
-            loopdata_pkt[field] = field
             cname: Optional[CheetahName] = LoopProcessor.parse_cname(field)
             if cname is None:
                 continue

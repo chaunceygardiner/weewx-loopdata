@@ -1,6 +1,11 @@
 loopdata change history
 -----------------------
 
+2.0.b4 07/12/2020
+
+1. If not observation available, the key/value pair
+   will not be present in the json file.
+
 2.0.b3 07/12/2020
 
 1. Handle stations with no barometer.

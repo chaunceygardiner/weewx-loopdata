@@ -39,10 +39,6 @@ The day average of outside tempeture can be included as:
 * `day.outTemp.avg`          : 64.7°
 * `day.outTemp.avg.raw`      : 64.711
 
-Note: these keys are literals.  add_label is not evaluated.  As such,
-if you attempt to lookup the key $day.outTemp.avg(add_label=True),
-no such key will be found.
-
 In addition to $current and $day, a few special cases are supported:
 
 * trend.barometerRate
@@ -56,18 +52,19 @@ Typically, loop packets are generated frequently in WeeWX
 (e.g, every 2s).  With the constantly updating loop-data.txt file, one
 can write javascript to update a report's html page in near real time.
 
-LoopData adds all observations seen in loop packets.  Since LoopData examines
-loop packets to decide what data to write, it is easily extensible.  For
-example, if the [weewx-purple](https://github.com/chaunceygardiner/weewx-purple)
-extension is installed, the following observations immedately become available
-in loopdata: `pm1_0`, `pm2_5`, `pm10_0` and `pm2_5_aqi`.  If you add another
-sensor to your weather station and that sensor starts showing up in loop
-packets, it will also become available in LoopData.
+LoopData should be able to show any obervation in the loop packet and
+any observation for which there is a day accumulator.
 
-LoopData is easy to set up.  Specify the report to target and a json file will
-be generated on every loop with observations, highs, lows, sums, averages and
-weighted averages.  All will formatted and converted for that report.  That is,
-the units and format for observations areappropriate for the specified the
+If and current.<observation> is included in fields, but it is missing from
+a packet, it will not be present in loop-data.txt.
+
+Similarly, if a day.<observation> does has not stats for the day, it
+will not be present in loop-data.txt.
+
+LoopData is easy to set up.  Specify the report to target and the fields
+to be included and a json file will be generated on every loop.
+All will be formatted and converted for that report.  That is,
+the units and format for observations areappropriate for the targeted
 report.
 
 From there, just write JavaScript to load the json file on a regular basis
