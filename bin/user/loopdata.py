@@ -382,7 +382,7 @@ class LoopProcessor:
                 LoopProcessor.write_packet_to_file(loopdata_pkt,
                     self.cfg.tmpname, self.cfg.loop_data_dir, self.cfg.filename)
                 if self.cfg.enable:
-                    LoopProcessor.rsync_data(loopdata_pkt['dateTime'],
+                    LoopProcessor.rsync_data(pkt_time,
                         self.cfg.skip_if_older_than, self.cfg.loop_data_dir,
                         self.cfg.filename, self.cfg.remote_dir,
                         self.cfg.remote_server, self.cfg.remote_port,
