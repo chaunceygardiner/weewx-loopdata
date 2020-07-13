@@ -162,36 +162,36 @@ you through the process:
    translated into the new (Cheetah) style of specifying fields.
 
  * `<obs>`              -> `current.<obs>.formatted`
- * `FMT_<obs>`          -> `current.<obs>`
- * `FMT_LO_<obs>`       -> `day.<obs>.min`
- * `LO_<obs>`           -> `day.<obs>.min.formatted`
- * `FMT_T_LO_<obs>`     -> `day.<obs>.mintime`
- * `T_LO_<obs>`         -> `day.<obs>.mintime.formatted`
- * `FMT_HI_<obs>`       -> `day.<obs>.max`
- * `HI_<obs>`           -> `day.<obs>.max.formatted`
- * `FMT_T_HI_<obs>`     -> `day.<obs>.maxtime`
- * `T_HI_<obs>`         -> `day.<obs>.maxtime.formatted`
- * `AVG_<obs>`          -> `day.<obs>.avg`
- * `FMT_AVG_<obs>`      -> `day.<obs>.avg.formatted`
- * `LABEL_<obs>`        -> `unit.label.<obs>`
- * `barometerRate`      -> `trend.barometerRate.formatted`
- * `FMT_barometerRate`  -> `trend.barometerRate`
- * `DESC_barometerRate` -> `trend.barometerRate.desc`
  * `10mMaxGust`         -> `10m.windGust.max.formatted`
- * `FMT_10mMaxGust`     -> `10m.windGust.max`
- * `T_10mMaxGust`       -> `10m.windGust.maxtime`
+ * `AVG_<obs>`          -> `day.<obs>.avg`
+ * `barometerRate`      -> `trend.barometerRate.formatted`
  * `COMPASS_<obs>`      -> `current.<obs>.ordinal_compass`
- * `SUM_<obs>`          -> `day.<obs>.sum`
+ * `DESC_barometerRate` -> `trend.barometerRate.desc`
+ * `FMT_<obs>`          -> `current.<obs>`
+ * `FMT_10mMaxGust`     -> `10m.windGust.max`
+ * `FMT_AVG_<obs>`      -> `day.<obs>.avg.formatted`
+ * `FMT_barometerRate`  -> `trend.barometerRate`
+ * `FMT_HI_<obs>`       -> `day.<obs>.max`
+ * `FMT_LO_<obs>`       -> `day.<obs>.min`
+ * `FMT_T_HI_<obs>`     -> `day.<obs>.maxtime`
+ * `FMT_T_LO_<obs>`     -> `day.<obs>.mintime`
+ * `HI_<obs>`           -> `day.<obs>.max.formatted`
+ * `LABEL_<obs>`        -> `unit.label.<obs>`
+ * `LO_<obs>`           -> `day.<obs>.min.formatted`
  * `RMS_<obs>`          -> `day.<obs>.rms`
+ * `SUM_<obs>`          -> `day.<obs>.sum`
+ * `T_10mMaxGust`       -> `10m.windGust.maxtime`
+ * `T_HI_<obs>`         -> `day.<obs>.maxtime.formatted`
+ * `T_LO_<obs>`         -> `day.<obs>.mintime.formatted`
  * `VEC_AVG_<obs>`      -> `day.<obs>.vecavg`
  * `VEC_DIR_<obs`       -> `day.<obs>.vecdir`
-
-   Note: windRose has been removed from LoopData.  The rename capability has also been removed.
-         Lastly, `UNITS_<obs>` has been removed.
 
 1. Make the same changes as above to your .tmpl and JavaScript files for the skins
    that are using LoopData.  Note: A 2.x version of WeatherBoard has been released.  It uses
    the new naming scheme.
+
+The followiung have been removed from LoopData: `windRose` observations,
+`UNITS_<obs>` fields and the capability to `rename` the keys in loop-data.txt.
 
 ## Rsync isn't Working for Me, Help!
 LoopData's uses WeeWX's `weeutil.rsyncupload.RsyncUpload` utility.  If you have rsync working
@@ -207,8 +207,7 @@ the same time.
 
 ## Do I have to use rsync to sync loop-data.txt to a remote server?
 You don't have to sync to a remote server; but if you do want to sync to a remote server,
-rsync is the only mechanism provided.  That's not going to change as the author believes
-rsync/ssh is the secure way to accomplish this task.
+rsync is the only mechanism provided.
 
 ## About those Rsync Errors in the Log
 If one is using rsync, especially if the loop interval is short (e.g., 2s), it is expected that
@@ -230,9 +229,8 @@ Jun 27 23:15:53 charlemagne weewx[10156] INFO user.loopdata: skipping packet (20
 
 ## Why require Python 3.7 or later?
 
-LoopData is a new extension.  The author believes software written after Python 2 end of life
-should not target Python 2.  The code includes type annotation which do not work with Python 2,
-nor earlier versions of Python 3.
+LoopData code includes type annotation which do not work with Python 2, nor in
+earlier versions of Python 3.
 
 ## Licensing
 
