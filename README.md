@@ -5,7 +5,7 @@ Copyright (C)2020 by John A Kline (john@johnkline.com)
 
 **This extension requires Python 3.7 or later and WeeWX 4.**
 
-**LoopData 2.x is a breaking change from 1.x  See "How to Upgrade from LoopData 1.x." below.**
+**LoopData 2.x is a breaking change from 1.x.  See "How to Upgrade from LoopData 1.x." below.**
 
 ## Description
 
