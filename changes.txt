@@ -1,6 +1,13 @@
 loopdata change history
 -----------------------
 
+2.0.b6 07/13/2020
+
+1. Install no longer adds the rename line to weewx.conf.  rename
+   is no longer supported.  Note: it will not remove rename on
+   existing installations, but rename will be ignored.
+1. Updated README.
+
 2.0.b5 07/12/2020
 
 1. Fix for case where barometer is reported intermittently.

@@ -22,7 +22,7 @@ def loader():
 class LoopDataInstaller(ExtensionInstaller):
     def __init__(self):
         super(LoopDataInstaller, self).__init__(
-            version = "2.0.b5",
+            version = "2.0.b6",
             name = 'loopdata',
             description = 'Loop statistics for real time reporting.',
             author = "John A Kline",
@@ -52,8 +52,6 @@ class LoopDataInstaller(ExtensionInstaller):
                             'current.outHumidity','current.outTemp','current.rain',
                             'current.rainRate','current.windchill','current.windSpeed',
                             'day.windGust.max','10m.windGust.max']},
-                    'Rename': {
-                    }
                 }
             },
             files = [('bin/user', ['bin/user/loopdata.py'])])

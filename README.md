@@ -5,6 +5,8 @@ Copyright (C)2020 by John A Kline (john@johnkline.com)
 
 **This extension requires Python 3.7 or later and WeeWX 4.**
 
+**LoopData 2.x is a breaking change from 1.x**
+
 ## Description
 
 LoopData is a WeeWX service that generates a json file (loop-data.txt)
@@ -15,7 +17,7 @@ on every loop (e.g., every 2s).  Contained in the json are values for:
 
 The file also includes this specialty information.
 * barometric trend over the last three hours (trend.barometer, trend.barometer.desc)
-* fifteen minute wind gust high (15m.windGust.max, 15m.windGust.maxtime)
+* ten minute wind gust high (10m.windGust.max, 10m.windGust.maxtime)
 
 The json file will only include observations that are specified on the
 fields line in the LoopData section of the weewx.conf file.
@@ -141,6 +143,49 @@ trend.barometer is supported, but it is always a 3 hour trend.
 
 10m.windGust.max
 10m.windGust.maxtime
+
+# How to Upgrade from LoopData 1.x.
+
+LoopData 2.x is a breaking change to 1.x installations.  The following steps will help guide
+you through the process:
+
+1. Install 2.x as per above instructions, but DO NOT restart WeeWX.
+
+1. Edit the LoopData->Include->fields line in weewx.conf.  Every field listed needs to be
+   translated into the new (Cheetah) style of specifying fields.
+
+ *   For example:
+ *   <obs>              -> current.<obs>.formatted
+ *   FMT_<obs>          -> current.<obs>
+ *   FMT_LO_<obs>       -> day.<obs>.min
+ *   LO_<obs>           -> day.<obs>.min.formatted
+ *   FMT_T_LO_<obs>     -> day.<obs>.mintime
+ *   T_LO_<obs>         -> day.<obs>.mintime.formatted
+ *   FMT_HI_<obs>       -> day.<obs>.max
+ *   HI_<obs>           -> day.<obs>.max.formatted
+ *   FMT_T_HI_<obs>     -> day.<obs>.maxtime
+ *   T_HI_<obs>         -> day.<obs>.maxtime.formatted
+ *   AVG_<obs>          -> day.<obs>.avg
+ *   FMT_AVG_<obs>      -> day.<obs>.avg.formatted
+ *   LABEL_<obs>        -> unit.label.<obs>
+ *   barometerRate      -> trend.barometerRate.formatted
+ *   FMT_barometerRate  -> trend.barometerRate
+ *   DESC_barometerRate -> trend.barometerRate.desc
+ *   10mMaxGust         -> 10m.windGust.max.formatted
+ *   FMT_10mMaxGust     -> 10m.windGust.max
+ *   T_10mMaxGust       -> 10m.windGust.maxtime
+ *   COMPASS_<obs>      -> current.<obs>.ordinal_compass
+ *   SUM_<obs>          -> day.<obs>.sum
+ *   RMS_<obs>          -> day.<obs>.rms
+ *   VEC_AVG_<obs>      -> day.<obs>.vecavg
+ *   VEC_DIR_<obs>      -> day.<obs>.vecdir
+
+   Note: windRose has been removed from LoopData.  The rename capability has also been removed.
+         Lastly, UNITS_<obs> has been removed as it was misguided.
+
+1. Make the same changes as above to your .tmpl and JavaScript files for the skins
+   that are using LoopData.  Note: A 2.x version of WeatherBoard has been released.  It uses
+   the new naming scheme.
 
 ## Rsync isn't Working for Me, Help!
 LoopData's uses WeeWX's `weeutil.rsyncupload.RsyncUpload` utility.  If you have rsync working
