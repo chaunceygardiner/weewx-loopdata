@@ -189,7 +189,7 @@ class LoopData(StdService):
     @staticmethod
     def get_target_report_dict(config_dict, report) -> Dict[str, Any]:
         # This code is from WeeWX's ReportEngine. Copyright Tom Keffer
-        # TODO: See if Tome will take a PR to make this available as a staticmethod.
+        # TODO: See if Tom will take a PR to make this available as a staticmethod.
         # In the meaintime, it's probably safe to copy as the cofiguration files are public API.
         try:
             skin_dict = weeutil.config.deep_copy(weewx.defaults.defaults)

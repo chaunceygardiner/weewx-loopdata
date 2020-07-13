@@ -46,7 +46,7 @@ The day average of outside tempeture can be included as:
 * `day.outTemp.avg`          : 64.7°
 * `day.outTemp.avg.raw`      : 64.711
 
-Note: week, month year and rainYear are under consideration.
+Note: week, month, year and rainYear are under consideration.
 
 If a field is requested, but the data is missing, it will not be present
 in loop-data.txt.
@@ -82,12 +82,19 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
 
 1. The install creates a LoopData section in weewx.conf as shown below.  Adjust
    the values accordingly.  In particular, specify the `target_report` for the
-   report you wish to use for formatting and units.
+   report you wish to use for formatting and units and specify the `loop_data_dir`
+   where the loop-data.txt file should be writen.  You will eventually need  to
+   update the fields line with the fields you actually need for the report you
+   are targetting.  If you know them now, fill them in.  If not, you can change
+   this line later after you are sure LoopData is running correctly.  If you need
+   the loop-data.txt file pushed to a remote webserver, you will also need to
+   fill in the `RsyncSpec` fields; but it's best to fill that in later, after
+   you are up and running.
 
 ```
 [LoopData]
     [[FileSpec]]
-        loop_data_dir = /home/weewx/loop-data
+        loop_data_dir = /home/weewx/public_html
         filename = loop-data.txt
     [[Formatting]]
         target_report = SeasonsReport
@@ -95,7 +102,7 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
         enable = false
         remote_server = foo.bar.com
         remote_user = root
-        remote_dir = /home/weewx/loop-data
+        remote_dir = /var/www/html
         compress = False
         log_success = False
         ssh_options = "-o ConnectTimeout=1"
@@ -122,7 +129,7 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
  * `log_success`       : True to write success with timing messages to the log (for debugging).
                          Default is False.
  * `ssh_options`       : ssh options Default is '-o ConnectTimeout=1' (When connecting, time out in
-                       1 second.)
+                         1 second.)
  * `timeout`           : I/O timeout. Default is 1.  (When sending, timeout in 1 second.)
  * `skip_if_older_than`: Don't bother to rsync if greater than this number of seconds.  Default is 4.
                          (Skip this and move on to the next if this data is older than 4 seconds.
@@ -132,12 +139,12 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
 
 Generally, if you can specify a field in a Cheetah template, and that field begins with $current
 or $day, you can specify it here.  Add the following extenstions to specialize the fields:
-* No extension specified: Field is converted and formatted per the report.  A label is added.
-* .raw: field is converted per the report, but not formatted.
-* .formatted: Field is converted and formatted per the report.  NO label is added.
-* .ordinal_compass: for directional observations, the value is converted to text.
+* No extension specified`: Field is converted and formatted per the report.  A label is added.
+* `.raw`: field is converted per the report, but not formatted.
+* `.formatted`: Field is converted and formatted per the report.  NO label is added.
+* `.ordinal_compass`: for directional observations, the value is converted to text.
 
-unit.label.<obs> is also supported.
+`unit.label.<obs>` is also supported.
 
 trend.barometer is supported, but it is always a 3 hour trend.
 
@@ -154,34 +161,33 @@ you through the process:
 1. Edit the LoopData->Include->fields line in weewx.conf.  Every field listed needs to be
    translated into the new (Cheetah) style of specifying fields.
 
- *   For example:
- *   <obs>              -> current.<obs>.formatted
- *   FMT_<obs>          -> current.<obs>
- *   FMT_LO_<obs>       -> day.<obs>.min
- *   LO_<obs>           -> day.<obs>.min.formatted
- *   FMT_T_LO_<obs>     -> day.<obs>.mintime
- *   T_LO_<obs>         -> day.<obs>.mintime.formatted
- *   FMT_HI_<obs>       -> day.<obs>.max
- *   HI_<obs>           -> day.<obs>.max.formatted
- *   FMT_T_HI_<obs>     -> day.<obs>.maxtime
- *   T_HI_<obs>         -> day.<obs>.maxtime.formatted
- *   AVG_<obs>          -> day.<obs>.avg
- *   FMT_AVG_<obs>      -> day.<obs>.avg.formatted
- *   LABEL_<obs>        -> unit.label.<obs>
- *   barometerRate      -> trend.barometerRate.formatted
- *   FMT_barometerRate  -> trend.barometerRate
- *   DESC_barometerRate -> trend.barometerRate.desc
- *   10mMaxGust         -> 10m.windGust.max.formatted
- *   FMT_10mMaxGust     -> 10m.windGust.max
- *   T_10mMaxGust       -> 10m.windGust.maxtime
- *   COMPASS_<obs>      -> current.<obs>.ordinal_compass
- *   SUM_<obs>          -> day.<obs>.sum
- *   RMS_<obs>          -> day.<obs>.rms
- *   VEC_AVG_<obs>      -> day.<obs>.vecavg
- *   VEC_DIR_<obs>      -> day.<obs>.vecdir
+ * `<obs>`              -> `current.<obs>.formatted`
+ * `FMT_<obs>`          -> `current.<obs>`
+ * `FMT_LO_<obs>`       -> `day.<obs>.min`
+ * `LO_<obs>`           -> `day.<obs>.min.formatted`
+ * `FMT_T_LO_<obs>`     -> `day.<obs>.mintime`
+ * `T_LO_<obs>`         -> `day.<obs>.mintime.formatted`
+ * `FMT_HI_<obs>`       -> `day.<obs>.max`
+ * `HI_<obs>`           -> `day.<obs>.max.formatted`
+ * `FMT_T_HI_<obs>`     -> `day.<obs>.maxtime`
+ * `T_HI_<obs>`         -> `day.<obs>.maxtime.formatted`
+ * `AVG_<obs>`          -> `day.<obs>.avg`
+ * `FMT_AVG_<obs>`      -> `day.<obs>.avg.formatted`
+ * `LABEL_<obs>`        -> `unit.label.<obs>`
+ * `barometerRate`      -> `trend.barometerRate.formatted`
+ * `FMT_barometerRate`  -> `trend.barometerRate`
+ * `DESC_barometerRate` -> `trend.barometerRate.desc`
+ * `10mMaxGust`         -> `10m.windGust.max.formatted`
+ * `FMT_10mMaxGust`     -> `10m.windGust.max`
+ * `T_10mMaxGust`       -> `10m.windGust.maxtime`
+ * `COMPASS_<obs>`      -> `current.<obs>.ordinal_compass`
+ * `SUM_<obs>`          -> `day.<obs>.sum`
+ * `RMS_<obs>`          -> `day.<obs>.rms`
+ * `VEC_AVG_<obs>`      -> `day.<obs>.vecavg`
+ * `VEC_DIR_<obs`       -> `day.<obs>.vecdir`
 
    Note: windRose has been removed from LoopData.  The rename capability has also been removed.
-         Lastly, UNITS_<obs> has been removed as it was misguided.
+         Lastly, `UNITS_<obs>` has been removed.
 
 1. Make the same changes as above to your .tmpl and JavaScript files for the skins
    that are using LoopData.  Note: A 2.x version of WeatherBoard has been released.  It uses
