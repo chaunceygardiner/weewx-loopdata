@@ -23,7 +23,7 @@ import threading
 import time
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import weewx
 import weewx.defaults
@@ -44,7 +44,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '1.3.19'
+LOOP_DATA_VERSION = '2.0.b6'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -53,9 +53,6 @@ if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] 
 if weewx.__version__ < "4":
     raise weewx.UnsupportedFeature(
         "WeeWX 4 is required, found %s" % weewx.__version__)
-
-# Note: These two observations are also included below.
-COMPASS_OBSERVATIONS: List[str] = ['windDir', 'windGustDir']
 
 @dataclass
 class Configuration:
@@ -67,7 +64,6 @@ class Configuration:
     filename           : str
     target_report      : str
     fields_to_include  : List[str]
-    fields_to_rename   : Dict[str, str]
     formatter          : weewx.units.Formatter
     converter          : weewx.units.Converter
     tmpname            : str
@@ -82,14 +78,16 @@ class Configuration:
     skip_if_older_than : int
     timeout            : int
     barometer_rate_secs: int
-    wind_rose_secs     : int
-    wind_rose_points   : int
 
 @dataclass
-class WindroseReading:
-    timestamp: int
-    bucket   : int
-    distance : float
+class CheetahName:
+    field      : str           # $day.outTemp.avg.formatted
+    prefix     : Optional[str] # unit or None
+    prefix2    : Optional[str] # label or None
+    period     : Optional[str] # obs, 10m, day, current, trend
+    obstype    : str           # outTemp
+    agg_type   : Optional[str] # avg, sum, etc. (required for day, else None)
+    format_spec: Optional[str] # formatted (formatted value sans label), raw or ordinal_compass (could be on direction), or None
 
 @dataclass
 class Reading:
@@ -114,7 +112,6 @@ class LoopData(StdService):
         formatting_spec_dict = loop_config_dict.get('Formatting', {})
         rsync_spec_dict      = loop_config_dict.get('RsyncSpec', {})
         include_spec_dict    = loop_config_dict.get('Include', {})
-        fields_to_rename     = loop_config_dict.get('Rename', {})
 
         # Get the unit_system as specified by StdConvert->target_unit.
         # Note: this value will be overwritten if the day accumulator has a a unit_system.
@@ -164,7 +161,6 @@ class LoopData(StdService):
             filename            = file_spec_dict.get('filename', 'loop-data.txt'),
             target_report       = target_report,
             fields_to_include   = fields_to_include,
-            fields_to_rename    = fields_to_rename,
             formatter           = weewx.units.Formatter.fromSkinDict(target_report_dict),
             converter           = converter,
             tmpname             = tmp.name,
@@ -179,9 +175,7 @@ class LoopData(StdService):
             ssh_options         = rsync_spec_dict.get('ssh_options', '-o ConnectTimeout=1'),
             timeout             = to_int(rsync_spec_dict.get('timeout', 1)),
             skip_if_older_than  = to_int(rsync_spec_dict.get('skip_if_older_than', 3)),
-            barometer_rate_secs = 10800,
-            wind_rose_secs      = 86400,
-            wind_rose_points    = 16)
+            barometer_rate_secs = 10800)
 
         if not os.path.exists(self.cfg.loop_data_dir):
             os.makedirs(self.cfg.loop_data_dir)
@@ -195,7 +189,7 @@ class LoopData(StdService):
     @staticmethod
     def get_target_report_dict(config_dict, report) -> Dict[str, Any]:
         # This code is from WeeWX's ReportEngine. Copyright Tom Keffer
-        # TODO: See if Tome will take a PR to make this available as a staticmethod.
+        # TODO: See if Tom will take a PR to make this available as a staticmethod.
         # In the meaintime, it's probably safe to copy as the cofiguration files are public API.
         try:
             skin_dict = weeutil.config.deep_copy(weewx.defaults.defaults)
@@ -254,10 +248,9 @@ class LoopData(StdService):
             binding = self.config_dict.get('StdReport')['data_binding']
             dbm = binder.get_manager(binding)
 
-            # Init barometer, windgust, windrose and day_accumulator from the database
+            # Init barometer, windgust and day_accumulator from the database
             barometer_readings = self.fill_in_barometer_readings_at_startup(dbm)
             wind_gust_readings = self.fill_in_10m_wind_gust_readings_at_startup(dbm)
-            wind_rose_readings = self.fill_in_wind_rose_readings_at_startup(dbm)
 
             # Init day accumulator from day_summary
             day_summary = dbm._get_day_summary(time.time())
@@ -271,8 +264,8 @@ class LoopData(StdService):
             for k in day_summary:
                 day_accum.set_stats(k, day_summary[k].getStatsTuple())
 
-            lp: LoopProcessor = LoopProcessor(self.cfg, day_accum, barometer_readings,
-                wind_gust_readings, wind_rose_readings)
+            lp: LoopProcessor = LoopProcessor(self.cfg, day_accum,
+                barometer_readings, wind_gust_readings)
             t: threading.Thread = threading.Thread(target=lp.process_queue)
             t.setName('LoopData')
             t.setDaemon(True)
@@ -306,25 +299,6 @@ class LoopData(StdService):
                           timestamp_to_string(reading.timestamp), reading.value))
         return wind_gust_readings
 
-    def fill_in_wind_rose_readings_at_startup(self, dbm) -> List[WindroseReading]:
-        wind_rose_readings = []
-        earliest: int = to_int(time.time() - self.cfg.wind_rose_secs)
-        for cols in dbm.genSql('SELECT dateTime, windSpeed, windDir FROM' \
-                ' archive WHERE dateTime >= %d ORDER BY dateTime ASC' % earliest):
-            dateTime  = cols[0]
-            windSpeed = cols[1]
-            windDir   = cols[2]
-            if windSpeed is not None and windSpeed != 0 and windDir is not None:
-                reading = WindroseReading(
-                    timestamp = dateTime,
-                    bucket    = LoopProcessor.get_wind_rose_bucket(self.cfg.wind_rose_points, windDir),
-                    distance  = windSpeed / (3600.0 / self.cfg.archive_interval))
-                wind_rose_readings.append(reading)
-                log.debug('fill_in_wind_rose_readings_at_startup: Reading(%s): ' \
-                         'bucket[%d]: distance: %f' % (
-                         timestamp_to_string(reading.timestamp), reading.bucket, reading.distance))
-        return wind_rose_readings
-
     def new_loop(self, event):
         log.debug('new_loop: event: %s' % event)
         self.cfg.queue.put(event)
@@ -335,14 +309,13 @@ class LoopData(StdService):
 
 class LoopProcessor:
     def __init__(self, cfg: Configuration, day_accum, barometer_readings: List[Reading],
-                 wind_gust_readings: List[Reading], wind_rose_readings: List[WindroseReading]):
+                 wind_gust_readings: List[Reading]):
         self.cfg = cfg
         self.archive_start: float = time.time()
         self.day_accum = day_accum
         self.arc_per_accum: Optional[weewx.accum.Accum] = None
         self.barometer_readings: List[Reading] = barometer_readings
         self.wind_gust_readings: List[Reading] = wind_gust_readings
-        self.wind_rose_readings: List[WindroseReading] = wind_rose_readings
         LoopProcessor.log_configuration(cfg)
 
     def process_queue(self) -> None:
@@ -353,11 +326,10 @@ class LoopProcessor:
                 pkt_time: int       = to_int(pkt['dateTime'])
 
                 if event.event_type == weewx.END_ARCHIVE_PERIOD:
-                    # Archive records come through just to save off pressure as we need
-                    # a 3 hour trend; and WindRose data for a 24 hour trend.  This
-                    # is done with archive records rather than loop records.
+                    # Archive records come through just to save off pressure as
+                    # we need a 3 hour trend.  This is done with archive records
+                    # rather than loop records.
                     self.save_barometer_reading(pkt_time, pkt)
-                    self.save_wind_rose_data(pkt_time, pkt)
                     continue
 
                 # This is a loop packet.
@@ -399,33 +371,14 @@ class LoopProcessor:
                         log.debug("No windGust nor windSpeed.  Can't save a windGust reading.")
 
                 loopdata_pkt = LoopProcessor.create_loopdata_packet(pkt,
-                    self.day_accum, self.cfg.converter, self.cfg.formatter)
+                    self.cfg.fields_to_include, self.barometer_readings,
+                    self.wind_gust_readings, self.day_accum, self.cfg.converter,
+                    self.cfg.formatter)
 
-                # Add barometerRate
-                LoopProcessor.insert_barometer_rate(self.barometer_readings,
-                    loopdata_pkt)
-                LoopProcessor.convert_units(self.cfg.converter,
-                    self.cfg.formatter, loopdata_pkt, "barometerRate",
-                    do_hi_lo_etc=False)
-
-                # Add 10mMaxGust
-                LoopProcessor.insert_10m_max_windgust(self.wind_gust_readings,
-                    loopdata_pkt)
-                LoopProcessor.convert_10m_max_windgust(loopdata_pkt,
-                    self.cfg.converter, self.cfg.formatter)
-
-                # Add windRose
-                LoopProcessor.insert_wind_rose(self.wind_rose_readings,
-                    self.cfg.wind_rose_points, loopdata_pkt)
-                LoopProcessor.convert_wind_rose(loopdata_pkt,
-                    self.cfg.converter, self.cfg.formatter)
-
-                selective_pkt: Dict[str, Any] = LoopProcessor.compose_selective_packet(
-                    loopdata_pkt, self.cfg.fields_to_include, self.cfg.fields_to_rename)
-                LoopProcessor.write_packet_to_file(selective_pkt,
+                LoopProcessor.write_packet_to_file(loopdata_pkt,
                     self.cfg.tmpname, self.cfg.loop_data_dir, self.cfg.filename)
                 if self.cfg.enable:
-                    LoopProcessor.rsync_data(selective_pkt['dateTime'],
+                    LoopProcessor.rsync_data(pkt_time,
                         self.cfg.skip_if_older_than, self.cfg.loop_data_dir,
                         self.cfg.filename, self.cfg.remote_dir,
                         self.cfg.remote_server, self.cfg.remote_port,
@@ -440,72 +393,339 @@ class LoopProcessor:
             os.unlink(self.cfg.tmpname)
 
     @staticmethod
-    def create_loopdata_packet(pkt: Dict[str, Any], day_accum: weewx.accum.Accum,
-            converter: weewx.units.Converter, formatter: weewx.units.Formatter) -> Dict[str, Any]:
+    def parse_cname(field: str) -> Optional[CheetahName]:
+        valid_prefixes    : List[str] = [ 'unit' ]
+        valid_prefixes2   : List[str] = [ 'label' ]
+        valid_periods     : List[str] = [ 'current', '10m', 'day', 'trend' ]
+        valid_agg_types   : List[str] = [ 'max', 'min', 'maxtime', 'mintime', 'gustdir', 'avg', 'sum', 'vecavg', 'vecdir', 'rms' ]
+        valid_format_specs: List[str] = [ 'formatted', 'raw', 'ordinal_compass', 'desc' ]
 
-        # Iterate through all scalar stats and add mins, maxes, sums, averages,
-        # and weighted averages to the record.
+        segment: List[str] = field.split('.')
+        if len(segment) < 2:
+            return None
 
-        loopdata_pkt = copy.deepcopy(pkt)
+        next_seg = 0
 
-        loopdata_pkt['FMT_dateTime'] = formatter.toString(
-            (loopdata_pkt['dateTime'], 'unix_epoch', 'group_time'))
+        prefix = None
+        prefix2 = None
+        if segment[next_seg] in valid_prefixes:
+            prefix = segment[next_seg]
+            next_seg += 1
+            if segment[next_seg] in valid_prefixes2:
+                prefix2 = segment[next_seg]
+                next_seg += 1
+            else:
+                return None
 
-        for obstype in day_accum:
-            accum = day_accum[obstype]
-            if isinstance(accum, weewx.accum.ScalarStats) and accum.lasttime is not None:
-                min, mintime, max, maxtime, sum, count, wsum, sumtime = accum.getStatsTuple()
-                loopdata_pkt['T_LO_%s' % obstype] = mintime
-                loopdata_pkt['LO_%s' % obstype] = min
-                loopdata_pkt['T_HI_%s' % obstype] = maxtime
-                loopdata_pkt['HI_%s' % obstype] = max
-                loopdata_pkt['SUM_%s' % obstype] = sum
-                if count != 0:
-                    loopdata_pkt['AVG_%s' % obstype] = sum / count
-                if sumtime != 0:
-                    loopdata_pkt['WAVG_%s' % obstype] = wsum / sumtime
-                LoopProcessor.convert_units(converter, formatter, loopdata_pkt, obstype)
-            elif isinstance(accum, weewx.accum.VecStats) and accum.count != 0:
-                min, mintime, max, maxtime, _, _, _, _, max_dir, _, _, _, _, _ = accum.getStatsTuple()
-                loopdata_pkt['HI_%s' % obstype] = accum.max
-                loopdata_pkt['HI_DIR_%s' % obstype] = accum.max_dir
-                loopdata_pkt['T_HI_%s' % obstype] = accum.maxtime
-                loopdata_pkt['LO_%s' % obstype] = accum.min
-                loopdata_pkt['T_LO_%s' % obstype] = accum.mintime
-                loopdata_pkt['AVG_%s' % obstype] = accum.avg
-                loopdata_pkt['RMS_%s' % obstype] = accum.rms
-                loopdata_pkt['VEC_AVG_%s' % obstype] = accum.vec_avg
-                loopdata_pkt['VEC_DIR_%s' % obstype] = accum.vec_dir
-                LoopProcessor.convert_vector_units(converter, formatter, loopdata_pkt, obstype)
-            elif isinstance(accum, weewx.accum.FirstLastAccum) and accum.first is not None:
-                first, firsttime, last, lasttime = accum.getStatsTuple()
-                loopdata_pkt['T_FIRST_%s' % obstype] = firsttime
-                loopdata_pkt['FIRST_%s' % obstype] = first
-                loopdata_pkt['T_LAST_%s' % obstype] = lasttime
-                loopdata_pkt['LAST_%s' % obstype] = last
-                # No formatting and conversions for FirstLastAccum
+        period = None
+        if prefix is None: # All but $unit must have a period.
+            if len(segment) < next_seg:
+                return None
+            if segment[next_seg] in valid_periods:
+                period = segment[next_seg]
+                next_seg += 1
+            else:
+                return  None
 
-        return loopdata_pkt
+        if len(segment) < next_seg:
+            # need an obstype, but none there
+            return None
+        obstype = segment[next_seg]
+        next_seg += 1
+
+        agg_type = None
+        # $10m/$day must have an agg_type
+        if period == '10m' or period == 'day':
+            if len(segment) < next_seg:
+                return None
+            if segment[next_seg] not in valid_agg_types:
+                return None
+            agg_type = segment[next_seg]
+            next_seg += 1
+        # $unit.label.<obs> is not allowed to have an agg_type
+        # # $unit *may* have an agg_type
+        # if prefix == 'unit':
+        #     # There *may* be an agg_type
+        #     if len(segment) > next_seg:
+        #         if segment[next_seg] not in valid_agg_types:
+        #             return None
+        #         agg_type = segment[next_seg]
+        #         next_seg += 1
+
+        format_spec = None
+        # check for a format spec
+        if prefix is None and len(segment) > next_seg:
+            if segment[next_seg] in valid_format_specs:
+                format_spec = segment[next_seg]
+                next_seg += 1
+
+        if len(segment) > next_seg:
+            # There is more.  This is unexpected.
+            return None
+
+        return CheetahName(
+            field       = field,
+            prefix      = prefix,
+            prefix2     = prefix2,
+            period      = period,
+            obstype     = obstype,
+            agg_type    = agg_type,
+            format_spec = format_spec)
 
     @staticmethod
-    def compose_selective_packet(loopdata_pkt: Dict[str, Any],
-            fields_to_include: List[str],
-            fields_to_rename: Dict[str, str]) -> Dict[str, Any]:
+    def add_unit_obstype(cname: CheetahName, loopdata_pkt: Dict[str, Any],
+            converter: weewx.units.Converter,
+            formatter: weewx.units.Formatter) -> None:
 
-        selective_pkt: Dict[str, Any] = {}
+        if cname.prefix2 == 'label':
+            # agg_type not allowed
+            # tgt_type, tgt_group = converter.getTargetUnit(cname.obstype, agg_type=cname.agg_type)
+            tgt_type, tgt_group = converter.getTargetUnit(cname.obstype)
+            loopdata_pkt[cname.field] = formatter.get_label_string(tgt_type)
 
-        if len(fields_to_include) == 0 and len(fields_to_rename) == 0:
-            selective_pkt = copy.copy(loopdata_pkt)
+    @staticmethod
+    def add_current_obstype(cname: CheetahName, pkt: Dict[str, Any],
+            loopdata_pkt: Dict[str, Any], converter: weewx.units.Converter,
+            formatter: weewx.units.Formatter) -> None:
+
+        if cname.obstype not in pkt:
+            log.debug('%s not found in packet, skipping %s' % (cname.obstype, cname.field))
+            return
+
+        value, unit_type, unit_group = LoopProcessor.convert_current_obs(
+                converter, formatter, cname.obstype, pkt)
+
+        if value is None:
+            log.debug('%s not found in loop packet.' % cname.field)
+            return
+
+        if cname.format_spec == 'ordinal_compass':
+            loopdata_pkt[cname.field] = formatter.to_ordinal_compass(
+                (value, unit_type, unit_group))
+            return
+
+        if cname.format_spec == 'formatted':
+            fmt_str = formatter.get_format_string(unit_type)
+            try:
+                loopdata_pkt[cname.field] = fmt_str % value
+            except Exception as e:
+                log.debug('%s: %s, %s, %s' % (e, cname.field, fmt_str, value))
+            return
+
+        if cname.format_spec == 'raw':
+            loopdata_pkt[cname.field] = value
+            return
+
+        loopdata_pkt[cname.field] = formatter.toString((value, unit_type, unit_group))
+
+    @staticmethod
+    def add_day_obstype(cname: CheetahName, day_accum: weewx.accum.Accum,
+            loopdata_pkt: Dict[str, Any], converter: weewx.units.Converter,
+            formatter: weewx.units.Formatter) -> None:
+
+        if cname.obstype not in day_accum:
+            log.debug('No day stats for %s, skipping %s' % (cname.obstype, cname.field))
+            return
+
+        stats = day_accum[cname.obstype]
+
+        if isinstance(stats, weewx.accum.ScalarStats) and stats.lasttime is not None:
+            min, mintime, max, maxtime, sum, count, wsum, sumtime = stats.getStatsTuple()
+            if cname.agg_type == 'min':
+                src_value = min
+            elif cname.agg_type == 'mintime':
+                src_value = mintime
+            elif cname.agg_type == 'max':
+                src_value = max
+            elif cname.agg_type == 'maxtime':
+                src_value = maxtime
+            elif cname.agg_type == 'sum':
+                src_value = sum
+            elif cname.agg_type == 'avg':
+                src_value = stats.avg
+            else:
+                return
+
+        elif isinstance(stats, weewx.accum.VecStats) and stats.count != 0:
+            min, mintime, max, maxtime, sum, count, wsum, sumtime, max_dir, xsum, ysum, dirsumtime, squaresum, wsquaresum = stats.getStatsTuple()
+            if cname.agg_type == 'maxtime':
+                src_value = maxtime
+            elif cname.agg_type == 'max':
+                src_value = max
+            elif cname.agg_type == 'gustdir':
+                src_value = max_dir
+            elif cname.agg_type == 'mintime':
+                src_value = mintime
+            elif cname.agg_type == 'min':
+                src_value = min
+            elif cname.agg_type == 'count':
+                src_value = count
+            elif cname.agg_type == 'avg':
+                src_value = stats.avg
+            elif cname.agg_type == 'sum':
+                src_value = stats.sum
+            elif cname.agg_type == 'rms':
+                src_value = stats.rms
+            elif cname.agg_type == 'vecavg':
+                src_value = stats.vec_avg
+            elif cname.agg_type == 'vecdir':
+                src_value = stats.vec_dir
+            else:
+                return
+
         else:
-            if len(fields_to_include) != 0:
-                for obstype in fields_to_include:
-                    if obstype in loopdata_pkt:
-                        selective_pkt[obstype] = loopdata_pkt[obstype]
-            if len(fields_to_rename) != 0:
-                for obstype in fields_to_rename:
-                    if obstype in loopdata_pkt:
-                        selective_pkt[fields_to_rename[obstype]] = loopdata_pkt[obstype]
-        return selective_pkt
+            # firstlast not currently supported
+            return
+
+        if src_value is None:
+            log.debug('Currently no day stats for %s.' % cname.field)
+            return
+
+        src_type, src_group = weewx.units.getStandardUnitType(day_accum.unit_system, cname.obstype, agg_type=cname.agg_type)
+
+        tgt_value, tgt_type, tgt_group = converter.convert((src_value, src_type, src_group))
+
+        if cname.format_spec == 'ordinal_compass':
+            loopdata_pkt[cname.field] = formatter.to_ordinal_compass(
+                (tgt_value, tgt_type, tgt_group))
+            return
+
+        if cname.format_spec == 'formatted':
+            fmt_str = formatter.get_format_string(tgt_type)
+            try:
+                loopdata_pkt[cname.field] = fmt_str % tgt_value
+            except Exception as e:
+                log.debug('%s: %s, %s, %s' % (e, cname.field, fmt_str, tgt_value))
+            return
+
+        if cname.format_spec == 'raw':
+            loopdata_pkt[cname.field] = tgt_value
+            return
+
+        loopdata_pkt[cname.field] = formatter.toString((tgt_value, tgt_type, tgt_group))
+
+    @staticmethod
+    def add_10m_obstype(cname: CheetahName, wind_gust_readings: List[Reading],
+            unit_system: int, loopdata_pkt: Dict[str, Any], converter: weewx.units.Converter,
+            formatter: weewx.units.Formatter) -> None:
+        """Only windGust.max and windGust.maxtime is supported for 10m observations."""
+
+        if cname.obstype != 'windGust':
+            log.debug('10m.<obs> only available for windGust: %s.' % cname.field)
+            return
+
+        if len(wind_gust_readings) == 0:
+            log.debug('No windGust readings: %s.' % cname.field)
+            return
+
+        maxtime, max = LoopProcessor.get_10m_max_windgust(wind_gust_readings)
+        if cname.agg_type == 'maxtime':
+            src_value: Any = maxtime
+        elif cname.agg_type == 'max':
+            src_value = max
+        else:
+            return
+
+        src_type, src_group = weewx.units.getStandardUnitType(unit_system, 'windGust', agg_type=cname.agg_type)
+
+        tgt_value, tgt_type, tgt_group = converter.convert((src_value, src_type, src_group))
+
+        if cname.format_spec == 'formatted':
+            fmt_str = formatter.get_format_string(tgt_type)
+            try:
+                loopdata_pkt[cname.field] = fmt_str % tgt_value
+            except Exception as e:
+                log.debug('%s: %s, %s, %s' % (e, cname.field, fmt_str, tgt_value))
+            return
+
+        if cname.format_spec == 'raw':
+            loopdata_pkt[cname.field] = tgt_value
+            return
+
+        loopdata_pkt[cname.field] = formatter.toString((tgt_value, tgt_type, tgt_group))
+
+    @staticmethod
+    def add_barometer_trend(cname: CheetahName, barometer_readings: List[Reading],
+            pkt: Dict[str, Any], loopdata_pkt: Dict[str, Any],
+            converter: weewx.units.Converter, formatter: weewx.units.Formatter) -> None:
+
+        if cname.obstype != 'barometer':
+            log.info('Only trend.barometer is supported, found %s.' % cname.field)
+            return
+
+        if len(barometer_readings) == 0:
+            log.debug('No barometer readings: %s.' % cname.field)
+            return
+
+        value = LoopProcessor.get_barometer_trend(pkt, barometer_readings)
+
+        value, unit_type, unit_group = LoopProcessor.convert_current_obs(
+                converter, formatter, cname.obstype, {'dateTime': pkt['dateTime'], 'usUnits': pkt['usUnits'], 'barometer': value})
+
+        if cname.format_spec == 'desc':
+            desc: str = LoopProcessor.get_barometer_rate_desc(value, unit_type, unit_group)
+            loopdata_pkt[cname.field] = desc
+            return
+
+        if cname.format_spec == 'formatted':
+            fmt_str = formatter.get_format_string(unit_type)
+            try:
+                loopdata_pkt[cname.field] = fmt_str % value
+            except Exception as e:
+                log.debug('%s: %s, %s, %s' % (e, cname.field, fmt_str, value))
+            return
+
+        if cname.format_spec == 'raw':
+            loopdata_pkt[cname.field] = value
+            return
+
+        loopdata_pkt[cname.field] = formatter.toString((value, unit_type, unit_group))
+
+
+    @staticmethod
+    def convert_current_obs(converter: weewx.units.Converter,
+            formatter: weewx.units.Formatter, obstype: str, pkt: Dict[str, Any]) -> Tuple[Any, Any, Any]:
+        """ Returns value, format_str, label_str """
+
+        v_t = weewx.units.as_value_tuple(pkt, obstype)
+        _, original_unit_type, original_unit_group = v_t
+        value, unit_type, unit_group = converter.convert(v_t)
+
+        return value, unit_type, unit_group
+
+    @staticmethod
+    def create_loopdata_packet(pkt: Dict[str, Any], fields_to_include: List[str],
+            barometer_readings: List[Reading], wind_gust_readings: List[Reading],
+            day_accum: weewx.accum.Accum, converter: weewx.units.Converter,
+            formatter: weewx.units.Formatter) -> Dict[str, Any]:
+
+        loopdata_pkt: Dict[str, Any] = {}
+
+        # Iterate through fields.
+        for field in fields_to_include:
+            cname: Optional[CheetahName] = LoopProcessor.parse_cname(field)
+            if cname is None:
+                continue
+            if cname.prefix == 'unit':
+                LoopProcessor.add_unit_obstype(cname, loopdata_pkt, converter, formatter)
+                continue
+            if cname.period == 'current':
+                LoopProcessor.add_current_obstype(cname, pkt, loopdata_pkt, converter, formatter)
+                continue
+            if cname.period == 'trend':
+                if cname.obstype == 'barometer':
+                    LoopProcessor.add_barometer_trend(cname, barometer_readings, pkt,
+                        loopdata_pkt, converter, formatter)
+                continue
+            if cname.period == 'day':
+                LoopProcessor.add_day_obstype(cname, day_accum, loopdata_pkt, converter, formatter)
+                continue
+            if cname.period == '10m':
+                LoopProcessor.add_10m_obstype(cname, wind_gust_readings,
+                    day_accum.unit_system, loopdata_pkt, converter, formatter)
+                continue
+
+        return loopdata_pkt
 
     @staticmethod
     def write_packet_to_file(selective_pkt: Dict[str, Any], tmpname: str,
@@ -536,7 +756,6 @@ class LoopProcessor:
         log.info('filename           : %s' % cfg.filename)
         log.info('target_report      : %s' % cfg.target_report)
         log.info('fields_to_include  : %s' % cfg.fields_to_include)
-        log.info('fields_to_rename   : %s' % cfg.fields_to_rename)
         # formatter
         # converter
         log.info('tmpname            : %s' % cfg.tmpname)
@@ -551,51 +770,6 @@ class LoopProcessor:
         log.info('timeout            : %d' % cfg.timeout)
         log.info('skip_if_older_than : %d' % cfg.skip_if_older_than)
         log.info('barometer_rate_secs: %d' % cfg.barometer_rate_secs)
-        log.info('wind_rose_secs     : %d' % cfg.wind_rose_secs)
-        log.info('wind_rose_points   : %d' % cfg.wind_rose_points)
-
-    @staticmethod
-    def get_wind_rose_bucket(wind_rose_points: int, wind_dir: float) -> int:
-        slice_size: float = 360.0 / wind_rose_points
-        bucket: int = to_int((wind_dir + slice_size / 2.0) / slice_size)
-
-        bkt =  bucket if bucket < wind_rose_points else 0
-        log.debug('get_wind_rose_bucket: wind_dir: %d, bucket: %d' % (wind_dir, bkt))
-
-        return bucket if bucket < wind_rose_points else 0
-
-    def save_wind_rose_data(self, pkt_time: int, pkt: Dict[str, Any]) -> None:
-        # Example: 3.1 mph, 202 degrees
-        # archive_interval:  300 seconds
-        # intervals in an hour: 3600 / 300 (12)
-        # distance = 3.1 / 12 = 0.258333 miles
-        if 'windSpeed' in pkt and 'windDir' in pkt and pkt['windSpeed'] is not None and pkt['windDir'] is not None:
-            wind_speed = to_float(pkt['windSpeed'])
-            wind_dir   = to_float(pkt['windDir'])
-        else:
-            log.debug('save_wind_rose_data: windSpeed and/or windDir not in archive packet, nothing to save for wind rose.')
-            return
-
-        if wind_speed is not None and wind_speed != 0 and wind_dir is not None:
-            log.debug('pkt_time: %d, bucket: %d, distance: %f' % (pkt_time,
-                LoopProcessor.get_wind_rose_bucket(self.cfg.wind_rose_points, wind_dir), wind_speed / (
-                3600.0 / self.cfg.archive_interval)))
-            self.wind_rose_readings.append(WindroseReading(
-                timestamp = pkt_time,
-                bucket    = LoopProcessor.get_wind_rose_bucket(self.cfg.wind_rose_points, wind_dir),
-                distance  = wind_speed / (3600.0 / self.cfg.archive_interval)))
-
-        self.delete_old_windrose_data()
-
-    def delete_old_windrose_data(self) -> None:
-        # Delete old WindRose data
-        cutoff_age: float = time.time() - self.cfg.wind_rose_secs
-        del_count = 0
-        for r in self.wind_rose_readings:
-            if r.timestamp < cutoff_age:
-                del_count += 1
-        for _ in range(del_count):
-            del self.wind_rose_readings[0]
 
     @staticmethod
     def rsync_data(pktTime: int, skip_if_older_than: int, loop_data_dir: str,
@@ -627,175 +801,17 @@ class LoopProcessor:
             log.error("rsync_data: Caught exception %s: %s" % (cl, e))
 
     @staticmethod
-    def convert_hi_lo_etc_units(converter: weewx.units.Converter, formatter: weewx.units.Formatter,
-            pkt: Dict[str, Any], obstype, original_unit_type, original_unit_group, target_unit_type,
-            target_unit_group) -> None:
-        # convert high and low
-        if 'HI_%s' % obstype not in pkt:
-            log.info('pkt[HI_%s] is missing.' % obstype)
-        else:
-            hi, _, _ = converter.convert(
-                (pkt['HI_%s' % obstype], original_unit_type, original_unit_group))
-            pkt['HI_%s' % obstype] = formatter.get_format_string(target_unit_type) % hi
-            pkt['FMT_HI_%s' % obstype] = formatter.toString(
-                (hi, target_unit_type, target_unit_group))
-            if 'T_HI_%s' % obstype in pkt:
-                pkt['FMT_T_HI_%s' % obstype] = formatter.toString(
-                    (pkt['T_HI_%s' % obstype], 'unix_epoch', 'group_time'))
-        if 'LO_%s' % obstype not in pkt:
-            log.info('pkt[LO_%s] is missing.' % obstype)
-        else:
-            lo, _, _ = converter.convert(
-                (pkt['LO_%s' % obstype], original_unit_type, original_unit_group))
-            pkt['LO_%s' % obstype] = formatter.get_format_string(target_unit_type) % lo
-            pkt['FMT_LO_%s' % obstype] = formatter.toString(
-                (lo, target_unit_type, target_unit_group))
-            if 'T_LO_%s' % obstype in pkt:
-                pkt['FMT_T_LO_%s' % obstype] = formatter.toString(
-                    (pkt['T_LO_%s' % obstype], 'unix_epoch', 'group_time'))
-        if 'SUM_%s' % obstype not in pkt:
-            log.info('pkt[SUM_%s] is missing.' % obstype)
-        else:
-            sum, _, _ = converter.convert(
-                (pkt['SUM_%s' % obstype], original_unit_type, original_unit_group))
-            pkt['SUM_%s' % obstype] = formatter.get_format_string(target_unit_type) % sum
-            if target_unit_type != 'unix_epoch':
-                try:
-                    pkt['FMT_SUM_%s' % obstype] = formatter.toString(
-                        (sum, target_unit_type, target_unit_group))
-                except Exception as e:
-                    log.error('Could not format sum for obstype: %s, target_unit_type: %s, target_unit_group: %s, exception: %s' % (
-                        obstype, target_unit_type, target_unit_group, e))
-        if 'AVG_%s' % obstype not in pkt:
-            log.info('pkt[AVG_%s] is missing.' % obstype)
-        else:
-            avg, _, _ = converter.convert(
-                (pkt['AVG_%s' % obstype], original_unit_type, original_unit_group))
-            pkt['AVG_%s' % obstype] = formatter.get_format_string(target_unit_type) % avg
-            pkt['FMT_AVG_%s' % obstype] = formatter.toString(
-                (avg, target_unit_type, target_unit_group))
-        if 'WAVG_%s' % obstype not in pkt:
-            log.info('pkt[WAVG_%s] is missing.' % obstype)
-        else:
-            wavg, _, _ = converter.convert(
-                (pkt['WAVG_%s' % obstype], original_unit_type, original_unit_group))
-            pkt['WAVG_%s' % obstype] = formatter.get_format_string(target_unit_type) % wavg
-            pkt['FMT_WAVG_%s' % obstype] = formatter.toString(
-                (wavg, target_unit_type, target_unit_group))
+    def get_barometer_rate_desc(value, unit_type, unit_group) -> str:
 
-    @staticmethod
-    def convert_10m_max_windgust(loopdata_pkt: Dict[str, Any],
-            converter: weewx.units.Converter,
-            formatter: weewx.units.Formatter) -> None:
-        obstype = '10mMaxGust'
-        # get windGust value tuple as it will give us the unit type and unit group
-        v_t = weewx.units.as_value_tuple(loopdata_pkt, 'windGust')
-        wind_gust_v_t = weewx.units.ValueTuple(loopdata_pkt[obstype], v_t.unit, v_t.group)
-        value, unit_type, unit_group = converter.convert(wind_gust_v_t)
-        loopdata_pkt[obstype] = formatter.get_format_string(unit_type) % value
-        loopdata_pkt['UNITS_%s' % obstype] = unit_type
-        loopdata_pkt['FMT_%s' % obstype] = formatter.toString((value, unit_type, unit_group))
-        loopdata_pkt['LABEL_%s' % obstype] = formatter.get_label_string(unit_type)
-
-    @staticmethod
-    def convert_wind_rose(loopdata_pkt: Dict[str, Any],
-            converter: weewx.units.Converter,
-            formatter: weewx.units.Formatter) -> None:
-        obstype = 'windRose'
-        # The windrun observation type will yield the units we need.
-        std_unit_system = loopdata_pkt['usUnits']
-        (unit_type, unit_group) = weewx.units.StdUnitConverters[
-            std_unit_system].getTargetUnit('windrun')
-        distances: List[float] = loopdata_pkt[obstype]
-        converted_distances: List[float] = []
-        for i in range(len(distances)):
-            distance_v_t = weewx.units.ValueTuple(
-                distances[i], unit_type, unit_group)
-            value, unit_type, unit_group = converter.convert(distance_v_t)
-            fmt_value = formatter.get_format_string(unit_type) % value
-            converted_distances.append(fmt_value)
-        log.debug('distances: %s' % distances)
-        loopdata_pkt[obstype] = converted_distances
-        loopdata_pkt['UNITS_%s' % obstype] = unit_type
-        loopdata_pkt['LABEL_%s' % obstype] = formatter.get_label_string(unit_type)
-
-    @staticmethod
-    def convert_units(converter: weewx.units.Converter, formatter: weewx.units.Formatter,
-            pkt: Dict[str, Any], obstype: str, do_hi_lo_etc = True) -> None:
-        v_t = weewx.units.as_value_tuple(pkt, obstype)
-        _, original_unit_type, original_unit_group = v_t
-        value, unit_type, unit_group = converter.convert(v_t)
-        # windDir and gustDir could be None.
-        if value is not None:
-            pkt[obstype] = formatter.get_format_string(unit_type) % value
-            pkt['FMT_%s' % obstype] = formatter.toString((
-                value, unit_type, unit_group))
-        else:
-            pkt[obstype] = None
-            pkt['FMT_%s' % obstype] = None
-        pkt['UNITS_%s' % obstype] = unit_type
-        pkt['LABEL_%s' % obstype] = formatter.get_label_string(unit_type)
-        if obstype in COMPASS_OBSERVATIONS:
-            pkt['COMPASS_%s' % obstype] = formatter.to_ordinal_compass(
-                (value, unit_type, unit_group))
-        if do_hi_lo_etc:
-            LoopProcessor.convert_hi_lo_etc_units(converter, formatter, pkt, obstype,
-                original_unit_type, original_unit_group, unit_type, unit_group)
-
-    @staticmethod
-    def convert_vector_units(converter: weewx.units.Converter, formatter: weewx.units.Formatter,
-            pkt: Dict[str, Any], obstype: str) -> None:
-        """ Special conversion and formatting for vector stats (aka, wind). """
-        kv = {
-            'T_HI_%s'    % obstype: 'maxtime',
-            'HI_%s'      % obstype: None,
-            'HI_DIR_%s'  % obstype: '%sDir' % obstype,
-            'T_LO_%s'    % obstype: 'mintime',
-            'LO_%s'      % obstype: None,
-            'AVG_%s'     % obstype: 'avg',
-            'RMS_%s'     % obstype: 'rms',
-            'VEC_AVG_%s' % obstype: 'vecavg',
-            'VEC_DIR_%s' % obstype: 'vecdir'}
-
-        for key in kv:
-            try:
-                value = pkt[key]
-            except KeyError:
-                log.info('pkt[%s] does not exist' % key)
-                continue
-            std_unit_system = pkt['usUnits']
-            if key.startswith('HI_DIR_'):
-                obstype_for_converter = '%sDir' % obstype
-            else:
-                obstype_for_converter = obstype
-            (orig_unit_type, orig_unit_group) = weewx.units.StdUnitConverters[
-                std_unit_system].getTargetUnit(obstype_for_converter, agg_type=kv[key])
-
-            value, unit_type, unit_group = converter.convert((value, orig_unit_type, orig_unit_group))
-
-            if value is not None:
-                pkt[key] = formatter.get_format_string(unit_type) % value
-                pkt['FMT_%s' % key] = formatter.toString(
-                    ((value, unit_type, unit_group)))
-            else:
-                pkt[key] = None
-                pkt['FMT_%s' % key] = None
-
-            pkt['UNITS_%s' % key] = unit_type
-            pkt['LABEL_%s' % key] = formatter.get_label_string(unit_type)
-
-    @staticmethod
-    def insert_barometer_rate_desc(loopdata_pkt: Dict[str, Any]) -> None:
-        # Shipping forecast descriptions for the 3 hour change in baromter readings.
+        # Forecast descriptions for the 3 hour change in barometer readings.
         # Falling (or rising) slowly: 0.1 - 1.5mb in 3 hours
         # Falling (or rising): 1.6 - 3.5mb in 3 hours
         # Falling (or rising) quickly: 3.6 - 6.0mb in 3 hours
         # Falling (or rising) very rapidly: More than 6.0mb in 3 hours
 
         # Get delta in mbars as that is the standard we have for descriptions.
-        v_t = weewx.units.as_value_tuple(loopdata_pkt, 'barometerRate')
         converter = weewx.units.Converter(weewx.units.MetricUnits)
-        delta_mbar, _, _ = converter.convert(v_t)
+        delta_mbar, _, _ = converter.convert((value, unit_type, unit_group))
         log.debug('Converted to mbar/h: %f' % delta_mbar)
         desc: str = ""
         # Table above is for 3 hours.  The rate is over a 3 hour period, but expressed per hour;
@@ -821,20 +837,23 @@ class LoopProcessor:
         else:
             desc = 'Falling Very Rapidly'
 
-        loopdata_pkt['DESC_barometerRate'] = desc
+        return desc
 
     @staticmethod
-    def insert_barometer_rate(barometer_readings: List[Reading],
-            loopdata_pkt: Dict[str, Any]) -> None:
+    def get_barometer_trend(pkt: Dict[str, Any], barometer_readings: List[Reading]) -> Optional[float]:
         if len(barometer_readings) != 0:
             # The saved readings are used to get the starting point,
             # but the current loopdata_pkt is used for the last barometer reading.
-            delta3H = to_float(loopdata_pkt['barometer']) - barometer_readings[0].value
+            if 'barometer' in pkt:
+                delta3H = to_float(pkt['barometer']) - barometer_readings[0].value
+            else:
+                delta3H = barometer_readings[len(barometer_readings)-1].value - barometer_readings[0].value
             # Report rate per hour
             delta = delta3H / 3.0
-            loopdata_pkt['barometerRate'] = delta
-            log.debug('insert_barometer_rate: %s' % delta)
-            LoopProcessor.insert_barometer_rate_desc(loopdata_pkt)
+            log.debug('barometer trend: %f' % delta)
+            return delta
+        else:
+            return None
 
     def save_barometer_reading(self, pkt_time: int, pkt: Dict[str, Any]) -> None:
         value = None
@@ -843,10 +862,9 @@ class LoopProcessor:
         else:
             # No barometer in archive record, use the archival period accumulator instead
             if self.arc_per_accum is not None:
-                log.debug('barometer not in archive pkt, using arc_per_accum')
-                _, _, _, _, sum, count, _, _ = self.arc_per_accum['barometer'].getStatsTuple()
-                if count > 0:
-                    value = sum / count
+                if 'barometer' in self.arc_per_accum:
+                    log.debug('barometer not in archive pkt, using arc_per_accum')
+                    value = self.arc_per_accum['barometer'].avg
 
         if value is not None:
             reading: Reading = Reading(
@@ -873,26 +891,15 @@ class LoopProcessor:
             del self.barometer_readings[0]
 
     @staticmethod
-    def insert_10m_max_windgust(wind_gust_readings: List[Reading],
-            loopdata_pkt: Dict[str, Any]) -> None:
-        max_gust     : float = 0.0
-        max_gust_time: int = 0
+    def get_10m_max_windgust(wind_gust_readings: List[Reading]) -> Tuple[int, float]:
+        """ Return maxtime and max of highest windGust. """
+        maxtime: int = 0
+        max    : float = 0.0
         for reading in wind_gust_readings:
-            if reading.value > max_gust:
-                max_gust = reading.value
-                max_gust_time = reading.timestamp
-        loopdata_pkt['10mMaxGust'] = max_gust
-        loopdata_pkt['T_10mMaxGust'] = max_gust_time
-        log.debug('insert_10m_max_windgust: ts: %d, gust: %f' % (
-                  loopdata_pkt['T_10mMaxGust'], loopdata_pkt['10mMaxGust']))
-
-    @staticmethod
-    def insert_wind_rose(wind_rose_readings: List[WindroseReading],
-            wind_rose_points: int, loopdata_pkt: Dict[str, Any]) -> None:
-        buckets: List[float] = [0.0]*wind_rose_points
-        for r in wind_rose_readings:
-            buckets[r.bucket] += r.distance
-        loopdata_pkt['windRose'] = buckets
+            if reading.value > max:
+                maxtime = reading.timestamp
+                max     = reading.value
+        return maxtime, max
 
     def save_wind_gust_reading(self, pkt_time: int, value: float) -> None:
         if value is not None:
