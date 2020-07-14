@@ -161,6 +161,7 @@ you through the process:
 1. Edit the LoopData->Include->fields line in weewx.conf.  Every field listed needs to be
    translated into the new (Cheetah) style of specifying fields.
 
+ * `dateTime`           -> `current.dateTime.raw`
  * `<obs>`              -> `current.<obs>.formatted`
  * `10mMaxGust`         -> `10m.windGust.max.formatted`
  * `AVG_<obs>`          -> `day.<obs>.avg`
