@@ -1,6 +1,11 @@
 loopdata change history
 -----------------------
 
+2.0.b8 07/18/2020
+
+1. Save values for trends for only trend fields specified in fields clause.
+2. Only parse fields one time.
+
 2.0.b7 07/18/2020
 
 1. trend no longer restricted to barometer.

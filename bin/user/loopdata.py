@@ -44,7 +44,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '2.0.b7'
+LOOP_DATA_VERSION = '2.0.b8'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -55,6 +55,16 @@ if weewx.__version__ < "4":
         "WeeWX 4 is required, found %s" % weewx.__version__)
 
 @dataclass
+class CheetahName:
+    field      : str           # $day.outTemp.avg.formatted
+    prefix     : Optional[str] # unit or None
+    prefix2    : Optional[str] # label or None
+    period     : Optional[str] # obs, 10m, day, current, trend
+    obstype    : str           # outTemp
+    agg_type   : Optional[str] # avg, sum, etc. (required for day, else None)
+    format_spec: Optional[str] # formatted (formatted value sans label), raw or ordinal_compass (could be on direction), or None
+
+@dataclass
 class Configuration:
     queue              : queue.SimpleQueue
     config_dict        : Dict[str, Any]
@@ -63,7 +73,8 @@ class Configuration:
     loop_data_dir      : str
     filename           : str
     target_report      : str
-    fields_to_include  : List[str]
+    specified_fields   : List[str]
+    fields_to_include  : List[CheetahName]
     formatter          : weewx.units.Formatter
     converter          : weewx.units.Converter
     tmpname            : str
@@ -78,16 +89,7 @@ class Configuration:
     skip_if_older_than : int
     timeout            : int
     time_delta         : int
-
-@dataclass
-class CheetahName:
-    field      : str           # $day.outTemp.avg.formatted
-    prefix     : Optional[str] # unit or None
-    prefix2    : Optional[str] # label or None
-    period     : Optional[str] # obs, 10m, day, current, trend
-    obstype    : str           # outTemp
-    agg_type   : Optional[str] # avg, sum, etc. (required for day, else None)
-    format_spec: Optional[str] # formatted (formatted value sans label), raw or ordinal_compass (could be on direction), or None
+    trend_obstypes     : List[str]
 
 @dataclass
 class Reading:
@@ -147,7 +149,15 @@ class LoopData(StdService):
         except Exception as e:
             log.error('Could not find target_report: %s.  LoopData is exiting. Exception: %s' % (target_report, e))
             return
-        fields_to_include = include_spec_dict.get('fields', [])
+        specified_fields = include_spec_dict.get('fields', [])
+        fields_to_include: List[CheetahName] = []
+        trend_obstypes: List[str] = []
+        for field in specified_fields:
+            cname: Optional[CheetahName] = LoopData.parse_cname(field)
+            if cname is not None:
+                fields_to_include.append(cname)
+                if cname.period == 'trend':
+                    trend_obstypes.append(cname.obstype)
 
         try:
             time_delta: int = to_int(target_report_dict.get('Units').get('Trend').get('time_delta'))
@@ -171,6 +181,7 @@ class LoopData(StdService):
             loop_data_dir       = loop_data_dir,
             filename            = file_spec_dict.get('filename', 'loop-data.txt'),
             target_report       = target_report,
+            specified_fields    = specified_fields,
             fields_to_include   = fields_to_include,
             formatter           = weewx.units.Formatter.fromSkinDict(target_report_dict),
             converter           = converter,
@@ -186,7 +197,8 @@ class LoopData(StdService):
             ssh_options         = rsync_spec_dict.get('ssh_options', '-o ConnectTimeout=1'),
             timeout             = to_int(rsync_spec_dict.get('timeout', 1)),
             skip_if_older_than  = to_int(rsync_spec_dict.get('skip_if_older_than', 3)),
-            time_delta          = time_delta)
+            time_delta          = time_delta,
+            trend_obstypes      = trend_obstypes)
 
         if not os.path.exists(self.cfg.loop_data_dir):
             os.makedirs(self.cfg.loop_data_dir)
@@ -194,7 +206,6 @@ class LoopData(StdService):
         log.info('LoopData file is: %s' % os.path.join(self.cfg.loop_data_dir, self.cfg.filename))
 
         self.bind(weewx.PRE_LOOP, self.pre_loop)
-        self.bind(weewx.END_ARCHIVE_PERIOD, self.end_archive_period)
         self.bind(weewx.NEW_LOOP_PACKET, self.new_loop)
 
     @staticmethod
@@ -321,9 +332,76 @@ class LoopData(StdService):
         log.debug('new_loop: event: %s' % event)
         self.cfg.queue.put(event)
 
-    def end_archive_period(self, event):
-        log.debug('end_archive_period: event: %s' % event)
-        self.cfg.queue.put(event)
+    @staticmethod
+    def parse_cname(field: str) -> Optional[CheetahName]:
+        valid_prefixes    : List[str] = [ 'unit' ]
+        valid_prefixes2   : List[str] = [ 'label' ]
+        valid_periods     : List[str] = [ 'current', '10m', 'day', 'trend' ]
+        valid_agg_types   : List[str] = [ 'max', 'min', 'maxtime', 'mintime', 'gustdir', 'avg', 'sum', 'vecavg', 'vecdir', 'rms' ]
+        valid_format_specs: List[str] = [ 'formatted', 'raw', 'ordinal_compass', 'desc' ]
+
+        segment: List[str] = field.split('.')
+        if len(segment) < 2:
+            return None
+
+        next_seg = 0
+
+        prefix = None
+        prefix2 = None
+        if segment[next_seg] in valid_prefixes:
+            prefix = segment[next_seg]
+            next_seg += 1
+            if segment[next_seg] in valid_prefixes2:
+                prefix2 = segment[next_seg]
+                next_seg += 1
+            else:
+                return None
+
+        period = None
+        if prefix is None: # All but $unit must have a period.
+            if len(segment) < next_seg:
+                return None
+            if segment[next_seg] in valid_periods:
+                period = segment[next_seg]
+                next_seg += 1
+            else:
+                return  None
+
+        if len(segment) < next_seg:
+            # need an obstype, but none there
+            return None
+        obstype = segment[next_seg]
+        next_seg += 1
+
+        agg_type = None
+        # $10m/$day must have an agg_type
+        if period == '10m' or period == 'day':
+            if len(segment) < next_seg:
+                return None
+            if segment[next_seg] not in valid_agg_types:
+                return None
+            agg_type = segment[next_seg]
+            next_seg += 1
+
+        format_spec = None
+        # check for a format spec
+        if prefix is None and len(segment) > next_seg:
+            if segment[next_seg] in valid_format_specs:
+                format_spec = segment[next_seg]
+                next_seg += 1
+
+        if len(segment) > next_seg:
+            # There is more.  This is unexpected.
+            return None
+
+        return CheetahName(
+            field       = field,
+            prefix      = prefix,
+            prefix2     = prefix2,
+            period      = period,
+            obstype     = obstype,
+            agg_type    = agg_type,
+            format_spec = format_spec)
 
 class LoopProcessor:
     def __init__(self, cfg: Configuration, day_accum,
@@ -344,13 +422,6 @@ class LoopProcessor:
                 pkt: Dict[str, Any] = event.packet
                 pkt_time: int       = to_int(pkt['dateTime'])
 
-                if event.event_type == weewx.END_ARCHIVE_PERIOD:
-                    # Archive records come through just to save off for
-                    # computing trends.
-                    #trend_pkt = copy.deepcopy(pkt)
-                    #self.save_trend_packet(pkt_time, trend_pkt)
-                    continue
-
                 # This is a loop packet.
                 assert event.event_type == weewx.NEW_LOOP_PACKET
                 log.debug('Dequeued loop event(%s): %s' % (event, timestamp_to_string(pkt_time)))
@@ -358,8 +429,7 @@ class LoopProcessor:
                 # Process new packet.
                 log.debug(pkt)
 
-                trend_pkt = copy.deepcopy(pkt)
-                self.save_trend_packet(pkt_time, trend_pkt)
+                self.save_trend_packet(pkt_time, pkt, self.cfg.trend_obstypes)
 
                 try:
                   self.day_accum.addRecord(pkt)
@@ -413,86 +483,6 @@ class LoopProcessor:
             raise
         finally:
             os.unlink(self.cfg.tmpname)
-
-    @staticmethod
-    def parse_cname(field: str) -> Optional[CheetahName]:
-        valid_prefixes    : List[str] = [ 'unit' ]
-        valid_prefixes2   : List[str] = [ 'label' ]
-        valid_periods     : List[str] = [ 'current', '10m', 'day', 'trend' ]
-        valid_agg_types   : List[str] = [ 'max', 'min', 'maxtime', 'mintime', 'gustdir', 'avg', 'sum', 'vecavg', 'vecdir', 'rms' ]
-        valid_format_specs: List[str] = [ 'formatted', 'raw', 'ordinal_compass', 'desc' ]
-
-        segment: List[str] = field.split('.')
-        if len(segment) < 2:
-            return None
-
-        next_seg = 0
-
-        prefix = None
-        prefix2 = None
-        if segment[next_seg] in valid_prefixes:
-            prefix = segment[next_seg]
-            next_seg += 1
-            if segment[next_seg] in valid_prefixes2:
-                prefix2 = segment[next_seg]
-                next_seg += 1
-            else:
-                return None
-
-        period = None
-        if prefix is None: # All but $unit must have a period.
-            if len(segment) < next_seg:
-                return None
-            if segment[next_seg] in valid_periods:
-                period = segment[next_seg]
-                next_seg += 1
-            else:
-                return  None
-
-        if len(segment) < next_seg:
-            # need an obstype, but none there
-            return None
-        obstype = segment[next_seg]
-        next_seg += 1
-
-        agg_type = None
-        # $10m/$day must have an agg_type
-        if period == '10m' or period == 'day':
-            if len(segment) < next_seg:
-                return None
-            if segment[next_seg] not in valid_agg_types:
-                return None
-            agg_type = segment[next_seg]
-            next_seg += 1
-        # $unit.label.<obs> is not allowed to have an agg_type
-        # # $unit *may* have an agg_type
-        # if prefix == 'unit':
-        #     # There *may* be an agg_type
-        #     if len(segment) > next_seg:
-        #         if segment[next_seg] not in valid_agg_types:
-        #             return None
-        #         agg_type = segment[next_seg]
-        #         next_seg += 1
-
-        format_spec = None
-        # check for a format spec
-        if prefix is None and len(segment) > next_seg:
-            if segment[next_seg] in valid_format_specs:
-                format_spec = segment[next_seg]
-                next_seg += 1
-
-        if len(segment) > next_seg:
-            # There is more.  This is unexpected.
-            return None
-
-        return CheetahName(
-            field       = field,
-            prefix      = prefix,
-            prefix2     = prefix2,
-            period      = period,
-            obstype     = obstype,
-            agg_type    = agg_type,
-            format_spec = format_spec)
 
     @staticmethod
     def add_unit_obstype(cname: CheetahName, loopdata_pkt: Dict[str, Any],
@@ -711,7 +701,7 @@ class LoopProcessor:
         return value, unit_type, group_type
 
     @staticmethod
-    def create_loopdata_packet(pkt: Dict[str, Any], fields_to_include: List[str],
+    def create_loopdata_packet(pkt: Dict[str, Any], fields_to_include: List[CheetahName],
             trend_packets: List[TrendPacket], wind_gust_readings: List[Reading],
             day_accum: weewx.accum.Accum, time_delta: int, converter: weewx.units.Converter,
             formatter: weewx.units.Formatter) -> Dict[str, Any]:
@@ -719,8 +709,7 @@ class LoopProcessor:
         loopdata_pkt: Dict[str, Any] = {}
 
         # Iterate through fields.
-        for field in fields_to_include:
-            cname: Optional[CheetahName] = LoopProcessor.parse_cname(field)
+        for cname in fields_to_include:
             if cname is None:
                 continue
             if cname.prefix == 'unit':
@@ -771,7 +760,8 @@ class LoopProcessor:
         log.info('loop_data_dir      : %s' % cfg.loop_data_dir)
         log.info('filename           : %s' % cfg.filename)
         log.info('target_report      : %s' % cfg.target_report)
-        log.info('fields_to_include  : %s' % cfg.fields_to_include)
+        log.info('specified_fields   : %s' % cfg.specified_fields)
+        # fields_to_include
         # formatter
         # converter
         log.info('tmpname            : %s' % cfg.tmpname)
@@ -886,6 +876,8 @@ class LoopProcessor:
                 return None, None, None
             if start_packet['dateTime'] == end_packet['dateTime']:
                 return None, None, None
+            log.debug('get_trend: starting packet(%s): %s: %s' % (timestamp_to_string(start_packet['dateTime']), cname.field, start_packet[cname.obstype]))
+            log.debug('get_trend: end      packet(%s): %s: %s' % (timestamp_to_string(end_packet['dateTime']), cname.field, end_packet[cname.obstype]))
             # Trend needs to be in report target units.
             start_value, unit_type, group_type = LoopProcessor.convert_current_obs(
                 converter, cname.obstype, start_packet)
@@ -902,13 +894,21 @@ class LoopProcessor:
                 log.debug('Could not compute trend for %s' % cname.field)
         return None, None, None
 
-    def save_trend_packet(self, pkt_time: int, pkt: Dict[str, Any]) -> None:
+    def save_trend_packet(self, pkt_time: int, pkt: Dict[str, Any], trend_obstypes: List[str]) -> None:
+        # Don't save the entire packet as only obstypes used by a trend field
+        # are needed.
+        new_pkt: Dict[str, Any] = {}
+        new_pkt['dateTime'] = pkt['dateTime']
+        new_pkt['usUnits'] = pkt['usUnits']
+        for obstype in trend_obstypes:
+            if obstype in pkt:
+                new_pkt[obstype] = pkt[obstype]
         trend_packet: TrendPacket = TrendPacket(
             timestamp = pkt_time,
-            packet = pkt)
+            packet = new_pkt)
         self.trend_packets.append(trend_packet)
         log.debug('save_trend_packet: TrendPacket(%s): %s' % (
-            timestamp_to_string(pkt_time), pkt))
+            timestamp_to_string(pkt_time), new_pkt))
         self.trim_old_trend_packets()
 
     def trim_old_trend_packets(self) -> None:

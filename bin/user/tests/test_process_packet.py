@@ -33,7 +33,7 @@ class ProcessPacketTests(unittest.TestCase):
     def test_parse_cname(self):
         self.maxDiff = None
 
-        cname = user.loopdata.LoopProcessor.parse_cname('unit.label.outTemp')
+        cname = user.loopdata.LoopData.parse_cname('unit.label.outTemp')
         self.assertEqual(cname.field, 'unit.label.outTemp')
         self.assertEqual(cname.prefix, 'unit')
         self.assertEqual(cname.prefix2, 'label')
@@ -42,7 +42,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, None)
         self.assertEqual(cname.format_spec, None)
 
-        cname = user.loopdata.LoopProcessor.parse_cname('10m.windGust.max.raw')
+        cname = user.loopdata.LoopData.parse_cname('10m.windGust.max.raw')
         self.assertEqual(cname.field, '10m.windGust.max.raw')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -51,7 +51,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, 'max')
         self.assertEqual(cname.format_spec, 'raw')
 
-        cname = user.loopdata.LoopProcessor.parse_cname('10m.windGust.max.formatted')
+        cname = user.loopdata.LoopData.parse_cname('10m.windGust.max.formatted')
         self.assertEqual(cname.field, '10m.windGust.max.formatted')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -60,7 +60,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, 'max')
         self.assertEqual(cname.format_spec, 'formatted')
 
-        cname = user.loopdata.LoopProcessor.parse_cname('10m.windGust.maxtime')
+        cname = user.loopdata.LoopData.parse_cname('10m.windGust.maxtime')
         self.assertEqual(cname.field, '10m.windGust.maxtime')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -69,7 +69,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, 'maxtime')
         self.assertEqual(cname.format_spec, None)
 
-        cname = user.loopdata.LoopProcessor.parse_cname('unit.label.wind')
+        cname = user.loopdata.LoopData.parse_cname('unit.label.wind')
         self.assertEqual(cname.field, 'unit.label.wind')
         self.assertEqual(cname.prefix, 'unit')
         self.assertEqual(cname.prefix2, 'label')
@@ -78,7 +78,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, None)
         self.assertEqual(cname.format_spec, None)
 
-        cname = user.loopdata.LoopProcessor.parse_cname('trend.barometer')
+        cname = user.loopdata.LoopData.parse_cname('trend.barometer')
         self.assertEqual(cname.field, 'trend.barometer')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -87,7 +87,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, None)
         self.assertEqual(cname.format_spec, None)
 
-        cname = user.loopdata.LoopProcessor.parse_cname('trend.barometer.formatted')
+        cname = user.loopdata.LoopData.parse_cname('trend.barometer.formatted')
         self.assertEqual(cname.field, 'trend.barometer.formatted')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -96,7 +96,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, None)
         self.assertEqual(cname.format_spec, 'formatted')
 
-        cname = user.loopdata.LoopProcessor.parse_cname('trend.barometer.desc')
+        cname = user.loopdata.LoopData.parse_cname('trend.barometer.desc')
         self.assertEqual(cname.field, 'trend.barometer.desc')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -105,7 +105,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, None)
         self.assertEqual(cname.format_spec, 'desc')
 
-        cname = user.loopdata.LoopProcessor.parse_cname('trend.outTemp')
+        cname = user.loopdata.LoopData.parse_cname('trend.outTemp')
         self.assertEqual(cname.field, 'trend.outTemp')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -114,7 +114,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, None)
         self.assertEqual(cname.format_spec, None)
 
-        cname = user.loopdata.LoopProcessor.parse_cname('trend.outTemp.formatted')
+        cname = user.loopdata.LoopData.parse_cname('trend.outTemp.formatted')
         self.assertEqual(cname.field, 'trend.outTemp.formatted')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -123,7 +123,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, None)
         self.assertEqual(cname.format_spec, 'formatted')
 
-        cname = user.loopdata.LoopProcessor.parse_cname('trend.dewpoint')
+        cname = user.loopdata.LoopData.parse_cname('trend.dewpoint')
         self.assertEqual(cname.field, 'trend.dewpoint')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -132,7 +132,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, None)
         self.assertEqual(cname.format_spec, None)
 
-        cname = user.loopdata.LoopProcessor.parse_cname('trend.dewpoint.formatted')
+        cname = user.loopdata.LoopData.parse_cname('trend.dewpoint.formatted')
         self.assertEqual(cname.field, 'trend.dewpoint.formatted')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -141,7 +141,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, None)
         self.assertEqual(cname.format_spec, 'formatted')
 
-        cname = user.loopdata.LoopProcessor.parse_cname('current.outTemp')
+        cname = user.loopdata.LoopData.parse_cname('current.outTemp')
         self.assertEqual(cname.field, 'current.outTemp')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -150,7 +150,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, None)
         self.assertEqual(cname.format_spec, None)
 
-        cname = user.loopdata.LoopProcessor.parse_cname('current.dateTime')
+        cname = user.loopdata.LoopData.parse_cname('current.dateTime')
         self.assertEqual(cname.field, 'current.dateTime')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -159,7 +159,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, None)
         self.assertEqual(cname.format_spec, None)
 
-        cname = user.loopdata.LoopProcessor.parse_cname('current.dateTime.raw')
+        cname = user.loopdata.LoopData.parse_cname('current.dateTime.raw')
         self.assertEqual(cname.field, 'current.dateTime.raw')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -168,7 +168,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, None)
         self.assertEqual(cname.format_spec, 'raw')
 
-        cname = user.loopdata.LoopProcessor.parse_cname('current.windSpeed')
+        cname = user.loopdata.LoopData.parse_cname('current.windSpeed')
         self.assertEqual(cname.field, 'current.windSpeed')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -177,7 +177,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, None)
         self.assertEqual(cname.format_spec, None)
 
-        cname = user.loopdata.LoopProcessor.parse_cname('current.windSpeed.ordinal_compass')
+        cname = user.loopdata.LoopData.parse_cname('current.windSpeed.ordinal_compass')
         self.assertEqual(cname.field, 'current.windSpeed.ordinal_compass')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -186,7 +186,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, None)
         self.assertEqual(cname.format_spec, 'ordinal_compass')
 
-        cname = user.loopdata.LoopProcessor.parse_cname('day.rain.sum')
+        cname = user.loopdata.LoopData.parse_cname('day.rain.sum')
         self.assertEqual(cname.field, 'day.rain.sum')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -195,7 +195,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, 'sum')
         self.assertEqual(cname.format_spec, None)
 
-        cname = user.loopdata.LoopProcessor.parse_cname('day.rain.sum.raw')
+        cname = user.loopdata.LoopData.parse_cname('day.rain.sum.raw')
         self.assertEqual(cname.field, 'day.rain.sum.raw')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -204,10 +204,10 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, 'sum')
         self.assertEqual(cname.format_spec, 'raw')
 
-        cname = user.loopdata.LoopProcessor.parse_cname('day.rain.formatted')
+        cname = user.loopdata.LoopData.parse_cname('day.rain.formatted')
         self.assertEqual(cname, None)
 
-        cname = user.loopdata.LoopProcessor.parse_cname('day.windGust.max')
+        cname = user.loopdata.LoopData.parse_cname('day.windGust.max')
         self.assertEqual(cname.field, 'day.windGust.max')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -216,7 +216,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, 'max')
         self.assertEqual(cname.format_spec, None)
 
-        cname = user.loopdata.LoopProcessor.parse_cname('day.windDir.max')
+        cname = user.loopdata.LoopData.parse_cname('day.windDir.max')
         self.assertEqual(cname.field, 'day.windDir.max')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -225,7 +225,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, 'max')
         self.assertEqual(cname.format_spec, None)
 
-        cname = user.loopdata.LoopProcessor.parse_cname('day.wind.maxtime')
+        cname = user.loopdata.LoopData.parse_cname('day.wind.maxtime')
         self.assertEqual(cname.field, 'day.wind.maxtime')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -234,7 +234,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, 'maxtime')
         self.assertEqual(cname.format_spec, None)
 
-        cname = user.loopdata.LoopProcessor.parse_cname('day.wind.max')
+        cname = user.loopdata.LoopData.parse_cname('day.wind.max')
         self.assertEqual(cname.field, 'day.wind.max')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -243,7 +243,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, 'max')
         self.assertEqual(cname.format_spec, None)
 
-        cname = user.loopdata.LoopProcessor.parse_cname('day.wind.gustdir')
+        cname = user.loopdata.LoopData.parse_cname('day.wind.gustdir')
         self.assertEqual(cname.field, 'day.wind.gustdir')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -252,7 +252,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, 'gustdir')
         self.assertEqual(cname.format_spec, None)
 
-        cname = user.loopdata.LoopProcessor.parse_cname('day.wind.vecavg')
+        cname = user.loopdata.LoopData.parse_cname('day.wind.vecavg')
         self.assertEqual(cname.field, 'day.wind.vecavg')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -261,7 +261,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, 'vecavg')
         self.assertEqual(cname.format_spec, None)
 
-        cname = user.loopdata.LoopProcessor.parse_cname('day.wind.vecdir')
+        cname = user.loopdata.LoopData.parse_cname('day.wind.vecdir')
         self.assertEqual(cname.field, 'day.wind.vecdir')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -270,7 +270,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, 'vecdir')
         self.assertEqual(cname.format_spec, None)
 
-        cname = user.loopdata.LoopProcessor.parse_cname('day.wind.rms')
+        cname = user.loopdata.LoopData.parse_cname('day.wind.rms')
         self.assertEqual(cname.field, 'day.wind.rms')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -280,7 +280,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
 
-        cname = user.loopdata.LoopProcessor.parse_cname('day.wind.avg')
+        cname = user.loopdata.LoopData.parse_cname('day.wind.avg')
         self.assertEqual(cname.field, 'day.wind.avg')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -307,7 +307,7 @@ class ProcessPacketTests(unittest.TestCase):
             wind_gust_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['windGust']))
             day_accum.addRecord(pkt)
 
-        fields_to_include = [
+        specified_fields = [
             '10m.windGust.max',
             '10m.windGust.max.formatted',
             '10m.windGust.max.raw',
@@ -368,6 +368,12 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windDir',
             'unit.label.windSpeed',
             ]
+
+        fields_to_include: List[CheetahName] = []
+        for field in specified_fields:
+            cname: Optional[CheetahName] = user.loopdata.LoopData.parse_cname(field)
+            if cname is not None:
+                fields_to_include.append(cname)
 
         time_delta = 10800
 
@@ -481,7 +487,7 @@ class ProcessPacketTests(unittest.TestCase):
             wind_gust_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['windGust']))
             day_accum.addRecord(pkt)
 
-        fields_to_include = [
+        specified_fields = [
             '10m.windGust.max',
             '10m.windGust.max.formatted',
             '10m.windGust.max.raw',
@@ -542,6 +548,12 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windDir',
             'unit.label.windSpeed',
             ]
+
+        fields_to_include: List[CheetahName] = []
+        for field in specified_fields:
+            cname: Optional[CheetahName] = user.loopdata.LoopData.parse_cname(field)
+            if cname is not None:
+                fields_to_include.append(cname)
 
         time_delta = 10800
 
@@ -655,7 +667,7 @@ class ProcessPacketTests(unittest.TestCase):
             wind_gust_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['windGust']))
             day_accum.addRecord(pkt)
 
-        fields_to_include = [
+        specified_fields = [
             '10m.windGust.max',
             '10m.windGust.max.formatted',
             '10m.windGust.max.raw',
@@ -716,6 +728,12 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windDir',
             'unit.label.windSpeed',
             ]
+
+        fields_to_include: List[CheetahName] = []
+        for field in specified_fields:
+            cname: Optional[CheetahName] = user.loopdata.LoopData.parse_cname(field)
+            if cname is not None:
+                fields_to_include.append(cname)
 
         time_delta = 10800
 
