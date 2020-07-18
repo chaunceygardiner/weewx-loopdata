@@ -10,7 +10,7 @@ import unittest
 
 import weewx
 import weewx.accum
-import weewx.units
+
 
 import weeutil.logger
 
@@ -104,6 +104,42 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.obstype, 'barometer')
         self.assertEqual(cname.agg_type, None)
         self.assertEqual(cname.format_spec, 'desc')
+
+        cname = user.loopdata.LoopProcessor.parse_cname('trend.outTemp')
+        self.assertEqual(cname.field, 'trend.outTemp')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'trend')
+        self.assertEqual(cname.obstype, 'outTemp')
+        self.assertEqual(cname.agg_type, None)
+        self.assertEqual(cname.format_spec, None)
+
+        cname = user.loopdata.LoopProcessor.parse_cname('trend.outTemp.formatted')
+        self.assertEqual(cname.field, 'trend.outTemp.formatted')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'trend')
+        self.assertEqual(cname.obstype, 'outTemp')
+        self.assertEqual(cname.agg_type, None)
+        self.assertEqual(cname.format_spec, 'formatted')
+
+        cname = user.loopdata.LoopProcessor.parse_cname('trend.dewpoint')
+        self.assertEqual(cname.field, 'trend.dewpoint')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'trend')
+        self.assertEqual(cname.obstype, 'dewpoint')
+        self.assertEqual(cname.agg_type, None)
+        self.assertEqual(cname.format_spec, None)
+
+        cname = user.loopdata.LoopProcessor.parse_cname('trend.dewpoint.formatted')
+        self.assertEqual(cname.field, 'trend.dewpoint.formatted')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'trend')
+        self.assertEqual(cname.obstype, 'dewpoint')
+        self.assertEqual(cname.agg_type, None)
+        self.assertEqual(cname.format_spec, 'formatted')
 
         cname = user.loopdata.LoopProcessor.parse_cname('current.outTemp')
         self.assertEqual(cname.field, 'current.outTemp')
@@ -260,17 +296,15 @@ class ProcessPacketTests(unittest.TestCase):
         first_pkt_time, pkts = ip100_packets.IP100Packets._get_packets()
         day_accum = ProcessPacketTests._get_day_accum(config_dict, first_pkt_time)
 
-        barometer_readings = []
-        wind_gust_readings = []
-        for pkt in pkts:
-            barometer_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['barometer']))
-            wind_gust_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['windGust']))
-
         converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
+        trend_packets = []
+        wind_gust_readings = []
         for pkt in pkts:
+            trend_packets.append(user.loopdata.TrendPacket(timestamp=pkt['dateTime'], packet=pkt))
+            wind_gust_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['windGust']))
             day_accum.addRecord(pkt)
 
         fields_to_include = [
@@ -322,6 +356,12 @@ class ProcessPacketTests(unittest.TestCase):
             'trend.barometer.raw',
             'trend.barometer.formatted',
             'trend.barometer.desc',
+            'trend.outTemp',
+            'trend.outTemp.raw',
+            'trend.outTemp.formatted',
+            'trend.dewpoint',
+            'trend.dewpoint.raw',
+            'trend.dewpoint.formatted',
             'unit.label.barometer',
             'unit.label.rain',
             'unit.label.wind',
@@ -329,9 +369,14 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windSpeed',
             ]
 
+        time_delta = 10800
+
         loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(
-            pkt, fields_to_include, barometer_readings, wind_gust_readings,
-            day_accum, converter, formatter)
+            pkt, fields_to_include, trend_packets, wind_gust_readings,
+            day_accum, time_delta, converter, formatter)
+
+            # {'dateTime': 1593883054, 'usUnits': 1, 'outTemp': 71.6, 'barometer': 30.060048358389471, 'dewpoint': 60.48739574937819
+            # {'dateTime': 1593883332, 'usUnits': 1, 'outTemp': 72.0, 'barometer': 30.055425865734495, 'dewpoint': 59.57749595318801
 
         self.maxDiff = None
 
@@ -352,10 +397,21 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['current.windDir'], '45°')
         self.assertEqual(loopdata_pkt['current.windDir.ordinal_compass'], 'NE')
 
-        self.assertEqual(loopdata_pkt['trend.barometer'], '0.000 inHg')
-        self.assertEqual(loopdata_pkt['trend.barometer.raw'], 0.0)
-        self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '0.000')
+        # 30.055425865734495 - 30.060048358389471
+        self.assertEqual(loopdata_pkt['trend.barometer'], '-0.005 inHg')
+        self.assertTrue(loopdata_pkt['trend.barometer.raw'] < -0.0046224926 and loopdata_pkt['trend.barometer.raw'] > -0.0046224927)
+        self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '-0.005')
         self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Steady')
+
+        # 72.0 - 71.6
+        self.assertEqual(loopdata_pkt['trend.outTemp'], '0.4°F')
+        self.assertTrue(loopdata_pkt['trend.outTemp.raw'] < 0.4001 and loopdata_pkt['trend.outTemp.raw'] > 0.3999)
+        self.assertEqual(loopdata_pkt['trend.outTemp.formatted'], '0.4')
+
+        # 59.57749595318801 - 60.48739574937819
+        self.assertEqual(loopdata_pkt['trend.dewpoint'], '-0.9°F')
+        self.assertTrue(loopdata_pkt['trend.dewpoint.raw'] < -0.9098997961 and loopdata_pkt['trend.dewpoint.raw'] > -0.9098997962)
+        self.assertEqual(loopdata_pkt['trend.dewpoint.formatted'], '-0.9')
 
         self.assertEqual(loopdata_pkt['day.rain.sum'], '0.00 in')
         self.assertEqual(loopdata_pkt['day.rain.sum.formatted'], '0.00')
@@ -367,11 +423,11 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.windDir.avg'], '87°')
 
         self.assertEqual(loopdata_pkt['day.outTemp.max'], '72.0°F')
-        self.assertEqual(loopdata_pkt['day.barometer.max'], '30.055 inHg')
+        self.assertEqual(loopdata_pkt['day.barometer.max'], '30.060 inHg')
         self.assertEqual(loopdata_pkt['day.windSpeed.max'], '6 mph')
         self.assertEqual(loopdata_pkt['day.windDir.max'], '360°')
 
-        self.assertEqual(loopdata_pkt['day.outTemp.min'], '72.0°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.min'], '71.6°F')
         self.assertEqual(loopdata_pkt['day.barometer.min'], '30.055 inHg')
         self.assertEqual(loopdata_pkt['day.windSpeed.min'], '1 mph')
         self.assertEqual(loopdata_pkt['day.windDir.min'], '22°')
@@ -413,17 +469,16 @@ class ProcessPacketTests(unittest.TestCase):
         first_pkt_time, pkts = cc3000_packets.CC3000Packets._get_packets()
         day_accum = ProcessPacketTests._get_day_accum(config_dict, first_pkt_time)
 
-        barometer_readings = []
-        wind_gust_readings = []
-        for pkt in pkts:
-            barometer_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['barometer']))
-            wind_gust_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['windGust']))
 
         converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
+        trend_packets = []
+        wind_gust_readings = []
         for pkt in pkts:
+            trend_packets.append(user.loopdata.TrendPacket(timestamp=pkt['dateTime'], packet=pkt))
+            wind_gust_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['windGust']))
             day_accum.addRecord(pkt)
 
         fields_to_include = [
@@ -475,6 +530,12 @@ class ProcessPacketTests(unittest.TestCase):
             'trend.barometer.raw',
             'trend.barometer.formatted',
             'trend.barometer.desc',
+            'trend.outTemp',
+            'trend.outTemp.raw',
+            'trend.outTemp.formatted',
+            'trend.dewpoint',
+            'trend.dewpoint.raw',
+            'trend.dewpoint.formatted',
             'unit.label.barometer',
             'unit.label.rain',
             'unit.label.wind',
@@ -482,9 +543,14 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windSpeed',
             ]
 
+        time_delta = 10800
+
         loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(
-            pkt, fields_to_include, barometer_readings, wind_gust_readings,
-            day_accum, converter, formatter)
+            pkt, fields_to_include, trend_packets, wind_gust_readings,
+            day_accum, time_delta, converter, formatter)
+
+        # {'dateTime': 1593975030, 'outTemp': 76.1, 'barometer': 30.014857385736513, 'dewpoint': 54.73645937493746
+        # {'dateTime': 1593975366, 'outTemp': 75.4, 'barometer': 30.005222168998216, 'dewpoint': 56.53264564000546
 
         self.maxDiff = None
 
@@ -505,10 +571,21 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['current.windDir'], '45°')
         self.assertEqual(loopdata_pkt['current.windDir.ordinal_compass'], 'NE')
 
-        self.assertEqual(loopdata_pkt['trend.barometer'], '0.000 inHg')
-        self.assertEqual(loopdata_pkt['trend.barometer.raw'], 0.0)
-        self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '0.000')
-        self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Steady')
+        # 30.005222168998216 - 30.014857385736513
+        self.assertEqual(loopdata_pkt['trend.barometer'], '-0.010 inHg')
+        self.assertTrue(loopdata_pkt['trend.barometer.raw'] > -0.0096352168 and loopdata_pkt['trend.barometer.raw'] < -0.0096352167)
+        self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '-0.010')
+        self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Falling Slowly')
+
+        # 75.4 - 76.1
+        self.assertEqual(loopdata_pkt['trend.outTemp'], '-0.7°F')
+        self.assertTrue(loopdata_pkt['trend.outTemp.raw'], -0.6999 and loopdata_pkt['trend.outTemp.raw'] < -0.7001)
+        self.assertEqual(loopdata_pkt['trend.outTemp.formatted'], '-0.7')
+
+        # 56.53264564000546 - 54.73645937493746
+        self.assertEqual(loopdata_pkt['trend.dewpoint'], '1.8°F')
+        self.assertTrue(loopdata_pkt['trend.dewpoint.raw'] > 1.7961862650 and loopdata_pkt['trend.dewpoint.raw'] < 1.7961862651)
+        self.assertEqual(loopdata_pkt['trend.dewpoint.formatted'], '1.8')
 
         self.assertEqual(loopdata_pkt['day.rain.sum'], '0.00 in')
         self.assertEqual(loopdata_pkt['day.rain.sum.formatted'], '0.00')
@@ -519,8 +596,8 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.windSpeed.avg'], '4 mph')
         self.assertEqual(loopdata_pkt['day.windDir.avg'], '166°')
 
-        self.assertEqual(loopdata_pkt['day.outTemp.max'], '75.4°F')
-        self.assertEqual(loopdata_pkt['day.barometer.max'], '30.005 inHg')
+        self.assertEqual(loopdata_pkt['day.outTemp.max'], '76.1°F')
+        self.assertEqual(loopdata_pkt['day.barometer.max'], '30.015 inHg')
         self.assertEqual(loopdata_pkt['day.windSpeed.max'], '7 mph')
         self.assertEqual(loopdata_pkt['day.windDir.max'], '360°')
 
@@ -566,17 +643,16 @@ class ProcessPacketTests(unittest.TestCase):
         first_pkt_time, pkts = simulator_packets.SimulatorPackets._get_packets()
         day_accum = ProcessPacketTests._get_day_accum(config_dict, first_pkt_time)
 
-        barometer_readings = []
-        wind_gust_readings = []
-        for pkt in pkts:
-            barometer_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['barometer']))
-            wind_gust_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['windGust']))
 
         converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
+        trend_packets = []
+        wind_gust_readings = []
         for pkt in pkts:
+            trend_packets.append(user.loopdata.TrendPacket(timestamp=pkt['dateTime'], packet=pkt))
+            wind_gust_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['windGust']))
             day_accum.addRecord(pkt)
 
         fields_to_include = [
@@ -628,6 +704,12 @@ class ProcessPacketTests(unittest.TestCase):
             'trend.barometer.raw',
             'trend.barometer.formatted',
             'trend.barometer.desc',
+            'trend.outTemp',
+            'trend.outTemp.raw',
+            'trend.outTemp.formatted',
+            'trend.dewpoint',
+            'trend.dewpoint.raw',
+            'trend.dewpoint.formatted',
             'unit.label.barometer',
             'unit.label.rain',
             'unit.label.wind',
@@ -635,9 +717,13 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windSpeed',
             ]
 
+        time_delta = 10800
+
         loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(
-            pkt, fields_to_include, barometer_readings, wind_gust_readings,
-            day_accum, converter, formatter)
+            pkt, fields_to_include, trend_packets, wind_gust_readings,
+            day_accum, time_delta, converter, formatter)
+            # {'dateTime': 1593976709, 'outTemp': 0.3770915275499615,  'barometer': 1053.1667173695532, 'dewpoint': -2.6645899102645934
+            # {'dateTime': 1593977615, 'outTemp': 0.032246952164187964,'barometer': 1053.1483031344253, 'dewpoint': -3.003421962855377
 
         self.maxDiff = None
 
@@ -658,10 +744,21 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['current.windDir'], '360°')
         self.assertEqual(loopdata_pkt['current.windDir.ordinal_compass'], 'N')
 
+        # 1053.1483031344253 - 1053.1667173695532
         self.assertEqual(loopdata_pkt['trend.barometer'], '-0.0 mbar')
-        self.assertTrue(loopdata_pkt['trend.barometer.raw'] < -0.006138 and loopdata_pkt['trend.barometer.raw'] > -0.006139)
+        self.assertTrue(loopdata_pkt['trend.barometer.raw'] < -0.0184142351 and loopdata_pkt['trend.barometer.raw'] > -0.0184142352)
         self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '-0.0')
         self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Steady')
+
+        # 0.032246952164187964 - 0.3770915275499615
+        self.assertEqual(loopdata_pkt['trend.outTemp'], '-0.3°C')
+        self.assertTrue(loopdata_pkt['trend.outTemp.raw'] < -0.3448445753 and loopdata_pkt['trend.outTemp.raw'] > -0.3448445754)
+        self.assertEqual(loopdata_pkt['trend.outTemp.formatted'], '-0.3')
+
+        # -3.003421962855377 - -2.6645899102645934
+        self.assertEqual(loopdata_pkt['trend.dewpoint'], '-0.3°C')
+        self.assertTrue(loopdata_pkt['trend.dewpoint.raw'] < -0.3388320525 and loopdata_pkt['trend.dewpoint.raw'] > -0.3388320526)
+        self.assertEqual(loopdata_pkt['trend.dewpoint.formatted'], '-0.3')
 
         self.assertEqual(loopdata_pkt['day.rain.sum'], '0.0 mm')
         self.assertEqual(loopdata_pkt['day.rain.sum.formatted'], '0.0')

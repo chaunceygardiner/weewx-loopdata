@@ -12,12 +12,21 @@ Copyright (C)2020 by John A Kline (john@johnkline.com)
 LoopData is a WeeWX service that generates a json file (loop-data.txt)
 on every loop (e.g., every 2s).  Contained in the json are values for:
 
-* observations in the loop packet (e.g., current.outTemp
+* observations in the loop packet (e.g., current.outTemp)
+* trends (e.g., trend.barometer)
 * daily aggregate values (e.g., day.rain.sum)
 
-The file also includes this specialty information.
-* barometric trend over the last three hours (trend.barometer, trend.barometer.desc)
+Also available is this specialty information.
 * ten minute wind gust high (10m.windGust.max, 10m.windGust.maxtime)
+
+The trend time_delta cannot be changed on a cast by case basis, but
+it can be changed for the entire target report (this is standard
+WeeWX customization):
+```
+    [[[Units]]]
+        [[[[Trend]]]]
+            time_delta = 86400    # 24 hours
+```
 
 The json file will only include observations that are specified on the
 fields line in the LoopData section of the weewx.conf file.
@@ -137,8 +146,8 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
 
 ## What fields are available.
 
-Generally, if you can specify a field in a Cheetah template, and that field begins with $current
-or $day, you can specify it here.  Add the following extenstions to specialize the fields:
+Generally, if you can specify a field in a Cheetah template, and that field begins with $current,
+$day or $trend, you can specify it here.  Add the following extenstions to specialize the fields:
 * No extension specified`: Field is converted and formatted per the report.  A label is added.
 * `.raw`: field is converted per the report, but not formatted.
 * `.formatted`: Field is converted and formatted per the report.  NO label is added.
@@ -146,7 +155,8 @@ or $day, you can specify it here.  Add the following extenstions to specialize t
 
 `unit.label.<obs>` is also supported.
 
-trend.barometer is supported, but it is always a 3 hour trend.
+trend.barometer.desc is supported at present and yeilds a non-localized description of the 
+trend.  The .desc extension is expected to be removed from LoopData soon.  Don't depend on it!
 
 10m.windGust.max
 10m.windGust.maxtime

@@ -44,7 +44,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '2.0.b6'
+LOOP_DATA_VERSION = '2.0.b7'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -77,7 +77,7 @@ class Configuration:
     ssh_options        : str
     skip_if_older_than : int
     timeout            : int
-    barometer_rate_secs: int
+    time_delta         : int
 
 @dataclass
 class CheetahName:
@@ -93,6 +93,11 @@ class CheetahName:
 class Reading:
     timestamp: int
     value    : Any
+
+@dataclass
+class TrendPacket:
+    timestamp: int
+    packet   : Dict[str, Any]
 
 class LoopData(StdService):
     def __init__(self, engine, config_dict):
@@ -121,6 +126,8 @@ class LoopData(StdService):
         unit_system = dbm.std_unit_system
         if unit_system is None:
             unit_system = weewx.units.unit_constants[self.config_dict['StdConvert'].get('target_unit', 'US').upper()]
+        # Get the column names of the archive table.
+        self.archive_columns: List[str] = dbm.connection.columnsOf('archive')
 
         # Compose the directory in which to write the file.
         weewx_root: str = config_dict.get('WEEWX_ROOT')
@@ -142,6 +149,10 @@ class LoopData(StdService):
             return
         fields_to_include = include_spec_dict.get('fields', [])
 
+        try:
+            time_delta: int = to_int(target_report_dict.get('Units').get('Trend').get('time_delta'))
+        except:
+            time_delta = 10800
 
         # Get converter from target report (if specified),
         # else Defaults (if specified),
@@ -175,7 +186,7 @@ class LoopData(StdService):
             ssh_options         = rsync_spec_dict.get('ssh_options', '-o ConnectTimeout=1'),
             timeout             = to_int(rsync_spec_dict.get('timeout', 1)),
             skip_if_older_than  = to_int(rsync_spec_dict.get('skip_if_older_than', 3)),
-            barometer_rate_secs = 10800)
+            time_delta          = time_delta)
 
         if not os.path.exists(self.cfg.loop_data_dir):
             os.makedirs(self.cfg.loop_data_dir)
@@ -248,8 +259,8 @@ class LoopData(StdService):
             binding = self.config_dict.get('StdReport')['data_binding']
             dbm = binder.get_manager(binding)
 
-            # Init barometer, windgust and day_accumulator from the database
-            barometer_readings = self.fill_in_barometer_readings_at_startup(dbm)
+            # Init trend_packets and windgust (for 10m.windGust) from the database
+            trend_packets    = self.fill_in_trend_packets_at_startup(dbm)
             wind_gust_readings = self.fill_in_10m_wind_gust_readings_at_startup(dbm)
 
             # Init day accumulator from day_summary
@@ -265,7 +276,7 @@ class LoopData(StdService):
                 day_accum.set_stats(k, day_summary[k].getStatsTuple())
 
             lp: LoopProcessor = LoopProcessor(self.cfg, day_accum,
-                barometer_readings, wind_gust_readings)
+                trend_packets, wind_gust_readings)
             t: threading.Thread = threading.Thread(target=lp.process_queue)
             t.setName('LoopData')
             t.setDaemon(True)
@@ -275,17 +286,24 @@ class LoopData(StdService):
             log.error('Error in LoopData setup.  LoopData is exiting. Exception: %s' % e)
             weeutil.logger.log_traceback(log.error, "    ****  ")
 
-    def fill_in_barometer_readings_at_startup(self, dbm) -> List[Reading]:
-        barometer_readings = []
-        earliest: int = to_int(time.time() - self.cfg.barometer_rate_secs)
-        for cols in dbm.genSql('SELECT dateTime, barometer FROM archive' \
+    def fill_in_trend_packets_at_startup(self, dbm) -> List[TrendPacket]:
+        trend_packets = []
+        earliest: int = to_int(time.time() - self.cfg.time_delta)
+        for cols in dbm.genSql('SELECT * FROM archive' \
                 ' WHERE dateTime >= %d ORDER BY dateTime ASC' % earliest):
-            if cols[1] is not None:
-                reading: Reading = Reading(timestamp = cols[0], value = cols[1])
-                barometer_readings.append(reading)
-                log.debug('fill_in_barometer_readings_at_startup: Reading(%s): %f' % (
-                    timestamp_to_string(reading.timestamp), reading.value))
-        return barometer_readings
+            pkt: Dict[str, Any] = {}
+            timestamp = 0
+            for i in range(len(cols)):
+                if self.archive_columns[i] == 'dateTime':
+                    timestamp = cols[i]
+                pkt[self.archive_columns[i]] = cols[i]
+            trend_packet = TrendPacket(
+                timestamp = timestamp,
+                packet = pkt)
+            trend_packets.append(trend_packet)
+            log.debug('fill_in_trend_packets_at_startup: TrendPacket(%s): %s' % (
+                timestamp_to_string(timestamp), pkt))
+        return trend_packets
 
     def fill_in_10m_wind_gust_readings_at_startup(self, dbm) -> List[Reading]:
         wind_gust_readings = []
@@ -308,13 +326,14 @@ class LoopData(StdService):
         self.cfg.queue.put(event)
 
 class LoopProcessor:
-    def __init__(self, cfg: Configuration, day_accum, barometer_readings: List[Reading],
+    def __init__(self, cfg: Configuration, day_accum,
+                 trend_packets: List[TrendPacket],
                  wind_gust_readings: List[Reading]):
         self.cfg = cfg
         self.archive_start: float = time.time()
         self.day_accum = day_accum
         self.arc_per_accum: Optional[weewx.accum.Accum] = None
-        self.barometer_readings: List[Reading] = barometer_readings
+        self.trend_packets = trend_packets
         self.wind_gust_readings: List[Reading] = wind_gust_readings
         LoopProcessor.log_configuration(cfg)
 
@@ -326,18 +345,21 @@ class LoopProcessor:
                 pkt_time: int       = to_int(pkt['dateTime'])
 
                 if event.event_type == weewx.END_ARCHIVE_PERIOD:
-                    # Archive records come through just to save off pressure as
-                    # we need a 3 hour trend.  This is done with archive records
-                    # rather than loop records.
-                    self.save_barometer_reading(pkt_time, pkt)
+                    # Archive records come through just to save off for
+                    # computing trends.
+                    #trend_pkt = copy.deepcopy(pkt)
+                    #self.save_trend_packet(pkt_time, trend_pkt)
                     continue
 
                 # This is a loop packet.
                 assert event.event_type == weewx.NEW_LOOP_PACKET
                 log.debug('Dequeued loop event(%s): %s' % (event, timestamp_to_string(pkt_time)))
 
-                  # Process new packet.
+                # Process new packet.
                 log.debug(pkt)
+
+                trend_pkt = copy.deepcopy(pkt)
+                self.save_trend_packet(pkt_time, trend_pkt)
 
                 try:
                   self.day_accum.addRecord(pkt)
@@ -371,9 +393,9 @@ class LoopProcessor:
                         log.debug("No windGust nor windSpeed.  Can't save a windGust reading.")
 
                 loopdata_pkt = LoopProcessor.create_loopdata_packet(pkt,
-                    self.cfg.fields_to_include, self.barometer_readings,
-                    self.wind_gust_readings, self.day_accum, self.cfg.converter,
-                    self.cfg.formatter)
+                    self.cfg.fields_to_include, self.trend_packets,
+                    self.wind_gust_readings, self.day_accum, self.cfg.time_delta,
+                    self.cfg.converter, self.cfg.formatter)
 
                 LoopProcessor.write_packet_to_file(loopdata_pkt,
                     self.cfg.tmpname, self.cfg.loop_data_dir, self.cfg.filename)
@@ -492,8 +514,8 @@ class LoopProcessor:
             log.debug('%s not found in packet, skipping %s' % (cname.obstype, cname.field))
             return
 
-        value, unit_type, unit_group = LoopProcessor.convert_current_obs(
-                converter, formatter, cname.obstype, pkt)
+        value, unit_type, group_type = LoopProcessor.convert_current_obs(
+                converter, cname.obstype, pkt)
 
         if value is None:
             log.debug('%s not found in loop packet.' % cname.field)
@@ -501,7 +523,7 @@ class LoopProcessor:
 
         if cname.format_spec == 'ordinal_compass':
             loopdata_pkt[cname.field] = formatter.to_ordinal_compass(
-                (value, unit_type, unit_group))
+                (value, unit_type, group_type))
             return
 
         if cname.format_spec == 'formatted':
@@ -516,13 +538,12 @@ class LoopProcessor:
             loopdata_pkt[cname.field] = value
             return
 
-        loopdata_pkt[cname.field] = formatter.toString((value, unit_type, unit_group))
+        loopdata_pkt[cname.field] = formatter.toString((value, unit_type, group_type))
 
     @staticmethod
     def add_day_obstype(cname: CheetahName, day_accum: weewx.accum.Accum,
-            loopdata_pkt: Dict[str, Any], converter: weewx.units.Converter,
+            loopdata_pkt: Dict[str, Any], time_delta: int, converter: weewx.units.Converter,
             formatter: weewx.units.Formatter) -> None:
-
         if cname.obstype not in day_accum:
             log.debug('No day stats for %s, skipping %s' % (cname.obstype, cname.field))
             return
@@ -645,25 +666,21 @@ class LoopProcessor:
         loopdata_pkt[cname.field] = formatter.toString((tgt_value, tgt_type, tgt_group))
 
     @staticmethod
-    def add_barometer_trend(cname: CheetahName, barometer_readings: List[Reading],
-            pkt: Dict[str, Any], loopdata_pkt: Dict[str, Any],
+    def add_trend_obstype(cname: CheetahName, trend_packets: List[TrendPacket],
+            pkt: Dict[str, Any], loopdata_pkt: Dict[str, Any], time_delta: int,
             converter: weewx.units.Converter, formatter: weewx.units.Formatter) -> None:
 
-        if cname.obstype != 'barometer':
-            log.info('Only trend.barometer is supported, found %s.' % cname.field)
+        if len(trend_packets) == 0:
+            log.debug('No trend_packets with which to compute trend: %s.' % cname.field)
             return
 
-        if len(barometer_readings) == 0:
-            log.debug('No barometer readings: %s.' % cname.field)
+        value, unit_type, group_type = LoopProcessor.get_trend(cname, pkt, trend_packets, converter)
+        if value is None:
+            log.debug('add_trend_obstype: %s: get_trend returned None.' % cname.field)
             return
 
-        value = LoopProcessor.get_barometer_trend(pkt, barometer_readings)
-
-        value, unit_type, unit_group = LoopProcessor.convert_current_obs(
-                converter, formatter, cname.obstype, {'dateTime': pkt['dateTime'], 'usUnits': pkt['usUnits'], 'barometer': value})
-
-        if cname.format_spec == 'desc':
-            desc: str = LoopProcessor.get_barometer_rate_desc(value, unit_type, unit_group)
+        if cname.obstype == 'barometer' and cname.format_spec == 'desc':
+            desc: str = LoopProcessor.get_barometer_rate_desc(value, unit_type, group_type, time_delta)
             loopdata_pkt[cname.field] = desc
             return
 
@@ -679,24 +696,24 @@ class LoopProcessor:
             loopdata_pkt[cname.field] = value
             return
 
-        loopdata_pkt[cname.field] = formatter.toString((value, unit_type, unit_group))
+        loopdata_pkt[cname.field] = formatter.toString((value, unit_type, group_type))
 
 
     @staticmethod
-    def convert_current_obs(converter: weewx.units.Converter,
-            formatter: weewx.units.Formatter, obstype: str, pkt: Dict[str, Any]) -> Tuple[Any, Any, Any]:
+    def convert_current_obs(converter: weewx.units.Converter, obstype: str,
+            pkt: Dict[str, Any]) -> Tuple[Any, Any, Any]:
         """ Returns value, format_str, label_str """
 
         v_t = weewx.units.as_value_tuple(pkt, obstype)
-        _, original_unit_type, original_unit_group = v_t
-        value, unit_type, unit_group = converter.convert(v_t)
+        _, original_unit_type, original_group_type = v_t
+        value, unit_type, group_type = converter.convert(v_t)
 
-        return value, unit_type, unit_group
+        return value, unit_type, group_type
 
     @staticmethod
     def create_loopdata_packet(pkt: Dict[str, Any], fields_to_include: List[str],
-            barometer_readings: List[Reading], wind_gust_readings: List[Reading],
-            day_accum: weewx.accum.Accum, converter: weewx.units.Converter,
+            trend_packets: List[TrendPacket], wind_gust_readings: List[Reading],
+            day_accum: weewx.accum.Accum, time_delta: int, converter: weewx.units.Converter,
             formatter: weewx.units.Formatter) -> Dict[str, Any]:
 
         loopdata_pkt: Dict[str, Any] = {}
@@ -713,12 +730,11 @@ class LoopProcessor:
                 LoopProcessor.add_current_obstype(cname, pkt, loopdata_pkt, converter, formatter)
                 continue
             if cname.period == 'trend':
-                if cname.obstype == 'barometer':
-                    LoopProcessor.add_barometer_trend(cname, barometer_readings, pkt,
-                        loopdata_pkt, converter, formatter)
+                LoopProcessor.add_trend_obstype(cname, trend_packets, pkt,
+                    loopdata_pkt, time_delta, converter, formatter)
                 continue
             if cname.period == 'day':
-                LoopProcessor.add_day_obstype(cname, day_accum, loopdata_pkt, converter, formatter)
+                LoopProcessor.add_day_obstype(cname, day_accum, loopdata_pkt, time_delta, converter, formatter)
                 continue
             if cname.period == '10m':
                 LoopProcessor.add_10m_obstype(cname, wind_gust_readings,
@@ -769,7 +785,7 @@ class LoopProcessor:
         log.info('ssh_options        : %s' % cfg.ssh_options)
         log.info('timeout            : %d' % cfg.timeout)
         log.info('skip_if_older_than : %d' % cfg.skip_if_older_than)
-        log.info('barometer_rate_secs: %d' % cfg.barometer_rate_secs)
+        log.info('time_delta         : %d' % cfg.time_delta)
 
     @staticmethod
     def rsync_data(pktTime: int, skip_if_older_than: int, loop_data_dir: str,
@@ -801,7 +817,7 @@ class LoopProcessor:
             log.error("rsync_data: Caught exception %s: %s" % (cl, e))
 
     @staticmethod
-    def get_barometer_rate_desc(value, unit_type, unit_group) -> str:
+    def get_barometer_rate_desc(value, unit_type, group_type, time_delta: int) -> str:
 
         # Forecast descriptions for the 3 hour change in barometer readings.
         # Falling (or rising) slowly: 0.1 - 1.5mb in 3 hours
@@ -809,14 +825,15 @@ class LoopProcessor:
         # Falling (or rising) quickly: 3.6 - 6.0mb in 3 hours
         # Falling (or rising) very rapidly: More than 6.0mb in 3 hours
 
-        # Get delta in mbars as that is the standard we have for descriptions.
+        # Convert to mbars as that is the standard we have for descriptions.
         converter = weewx.units.Converter(weewx.units.MetricUnits)
-        delta_mbar, _, _ = converter.convert((value, unit_type, unit_group))
+        delta_mbar, _, _ = converter.convert((value, unit_type, group_type))
         log.debug('Converted to mbar/h: %f' % delta_mbar)
         desc: str = ""
-        # Table above is for 3 hours.  The rate is over a 3 hour period, but expressed per hour;
-        # thus, multiply by 3.0.
-        delta_mbar = delta_mbar * 3.0
+
+        # Normalize to one hour.
+        delta_hours = time_delta / 3600.0
+        delta_mbar = delta_mbar / delta_hours
 
         if delta_mbar > 6.0:
             desc = 'Rising Very Rapidly'
@@ -840,55 +857,71 @@ class LoopProcessor:
         return desc
 
     @staticmethod
-    def get_barometer_trend(pkt: Dict[str, Any], barometer_readings: List[Reading]) -> Optional[float]:
-        if len(barometer_readings) != 0:
-            # The saved readings are used to get the starting point,
-            # but the current loopdata_pkt is used for the last barometer reading.
-            if 'barometer' in pkt:
-                delta3H = to_float(pkt['barometer']) - barometer_readings[0].value
+    def get_first_packet_with_obstype(cname: CheetahName, trend_packets: List[TrendPacket]) -> Optional[Dict[str, Any]]:
+        for trend_pkt in trend_packets:
+            if cname.obstype in trend_pkt.packet:
+                return trend_pkt.packet
+        return None
+
+    @staticmethod
+    def get_last_packet_with_obstype(cname: CheetahName, trend_packets: List[TrendPacket]) -> Optional[Dict[str, Any]]:
+        for trend_pkt in reversed(trend_packets):
+            if cname.obstype in trend_pkt.packet:
+                return trend_pkt.packet
+        return None
+
+    @staticmethod
+    def get_trend(cname: CheetahName, pkt: Dict[str, Any], trend_packets: List[TrendPacket],
+            converter) -> Tuple[Optional[Any], Optional[str], Optional[str]]:
+        if len(trend_packets) != 0:
+            start_packet = LoopProcessor.get_first_packet_with_obstype(cname, trend_packets)
+            end_packet: Optional[Dict[str, Any]] = None
+            if start_packet is None:
+                return None, None, None
+            if cname.obstype in pkt:
+                end_packet = pkt
             else:
-                delta3H = barometer_readings[len(barometer_readings)-1].value - barometer_readings[0].value
-            # Report rate per hour
-            delta = delta3H / 3.0
-            log.debug('barometer trend: %f' % delta)
-            return delta
-        else:
-            return None
+                end_packet = LoopProcessor.get_last_packet_with_obstype(cname, trend_packets)
+            if end_packet is None:
+                return None, None, None
+            if start_packet['dateTime'] == end_packet['dateTime']:
+                return None, None, None
+            # Trend needs to be in report target units.
+            start_value, unit_type, group_type = LoopProcessor.convert_current_obs(
+                converter, cname.obstype, start_packet)
+            log.debug('get_trend: %s: start_value: %s' % (cname.field, start_value))
+            end_value, _, _ = LoopProcessor.convert_current_obs(
+                converter, cname.obstype, end_packet)
+            log.debug('get_trend: %s: end_value: %s' % (cname.field, end_value))
+            try:
+                if start_value is not None and end_value is not None:
+                    log.debug('get_trend: %s: %s' % (cname.field, end_value - start_value))
+                    return end_value - start_value, unit_type, group_type
+            except:
+                # Perhaps not a scalar value
+                log.debug('Could not compute trend for %s' % cname.field)
+        return None, None, None
 
-    def save_barometer_reading(self, pkt_time: int, pkt: Dict[str, Any]) -> None:
-        value = None
-        if 'barometer' in pkt and pkt['barometer'] is not None:
-            value = to_float(pkt['barometer'])
-        else:
-            # No barometer in archive record, use the archival period accumulator instead
-            if self.arc_per_accum is not None:
-                if 'barometer' in self.arc_per_accum:
-                    log.debug('barometer not in archive pkt, using arc_per_accum')
-                    value = self.arc_per_accum['barometer'].avg
+    def save_trend_packet(self, pkt_time: int, pkt: Dict[str, Any]) -> None:
+        trend_packet: TrendPacket = TrendPacket(
+            timestamp = pkt_time,
+            packet = pkt)
+        self.trend_packets.append(trend_packet)
+        log.debug('save_trend_packet: TrendPacket(%s): %s' % (
+            timestamp_to_string(pkt_time), pkt))
+        self.trim_old_trend_packets()
 
-        if value is not None:
-            reading: Reading = Reading(
-                timestamp = pkt_time,
-                value = value)
-            self.barometer_readings.append(reading)
-            log.debug('save_barometer_reading: Reading(%s): %f' % (
-                timestamp_to_string(reading.timestamp), reading.value))
-        else:
-            log.debug('save_barometer_reading: Reading(%s): None' % timestamp_to_string(pkt_time))
-
-        self.trim_old_barometer_readings()
-
-    def trim_old_barometer_readings(self) -> None:
-        # Trim readings older than barometer_rate_secs
-        earliest: float = time.time() - self.cfg.barometer_rate_secs
+    def trim_old_trend_packets(self) -> None:
+        # Trim readings older than time_delta
+        earliest: float = time.time() - self.cfg.time_delta
         del_count: int = 0
-        for reading in self.barometer_readings:
-            if reading.timestamp < earliest:
+        for pkt in self.trend_packets:
+            if pkt.timestamp < earliest:
                 del_count += 1
         for i in range(del_count):
-            log.debug('save_barometer_reading: Deleting old reading(%s)' % timestamp_to_string(
-                self.barometer_readings[0].timestamp))
-            del self.barometer_readings[0]
+            log.debug('trim_old_trend_packets: Deleting expired archive packet(%s)' % timestamp_to_string(
+                self.trend_packets[0].timestamp))
+            del self.trend_packets[0]
 
     @staticmethod
     def get_10m_max_windgust(wind_gust_readings: List[Reading]) -> Tuple[int, float]:
