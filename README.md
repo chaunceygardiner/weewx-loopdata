@@ -13,11 +13,9 @@ LoopData is a WeeWX service that generates a json file (loop-data.txt)
 on every loop (e.g., every 2s).  Contained in the json are values for:
 
 * observations in the loop packet (e.g., current.outTemp)
-* trends (e.g., trend.barometer)
+* trends (e.g., trend.barometer) -- see time_delta below
 * daily aggregate values (e.g., day.rain.sum)
-
-Also available is this specialty information.
-* ten minute wind gust high (10m.windGust.max, 10m.windGust.maxtime)
+* rolling 10 min. aggregate values (e.g., 10m.outTemp.max, 10m.wind.gustdir)
 
 The trend time_delta cannot be changed on a cast by case basis, but
 it can be changed for the entire target report (this is standard
@@ -147,7 +145,11 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
 ## What fields are available.
 
 Generally, if you can specify a field in a Cheetah template, and that field begins with $current,
-$day or $trend, you can specify it here.  Add the following extenstions to specialize the fields:
+`$day` or `$trend`, you can specify it here (don't include the dollar sign).  Also, anything you
+can specify with `day.`, you can also specify with `10m.` and the aggregate will apply to a
+rolling 10 minute window.
+
+Add the following extenstions to specialize the fields:
 * No extension specified`: Field is converted and formatted per the report.  A label is added.
 * `.raw`: field is converted per the report, but not formatted.
 * `.formatted`: Field is converted and formatted per the report.  NO label is added.
@@ -156,10 +158,8 @@ $day or $trend, you can specify it here.  Add the following extenstions to speci
 `unit.label.<obs>` is also supported.
 
 trend.barometer.desc is supported at present and yeilds a non-localized description of the 
-trend.  The .desc extension is expected to be removed from LoopData soon.  Don't depend on it!
-
-10m.windGust.max
-10m.windGust.maxtime
+trend (e.g., `rising slowly`.  The .desc extension is expected to be removed from LoopData
+soon.  Don't depend on it!
 
 # How to Upgrade from LoopData 1.x.
 

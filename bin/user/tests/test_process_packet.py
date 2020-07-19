@@ -8,6 +8,8 @@ import configobj
 import logging
 import unittest
 
+from typing import List, Optional
+
 import weewx
 import weewx.accum
 
@@ -18,8 +20,6 @@ import user.loopdata
 import cc3000_packets
 import ip100_packets
 import simulator_packets
-
-from weeutil.weeutil import to_float
 
 weewx.debug = 1
 
@@ -51,6 +51,9 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, 'max')
         self.assertEqual(cname.format_spec, 'raw')
 
+        cname = user.loopdata.LoopData.parse_cname('10m.wind')
+        self.assertEqual(cname, None)
+
         cname = user.loopdata.LoopData.parse_cname('10m.windGust.max.formatted')
         self.assertEqual(cname.field, '10m.windGust.max.formatted')
         self.assertEqual(cname.prefix, None)
@@ -66,6 +69,33 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.prefix2, None)
         self.assertEqual(cname.period, '10m')
         self.assertEqual(cname.obstype, 'windGust')
+        self.assertEqual(cname.agg_type, 'maxtime')
+        self.assertEqual(cname.format_spec, None)
+
+        cname = user.loopdata.LoopData.parse_cname('10m.outTemp.max.raw')
+        self.assertEqual(cname.field, '10m.outTemp.max.raw')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, '10m')
+        self.assertEqual(cname.obstype, 'outTemp')
+        self.assertEqual(cname.agg_type, 'max')
+        self.assertEqual(cname.format_spec, 'raw')
+
+        cname = user.loopdata.LoopData.parse_cname('10m.outTemp.max.formatted')
+        self.assertEqual(cname.field, '10m.outTemp.max.formatted')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, '10m')
+        self.assertEqual(cname.obstype, 'outTemp')
+        self.assertEqual(cname.agg_type, 'max')
+        self.assertEqual(cname.format_spec, 'formatted')
+
+        cname = user.loopdata.LoopData.parse_cname('10m.outTemp.maxtime')
+        self.assertEqual(cname.field, '10m.outTemp.maxtime')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, '10m')
+        self.assertEqual(cname.obstype, 'outTemp')
         self.assertEqual(cname.agg_type, 'maxtime')
         self.assertEqual(cname.format_spec, None)
 
@@ -300,12 +330,18 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
+        unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
+        ten_min_accum: weewx.accum.Accum = weewx.accum.Accum(
+            weeutil.weeutil.TimeSpan(
+                pkts[0]['dateTime']-1,
+                pkts[-1]['dateTime']),
+            unit_system)
+
         trend_packets = []
-        wind_gust_readings = []
         for pkt in pkts:
             trend_packets.append(user.loopdata.TrendPacket(timestamp=pkt['dateTime'], packet=pkt))
-            wind_gust_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['windGust']))
             day_accum.addRecord(pkt)
+            ten_min_accum.addRecord(pkt)
 
         specified_fields = [
             '10m.windGust.max',
@@ -313,6 +349,11 @@ class ProcessPacketTests(unittest.TestCase):
             '10m.windGust.max.raw',
             '10m.windGust.maxtime',
             '10m.windGust.maxtime.raw',
+            '10m.outTemp.max',
+            '10m.outTemp.max.formatted',
+            '10m.outTemp.max.raw',
+            '10m.outTemp.maxtime',
+            '10m.outTemp.maxtime.raw',
             'current.dateTime.raw',
             'current.dateTime',
             'unit.label.outTemp',
@@ -369,17 +410,17 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windSpeed',
             ]
 
-        fields_to_include: List[CheetahName] = []
+        fields_to_include: List[user.loopdata.CheetahName] = []
         for field in specified_fields:
-            cname: Optional[CheetahName] = user.loopdata.LoopData.parse_cname(field)
+            cname: Optional[user.loopdata.CheetahName] = user.loopdata.LoopData.parse_cname(field)
             if cname is not None:
                 fields_to_include.append(cname)
 
         time_delta = 10800
 
         loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(
-            pkt, fields_to_include, trend_packets, wind_gust_readings,
-            day_accum, time_delta, converter, formatter)
+            pkt, fields_to_include, trend_packets,
+            day_accum, ten_min_accum, time_delta, converter, formatter)
 
             # {'dateTime': 1593883054, 'usUnits': 1, 'outTemp': 71.6, 'barometer': 30.060048358389471, 'dewpoint': 60.48739574937819
             # {'dateTime': 1593883332, 'usUnits': 1, 'outTemp': 72.0, 'barometer': 30.055425865734495, 'dewpoint': 59.57749595318801
@@ -396,6 +437,12 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['10m.windGust.max.raw'], 6.5)
         self.assertEqual(loopdata_pkt['10m.windGust.maxtime'], '07/04/20 10:18:20')
         self.assertEqual(loopdata_pkt['10m.windGust.maxtime.raw'], 1593883100)
+
+        self.assertEqual(loopdata_pkt['10m.outTemp.max'], '72.1°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.max.formatted'], '72.1')
+        self.assertEqual(loopdata_pkt['10m.outTemp.max.raw'], 72.1)
+        self.assertEqual(loopdata_pkt['10m.outTemp.maxtime'], '07/04/20 10:22:02')
+        self.assertEqual(loopdata_pkt['10m.outTemp.maxtime.raw'], 1593883322)
 
         self.assertEqual(loopdata_pkt['current.outTemp'], '72.0°F')
         self.assertEqual(loopdata_pkt['current.barometer'], '30.055 inHg')
@@ -428,12 +475,12 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.windSpeed.avg'], '3 mph')
         self.assertEqual(loopdata_pkt['day.windDir.avg'], '87°')
 
-        self.assertEqual(loopdata_pkt['day.outTemp.max'], '72.0°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.max'], '72.1°F')
         self.assertEqual(loopdata_pkt['day.barometer.max'], '30.060 inHg')
         self.assertEqual(loopdata_pkt['day.windSpeed.max'], '6 mph')
         self.assertEqual(loopdata_pkt['day.windDir.max'], '360°')
 
-        self.assertEqual(loopdata_pkt['day.outTemp.min'], '71.6°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.min'], '71.4°F')
         self.assertEqual(loopdata_pkt['day.barometer.min'], '30.055 inHg')
         self.assertEqual(loopdata_pkt['day.windSpeed.min'], '1 mph')
         self.assertEqual(loopdata_pkt['day.windDir.min'], '22°')
@@ -480,12 +527,18 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
+        unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
+        ten_min_accum: weewx.accum.Accum = weewx.accum.Accum(
+            weeutil.weeutil.TimeSpan(
+                pkts[0]['dateTime']-1,
+                pkts[-1]['dateTime']),
+            unit_system)
+
         trend_packets = []
-        wind_gust_readings = []
         for pkt in pkts:
             trend_packets.append(user.loopdata.TrendPacket(timestamp=pkt['dateTime'], packet=pkt))
-            wind_gust_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['windGust']))
             day_accum.addRecord(pkt)
+            ten_min_accum.addRecord(pkt)
 
         specified_fields = [
             '10m.windGust.max',
@@ -493,6 +546,11 @@ class ProcessPacketTests(unittest.TestCase):
             '10m.windGust.max.raw',
             '10m.windGust.maxtime',
             '10m.windGust.maxtime.raw',
+            '10m.outTemp.max',
+            '10m.outTemp.max.formatted',
+            '10m.outTemp.max.raw',
+            '10m.outTemp.maxtime',
+            '10m.outTemp.maxtime.raw',
             'current.dateTime.raw',
             'current.dateTime',
             'unit.label.outTemp',
@@ -549,17 +607,17 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windSpeed',
             ]
 
-        fields_to_include: List[CheetahName] = []
+        fields_to_include: List[user.loopdata.CheetahName] = []
         for field in specified_fields:
-            cname: Optional[CheetahName] = user.loopdata.LoopData.parse_cname(field)
+            cname: Optional[user.loopdata.CheetahName] = user.loopdata.LoopData.parse_cname(field)
             if cname is not None:
                 fields_to_include.append(cname)
 
         time_delta = 10800
 
         loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(
-            pkt, fields_to_include, trend_packets, wind_gust_readings,
-            day_accum, time_delta, converter, formatter)
+            pkt, fields_to_include, trend_packets,
+            day_accum, ten_min_accum, time_delta, converter, formatter)
 
         # {'dateTime': 1593975030, 'outTemp': 76.1, 'barometer': 30.014857385736513, 'dewpoint': 54.73645937493746
         # {'dateTime': 1593975366, 'outTemp': 75.4, 'barometer': 30.005222168998216, 'dewpoint': 56.53264564000546
@@ -576,6 +634,12 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['10m.windGust.max.raw'], 7.2)
         self.assertEqual(loopdata_pkt['10m.windGust.maxtime'], '07/05/20 11:50:30')
         self.assertEqual(loopdata_pkt['10m.windGust.maxtime.raw'], 1593975030)
+
+        self.assertEqual(loopdata_pkt['10m.outTemp.max'], '76.3°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.max.formatted'], '76.3')
+        self.assertEqual(loopdata_pkt['10m.outTemp.max.raw'], 76.3)
+        self.assertEqual(loopdata_pkt['10m.outTemp.maxtime'], '07/05/20 11:50:34')
+        self.assertEqual(loopdata_pkt['10m.outTemp.maxtime.raw'], 1593975034)
 
         self.assertEqual(loopdata_pkt['current.outTemp'], '75.4°F')
         self.assertEqual(loopdata_pkt['current.barometer'], '30.005 inHg')
@@ -608,12 +672,12 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.windSpeed.avg'], '4 mph')
         self.assertEqual(loopdata_pkt['day.windDir.avg'], '166°')
 
-        self.assertEqual(loopdata_pkt['day.outTemp.max'], '76.1°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.max'], '76.3°F')
         self.assertEqual(loopdata_pkt['day.barometer.max'], '30.015 inHg')
         self.assertEqual(loopdata_pkt['day.windSpeed.max'], '7 mph')
         self.assertEqual(loopdata_pkt['day.windDir.max'], '360°')
 
-        self.assertEqual(loopdata_pkt['day.outTemp.min'], '75.3°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.min'], '74.9°F')
         self.assertEqual(loopdata_pkt['day.barometer.min'], '30.005 inHg')
         self.assertEqual(loopdata_pkt['day.windSpeed.min'], '0 mph')
         self.assertEqual(loopdata_pkt['day.windDir.min'], '22°')
@@ -660,12 +724,18 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
+        unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
+        ten_min_accum: weewx.accum.Accum = weewx.accum.Accum(
+            weeutil.weeutil.TimeSpan(
+                pkts[0]['dateTime']-1,
+                pkts[-1]['dateTime']),
+            unit_system)
+
         trend_packets = []
-        wind_gust_readings = []
         for pkt in pkts:
             trend_packets.append(user.loopdata.TrendPacket(timestamp=pkt['dateTime'], packet=pkt))
-            wind_gust_readings.append(user.loopdata.Reading(timestamp=pkt['dateTime'], value=pkt['windGust']))
             day_accum.addRecord(pkt)
+            ten_min_accum.addRecord(pkt)
 
         specified_fields = [
             '10m.windGust.max',
@@ -673,6 +743,11 @@ class ProcessPacketTests(unittest.TestCase):
             '10m.windGust.max.raw',
             '10m.windGust.maxtime',
             '10m.windGust.maxtime.raw',
+            '10m.outTemp.max',
+            '10m.outTemp.max.formatted',
+            '10m.outTemp.max.raw',
+            '10m.outTemp.maxtime',
+            '10m.outTemp.maxtime.raw',
             'current.dateTime.raw',
             'current.dateTime',
             'unit.label.outTemp',
@@ -729,17 +804,17 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windSpeed',
             ]
 
-        fields_to_include: List[CheetahName] = []
+        fields_to_include: List[user.loopdata.CheetahName] = []
         for field in specified_fields:
-            cname: Optional[CheetahName] = user.loopdata.LoopData.parse_cname(field)
+            cname: Optional[user.loopdata.CheetahName] = user.loopdata.LoopData.parse_cname(field)
             if cname is not None:
                 fields_to_include.append(cname)
 
         time_delta = 10800
 
         loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(
-            pkt, fields_to_include, trend_packets, wind_gust_readings,
-            day_accum, time_delta, converter, formatter)
+            pkt, fields_to_include, trend_packets,
+            day_accum, ten_min_accum, time_delta, converter, formatter)
             # {'dateTime': 1593976709, 'outTemp': 0.3770915275499615,  'barometer': 1053.1667173695532, 'dewpoint': -2.6645899102645934
             # {'dateTime': 1593977615, 'outTemp': 0.032246952164187964,'barometer': 1053.1483031344253, 'dewpoint': -3.003421962855377
 
@@ -755,6 +830,12 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertTrue(loopdata_pkt['10m.windGust.max.raw'] > 0.0052 and loopdata_pkt['10m.windGust.max.raw'] < 0.0053)
         self.assertEqual(loopdata_pkt['10m.windGust.maxtime'], '07/05/20 12:33:35')
         self.assertEqual(loopdata_pkt['10m.windGust.maxtime.raw'], 1593977615)
+
+        self.assertEqual(loopdata_pkt['10m.outTemp.max'], '1.5°C')
+        self.assertEqual(loopdata_pkt['10m.outTemp.max.formatted'], '1.5')
+        self.assertTrue(loopdata_pkt['10m.outTemp.max.raw'] < 1.47346484734 and loopdata_pkt['10m.outTemp.max.raw'] < 1.47346484735)
+        self.assertEqual(loopdata_pkt['10m.outTemp.maxtime'], '07/05/20 12:18:37')
+        self.assertEqual(loopdata_pkt['10m.outTemp.maxtime.raw'], 1593976717)
 
         self.assertEqual(loopdata_pkt['current.outTemp'], '0.0°C')
         self.assertEqual(loopdata_pkt['current.barometer'], '1053.1 mbar')
@@ -787,7 +868,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.windSpeed.avg'], '0 km/h')
         self.assertEqual(loopdata_pkt['day.windDir.avg'], '360°')
 
-        self.assertEqual(loopdata_pkt['day.outTemp.max'], '0.4°C')
+        self.assertEqual(loopdata_pkt['day.outTemp.max'], '1.5°C')
         self.assertEqual(loopdata_pkt['day.barometer.max'], '1053.2 mbar')
         self.assertEqual(loopdata_pkt['day.windSpeed.max'], '0 km/h')
         self.assertEqual(loopdata_pkt['day.windDir.max'], '360°')

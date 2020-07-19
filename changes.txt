@@ -1,6 +1,11 @@
 loopdata change history
 -----------------------
 
+2.0.b9 07/19/2020
+
+1. 10m. is now a full fledged time period (rolling 10 minutes)
+   and supports all that day. supports.  For example, 10m.wind.gustdir
+
 2.0.b8 07/18/2020
 
 1. Save values for trends for only trend fields specified in fields clause.

@@ -37,14 +37,13 @@ import weeutil.weeutil
 
 from weeutil.weeutil import timestamp_to_string
 from weeutil.weeutil import to_bool
-from weeutil.weeutil import to_float
 from weeutil.weeutil import to_int
 from weewx.engine import StdService
 
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '2.0.b8'
+LOOP_DATA_VERSION = '2.0.b9'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -90,6 +89,7 @@ class Configuration:
     timeout            : int
     time_delta         : int
     trend_obstypes     : List[str]
+    ten_min_obstypes   : List[str]
 
 @dataclass
 class Reading:
@@ -98,6 +98,11 @@ class Reading:
 
 @dataclass
 class TrendPacket:
+    timestamp: int
+    packet   : Dict[str, Any]
+
+@dataclass
+class TenMinPacket:
     timestamp: int
     packet   : Dict[str, Any]
 
@@ -152,12 +157,27 @@ class LoopData(StdService):
         specified_fields = include_spec_dict.get('fields', [])
         fields_to_include: List[CheetahName] = []
         trend_obstypes: List[str] = []
+        ten_min_obstypes:List[str] = []
         for field in specified_fields:
             cname: Optional[CheetahName] = LoopData.parse_cname(field)
             if cname is not None:
                 fields_to_include.append(cname)
                 if cname.period == 'trend':
                     trend_obstypes.append(cname.obstype)
+                    if cname.obstype == 'wind':
+                        trend_obstypes.append('windSpeed')
+                        trend_obstypes.append('windDir')
+                        trend_obstypes.append('windGust')
+                        trend_obstypes.append('windGustDir')
+                elif cname.period == '10m':
+                    ten_min_obstypes.append(cname.obstype)
+                    if cname.obstype == 'wind':
+                        ten_min_obstypes.append('windSpeed')
+                        ten_min_obstypes.append('windDir')
+                        ten_min_obstypes.append('windGust')
+                        ten_min_obstypes.append('windGustDir')
+        trend_obstypes = list(dict.fromkeys(trend_obstypes))
+        ten_min_obstypes = list(dict.fromkeys(ten_min_obstypes))
 
         try:
             time_delta: int = to_int(target_report_dict.get('Units').get('Trend').get('time_delta'))
@@ -198,7 +218,8 @@ class LoopData(StdService):
             timeout             = to_int(rsync_spec_dict.get('timeout', 1)),
             skip_if_older_than  = to_int(rsync_spec_dict.get('skip_if_older_than', 3)),
             time_delta          = time_delta,
-            trend_obstypes      = trend_obstypes)
+            trend_obstypes      = trend_obstypes,
+            ten_min_obstypes    = ten_min_obstypes)
 
         if not os.path.exists(self.cfg.loop_data_dir):
             os.makedirs(self.cfg.loop_data_dir)
@@ -270,9 +291,9 @@ class LoopData(StdService):
             binding = self.config_dict.get('StdReport')['data_binding']
             dbm = binder.get_manager(binding)
 
-            # Init trend_packets and windgust (for 10m.windGust) from the database
+            # Init trend_packets and ten_min_packets
             trend_packets    = self.fill_in_trend_packets_at_startup(dbm)
-            wind_gust_readings = self.fill_in_10m_wind_gust_readings_at_startup(dbm)
+            ten_min_packets = self.fill_in_10m_packets_at_startup(dbm)
 
             # Init day accumulator from day_summary
             day_summary = dbm._get_day_summary(time.time())
@@ -287,7 +308,7 @@ class LoopData(StdService):
                 day_accum.set_stats(k, day_summary[k].getStatsTuple())
 
             lp: LoopProcessor = LoopProcessor(self.cfg, day_accum,
-                trend_packets, wind_gust_readings)
+                trend_packets, ten_min_packets)
             t: threading.Thread = threading.Thread(target=lp.process_queue)
             t.setName('LoopData')
             t.setDaemon(True)
@@ -316,17 +337,24 @@ class LoopData(StdService):
                 timestamp_to_string(timestamp), pkt))
         return trend_packets
 
-    def fill_in_10m_wind_gust_readings_at_startup(self, dbm) -> List[Reading]:
-        wind_gust_readings = []
+    def fill_in_10m_packets_at_startup(self, dbm) -> List[TenMinPacket]:
+        ten_min_packets = []
         earliest: int = to_int(time.time() - 600)
-        for cols in dbm.genSql('SELECT dateTime, windGust FROM ' \
-                'archive WHERE dateTime >= %d ORDER BY dateTime ASC' % earliest):
-            reading: Reading = Reading(timestamp = cols[0], value = cols[1])
-            if reading.value is not None:
-                wind_gust_readings.append(reading)
-                log.debug('fill_in_10m_wind_gust_readings_at_startup: Reading(%s): %f' % (
-                          timestamp_to_string(reading.timestamp), reading.value))
-        return wind_gust_readings
+        for cols in dbm.genSql('SELECT * FROM archive' \
+                ' WHERE dateTime >= %d ORDER BY dateTime ASC' % earliest):
+            pkt: Dict[str, Any] = {}
+            timestamp = 0
+            for i in range(len(cols)):
+                if self.archive_columns[i] == 'dateTime':
+                    timestamp = cols[i]
+                pkt[self.archive_columns[i]] = cols[i]
+            ten_min_packet = TenMinPacket(
+                timestamp = timestamp,
+                packet = pkt)
+            ten_min_packets.append(ten_min_packet)
+            log.debug('fill_in_10m_packets_at_startup: TenMinPacket(%s): %s' % (
+                timestamp_to_string(timestamp), pkt))
+        return ten_min_packets
 
     def new_loop(self, event):
         log.debug('new_loop: event: %s' % event)
@@ -376,7 +404,7 @@ class LoopData(StdService):
         agg_type = None
         # $10m/$day must have an agg_type
         if period == '10m' or period == 'day':
-            if len(segment) < next_seg:
+            if len(segment) <= next_seg:
                 return None
             if segment[next_seg] not in valid_agg_types:
                 return None
@@ -406,19 +434,20 @@ class LoopData(StdService):
 class LoopProcessor:
     def __init__(self, cfg: Configuration, day_accum,
                  trend_packets: List[TrendPacket],
-                 wind_gust_readings: List[Reading]):
+                 ten_min_packets: List[TenMinPacket]):
         self.cfg = cfg
         self.archive_start: float = time.time()
         self.day_accum = day_accum
         self.arc_per_accum: Optional[weewx.accum.Accum] = None
-        self.trend_packets = trend_packets
-        self.wind_gust_readings: List[Reading] = wind_gust_readings
+        self.trend_packets: List[TrendPacket] = trend_packets
+        self.ten_min_packets: List[TenMinPacket] = ten_min_packets
         LoopProcessor.log_configuration(cfg)
 
     def process_queue(self) -> None:
         try:
             while True:
                 event               = self.cfg.queue.get()
+                start_process_queue = time.time()
                 pkt: Dict[str, Any] = event.packet
                 pkt_time: int       = to_int(pkt['dateTime'])
 
@@ -429,7 +458,10 @@ class LoopProcessor:
                 # Process new packet.
                 log.debug(pkt)
 
-                self.save_trend_packet(pkt_time, pkt, self.cfg.trend_obstypes)
+                if len(self.cfg.trend_obstypes) != 0:
+                    self.save_trend_packet(pkt_time, pkt, self.cfg.trend_obstypes)
+                if len(self.cfg.ten_min_obstypes) != 0:
+                    self.save_10m_packet(pkt_time, pkt, self.cfg.ten_min_obstypes)
 
                 try:
                   self.day_accum.addRecord(pkt)
@@ -452,19 +484,23 @@ class LoopProcessor:
                     # Try again:
                     self.arc_per_accum.addRecord(pkt)
 
-                # Keep 10 minutes of wind gust readings.
-                # If windGust unavailable, use windSpeed.
-                try:
-                    self.save_wind_gust_reading(pkt_time, to_float(pkt['windGust']))
-                except KeyError:
-                    try:
-                        self.save_wind_gust_reading(pkt_time, to_float(pkt['windSpeed']))
-                    except KeyError:
-                        log.debug("No windGust nor windSpeed.  Can't save a windGust reading.")
+                if len(self.cfg.ten_min_obstypes) != 0 and len(self.ten_min_packets) > 0:
+                    # Construct a 10m accumulator
+                    start_accum_construction_time = time.time()
+                    ten_min_accum: Optional[weewx.accum.Accum] = weewx.accum.Accum(
+                        weeutil.weeutil.TimeSpan(
+                            self.ten_min_packets[0].timestamp - 1,
+                            self.ten_min_packets[-1].timestamp),
+                        self.cfg.unit_system)
+                    for ten_min_packet in self.ten_min_packets:
+                        if ten_min_accum is not None:
+                            ten_min_accum.addRecord(ten_min_packet.packet)
+                else:
+                    ten_min_accum = None
 
                 loopdata_pkt = LoopProcessor.create_loopdata_packet(pkt,
                     self.cfg.fields_to_include, self.trend_packets,
-                    self.wind_gust_readings, self.day_accum, self.cfg.time_delta,
+                    self.day_accum, ten_min_accum, self.cfg.time_delta,
                     self.cfg.converter, self.cfg.formatter)
 
                 LoopProcessor.write_packet_to_file(loopdata_pkt,
@@ -531,14 +567,14 @@ class LoopProcessor:
         loopdata_pkt[cname.field] = formatter.toString((value, unit_type, group_type))
 
     @staticmethod
-    def add_day_obstype(cname: CheetahName, day_accum: weewx.accum.Accum,
+    def add_period_obstype(cname: CheetahName, period_accum: weewx.accum.Accum,
             loopdata_pkt: Dict[str, Any], time_delta: int, converter: weewx.units.Converter,
             formatter: weewx.units.Formatter) -> None:
-        if cname.obstype not in day_accum:
-            log.debug('No day stats for %s, skipping %s' % (cname.obstype, cname.field))
+        if cname.obstype not in period_accum:
+            log.debug('No %s stats for %s, skipping %s' % (cname.period, cname.obstype, cname.field))
             return
 
-        stats = day_accum[cname.obstype]
+        stats = period_accum[cname.obstype]
 
         if isinstance(stats, weewx.accum.ScalarStats) and stats.lasttime is not None:
             min, mintime, max, maxtime, sum, count, wsum, sumtime = stats.getStatsTuple()
@@ -589,10 +625,10 @@ class LoopProcessor:
             return
 
         if src_value is None:
-            log.debug('Currently no day stats for %s.' % cname.field)
+            log.debug('Currently no %s stats for %s.' % (cname.period, cname.field))
             return
 
-        src_type, src_group = weewx.units.getStandardUnitType(day_accum.unit_system, cname.obstype, agg_type=cname.agg_type)
+        src_type, src_group = weewx.units.getStandardUnitType(period_accum.unit_system, cname.obstype, agg_type=cname.agg_type)
 
         tgt_value, tgt_type, tgt_group = converter.convert((src_value, src_type, src_group))
 
@@ -600,46 +636,6 @@ class LoopProcessor:
             loopdata_pkt[cname.field] = formatter.to_ordinal_compass(
                 (tgt_value, tgt_type, tgt_group))
             return
-
-        if cname.format_spec == 'formatted':
-            fmt_str = formatter.get_format_string(tgt_type)
-            try:
-                loopdata_pkt[cname.field] = fmt_str % tgt_value
-            except Exception as e:
-                log.debug('%s: %s, %s, %s' % (e, cname.field, fmt_str, tgt_value))
-            return
-
-        if cname.format_spec == 'raw':
-            loopdata_pkt[cname.field] = tgt_value
-            return
-
-        loopdata_pkt[cname.field] = formatter.toString((tgt_value, tgt_type, tgt_group))
-
-    @staticmethod
-    def add_10m_obstype(cname: CheetahName, wind_gust_readings: List[Reading],
-            unit_system: int, loopdata_pkt: Dict[str, Any], converter: weewx.units.Converter,
-            formatter: weewx.units.Formatter) -> None:
-        """Only windGust.max and windGust.maxtime is supported for 10m observations."""
-
-        if cname.obstype != 'windGust':
-            log.debug('10m.<obs> only available for windGust: %s.' % cname.field)
-            return
-
-        if len(wind_gust_readings) == 0:
-            log.debug('No windGust readings: %s.' % cname.field)
-            return
-
-        maxtime, max = LoopProcessor.get_10m_max_windgust(wind_gust_readings)
-        if cname.agg_type == 'maxtime':
-            src_value: Any = maxtime
-        elif cname.agg_type == 'max':
-            src_value = max
-        else:
-            return
-
-        src_type, src_group = weewx.units.getStandardUnitType(unit_system, 'windGust', agg_type=cname.agg_type)
-
-        tgt_value, tgt_type, tgt_group = converter.convert((src_value, src_type, src_group))
 
         if cname.format_spec == 'formatted':
             fmt_str = formatter.get_format_string(tgt_type)
@@ -702,8 +698,9 @@ class LoopProcessor:
 
     @staticmethod
     def create_loopdata_packet(pkt: Dict[str, Any], fields_to_include: List[CheetahName],
-            trend_packets: List[TrendPacket], wind_gust_readings: List[Reading],
-            day_accum: weewx.accum.Accum, time_delta: int, converter: weewx.units.Converter,
+            trend_packets: List[TrendPacket], day_accum: weewx.accum.Accum,
+            ten_min_accum: Optional[weewx.accum.Accum], time_delta: int,
+            converter: weewx.units.Converter,
             formatter: weewx.units.Formatter) -> Dict[str, Any]:
 
         loopdata_pkt: Dict[str, Any] = {}
@@ -723,11 +720,10 @@ class LoopProcessor:
                     loopdata_pkt, time_delta, converter, formatter)
                 continue
             if cname.period == 'day':
-                LoopProcessor.add_day_obstype(cname, day_accum, loopdata_pkt, time_delta, converter, formatter)
+                LoopProcessor.add_period_obstype(cname, day_accum, loopdata_pkt, time_delta, converter, formatter)
                 continue
-            if cname.period == '10m':
-                LoopProcessor.add_10m_obstype(cname, wind_gust_readings,
-                    day_accum.unit_system, loopdata_pkt, converter, formatter)
+            if cname.period == '10m' and ten_min_accum is not None:
+                LoopProcessor.add_period_obstype(cname, ten_min_accum, loopdata_pkt, time_delta, converter, formatter)
                 continue
 
         return loopdata_pkt
@@ -776,6 +772,8 @@ class LoopProcessor:
         log.info('timeout            : %d' % cfg.timeout)
         log.info('skip_if_older_than : %d' % cfg.skip_if_older_than)
         log.info('time_delta         : %d' % cfg.time_delta)
+        log.info('trend_obstypes     : %s' % cfg.trend_obstypes)
+        log.info('ten_min_obstypes   : %s' % cfg.ten_min_obstypes)
 
     @staticmethod
     def rsync_data(pktTime: int, skip_if_older_than: int, loop_data_dir: str,
@@ -909,11 +907,11 @@ class LoopProcessor:
         self.trend_packets.append(trend_packet)
         log.debug('save_trend_packet: TrendPacket(%s): %s' % (
             timestamp_to_string(pkt_time), new_pkt))
-        self.trim_old_trend_packets()
+        self.trim_old_trend_packets(pkt_time)
 
-    def trim_old_trend_packets(self) -> None:
+    def trim_old_trend_packets(self, current_pkt_time) -> None:
         # Trim readings older than time_delta
-        earliest: float = time.time() - self.cfg.time_delta
+        earliest: float = current_pkt_time - self.cfg.time_delta
         del_count: int = 0
         for pkt in self.trend_packets:
             if pkt.timestamp < earliest:
@@ -923,27 +921,31 @@ class LoopProcessor:
                 self.trend_packets[0].timestamp))
             del self.trend_packets[0]
 
-    @staticmethod
-    def get_10m_max_windgust(wind_gust_readings: List[Reading]) -> Tuple[int, float]:
-        """ Return maxtime and max of highest windGust. """
-        maxtime: int = 0
-        max    : float = 0.0
-        for reading in wind_gust_readings:
-            if reading.value > max:
-                maxtime = reading.timestamp
-                max     = reading.value
-        return maxtime, max
+    def save_10m_packet(self, pkt_time: int, pkt: Dict[str, Any], ten_min_obstypes: List[str]) -> None:
+        # Don't save the entire packet as only obstypes used by a 10m field
+        # are needed.
+        new_pkt: Dict[str, Any] = {}
+        new_pkt['dateTime'] = pkt['dateTime']
+        new_pkt['usUnits'] = pkt['usUnits']
+        for obstype in ten_min_obstypes:
+            if obstype in pkt:
+                new_pkt[obstype] = pkt[obstype]
+        ten_min_packet: TenMinPacket = TenMinPacket(
+            timestamp = pkt_time,
+            packet = new_pkt)
+        self.ten_min_packets.append(ten_min_packet)
+        log.debug('save_ten_min_packet: TrendPacket(%s): %s' % (
+            timestamp_to_string(pkt_time), new_pkt))
+        self.trim_old_10m_packets(pkt_time)
 
-    def save_wind_gust_reading(self, pkt_time: int, value: float) -> None:
-        if value is not None:
-            self.wind_gust_readings.append(Reading(timestamp = pkt_time, value = value))
-        # Trim anything older than 10 minutes.
-        earliest: float = time.time() - 600
+    def trim_old_10m_packets(self, current_pkt_time) -> None:
+        # Trim readings older than 600 seconds
+        earliest: float = current_pkt_time - 600
         del_count: int = 0
-        for reading in self.wind_gust_readings:
-            if reading.timestamp < earliest:
+        for pkt in self.ten_min_packets:
+            if pkt.timestamp < earliest:
                 del_count += 1
         for i in range(del_count):
-            log.debug('save_wind_gust_reading: Deleting old reading(%s)' % timestamp_to_string(
-                self.wind_gust_readings[0].timestamp))
-            del self.wind_gust_readings[0]
+            log.debug('trim_old_10m_packets: Deleting expired archive packet(%s)' % timestamp_to_string(
+                self.ten_min_packets[0].timestamp))
+            del self.ten_min_packets[0]
