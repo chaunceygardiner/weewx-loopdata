@@ -347,16 +347,12 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, 'avg')
         self.assertEqual(cname.format_spec, None)
 
-
-    def test_get_barometer_trend(self):
+    def test_get_barometer_trend_mbar(self):
         # Forecast descriptions for the 3 hour change in barometer readings.
         # Falling (or rising) slowly: 0.1 - 1.5mb in 3 hours
         # Falling (or rising): 1.6 - 3.5mb in 3 hours
         # Falling (or rising) quickly: 3.6 - 6.0mb in 3 hours
         # Falling (or rising) very rapidly: More than 6.0mb in 3 hours
-        #"barometer"          : "group_pressure",
-        #"group_pressure"    : "inHg",
-        #"group_pressure"    : "mbar",
 
         baroTrend = user.loopdata.LoopProcessor.get_barometer_trend(9.0, 'mbar', 'group_pressure', 10800)
         self.assertEqual(baroTrend, user.loopdata.BarometerTrend.RISING_VERY_RAPIDLY)
@@ -413,6 +409,71 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(baroTrend, user.loopdata.BarometerTrend.FALLING_VERY_RAPIDLY)
 
         baroTrend = user.loopdata.LoopProcessor.get_barometer_trend(-9.0, 'mbar', 'group_pressure', 10800)
+        self.assertEqual(baroTrend, user.loopdata.BarometerTrend.FALLING_VERY_RAPIDLY)
+
+    def test_get_barometer_trend_inHg(self):
+        # Forecast descriptions for the 3 hour change in barometer readings.
+        # These are approximations (converted from mbars)
+        # Falling (or rising) slowly: 0.002953 - 0.044294 inHg in 3 hours
+        # Falling (or rising): 0.047248 - 0.10335 inHg in 3 hours
+        # Falling (or rising) quickly: 0.106308 - 0.177179 inHg in 3 hours
+        # Falling (or rising) very rapidly: More than 0.17719 inHg in 3 hours
+
+        baroTrend = user.loopdata.LoopProcessor.get_barometer_trend(0.26577, 'inHg', 'group_pressure', 10800)
+        self.assertEqual(baroTrend, user.loopdata.BarometerTrend.RISING_VERY_RAPIDLY)
+
+        baroTrend = user.loopdata.LoopProcessor.get_barometer_trend(0.17719, 'inHg', 'group_pressure', 10800)
+        self.assertEqual(baroTrend, user.loopdata.BarometerTrend.RISING_VERY_RAPIDLY)
+
+        baroTrend = user.loopdata.LoopProcessor.get_barometer_trend(0.177179, 'inHg', 'group_pressure', 10800)
+        self.assertEqual(baroTrend, user.loopdata.BarometerTrend.RISING_QUICKLY)
+
+        baroTrend = user.loopdata.LoopProcessor.get_barometer_trend(0.106308, 'inHg', 'group_pressure', 10800)
+        self.assertEqual(baroTrend, user.loopdata.BarometerTrend.RISING_QUICKLY)
+
+        baroTrend = user.loopdata.LoopProcessor.get_barometer_trend(0.10335, 'inHg', 'group_pressure', 10800)
+        self.assertEqual(baroTrend, user.loopdata.BarometerTrend.RISING)
+
+        baroTrend = user.loopdata.LoopProcessor.get_barometer_trend(0.047248, 'inHg', 'group_pressure', 10800)
+        self.assertEqual(baroTrend, user.loopdata.BarometerTrend.RISING)
+
+        baroTrend = user.loopdata.LoopProcessor.get_barometer_trend(0.044294, 'inHg', 'group_pressure', 10800)
+        self.assertEqual(baroTrend, user.loopdata.BarometerTrend.RISING_SLOWLY)
+
+        baroTrend = user.loopdata.LoopProcessor.get_barometer_trend(0.002953, 'inHg', 'group_pressure', 10800)
+        self.assertEqual(baroTrend, user.loopdata.BarometerTrend.RISING_SLOWLY)
+
+        baroTrend = user.loopdata.LoopProcessor.get_barometer_trend(0.002657698, 'inHg', 'group_pressure', 10800)
+        self.assertEqual(baroTrend, user.loopdata.BarometerTrend.STEADY)
+
+        baroTrend = user.loopdata.LoopProcessor.get_barometer_trend(0.0, 'inHg', 'group_pressure', 10800)
+        self.assertEqual(baroTrend, user.loopdata.BarometerTrend.STEADY)
+
+        baroTrend = user.loopdata.LoopProcessor.get_barometer_trend(-0.002657698, 'inHg', 'group_pressure', 10800)
+        self.assertEqual(baroTrend, user.loopdata.BarometerTrend.STEADY)
+
+        baroTrend = user.loopdata.LoopProcessor.get_barometer_trend(-0.002953, 'inHg', 'group_pressure', 10800)
+        self.assertEqual(baroTrend, user.loopdata.BarometerTrend.FALLING_SLOWLY)
+
+        baroTrend = user.loopdata.LoopProcessor.get_barometer_trend(-0.044294, 'inHg', 'group_pressure', 10800)
+        self.assertEqual(baroTrend, user.loopdata.BarometerTrend.FALLING_SLOWLY)
+
+        baroTrend = user.loopdata.LoopProcessor.get_barometer_trend(-0.047248, 'inHg', 'group_pressure', 10800)
+        self.assertEqual(baroTrend, user.loopdata.BarometerTrend.FALLING)
+
+        baroTrend = user.loopdata.LoopProcessor.get_barometer_trend(-0.10335, 'inHg', 'group_pressure', 10800)
+        self.assertEqual(baroTrend, user.loopdata.BarometerTrend.FALLING)
+
+        baroTrend = user.loopdata.LoopProcessor.get_barometer_trend(-0.106308, 'inHg', 'group_pressure', 10800)
+        self.assertEqual(baroTrend, user.loopdata.BarometerTrend.FALLING_QUICKLY)
+
+        baroTrend = user.loopdata.LoopProcessor.get_barometer_trend(-0.177179, 'inHg', 'group_pressure', 10800)
+        self.assertEqual(baroTrend, user.loopdata.BarometerTrend.FALLING_QUICKLY)
+
+        baroTrend = user.loopdata.LoopProcessor.get_barometer_trend(-0.17719, 'inHg', 'group_pressure', 10800)
+        self.assertEqual(baroTrend, user.loopdata.BarometerTrend.FALLING_VERY_RAPIDLY)
+
+        baroTrend = user.loopdata.LoopProcessor.get_barometer_trend(-0.26577, 'inHg', 'group_pressure', 10800)
         self.assertEqual(baroTrend, user.loopdata.BarometerTrend.FALLING_VERY_RAPIDLY)
 
     def test_save_period_packet(self):
