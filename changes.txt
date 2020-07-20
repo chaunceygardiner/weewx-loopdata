@@ -1,6 +1,10 @@
 loopdata change history
 -----------------------
 
+2.0.b10 07/19/2020
+
+1. Substantial refactoring.  More tests.
+
 2.0.b9 07/19/2020
 
 1. 10m. is now a full fledged time period (rolling 10 minutes)

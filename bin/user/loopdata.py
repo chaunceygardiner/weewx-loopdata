@@ -43,7 +43,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '2.0.b9'
+LOOP_DATA_VERSION = '2.0.b10'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -97,12 +97,7 @@ class Reading:
     value    : Any
 
 @dataclass
-class TrendPacket:
-    timestamp: int
-    packet   : Dict[str, Any]
-
-@dataclass
-class TenMinPacket:
+class PeriodPacket:
     timestamp: int
     packet   : Dict[str, Any]
 
@@ -154,30 +149,9 @@ class LoopData(StdService):
         except Exception as e:
             log.error('Could not find target_report: %s.  LoopData is exiting. Exception: %s' % (target_report, e))
             return
+
         specified_fields = include_spec_dict.get('fields', [])
-        fields_to_include: List[CheetahName] = []
-        trend_obstypes: List[str] = []
-        ten_min_obstypes:List[str] = []
-        for field in specified_fields:
-            cname: Optional[CheetahName] = LoopData.parse_cname(field)
-            if cname is not None:
-                fields_to_include.append(cname)
-                if cname.period == 'trend':
-                    trend_obstypes.append(cname.obstype)
-                    if cname.obstype == 'wind':
-                        trend_obstypes.append('windSpeed')
-                        trend_obstypes.append('windDir')
-                        trend_obstypes.append('windGust')
-                        trend_obstypes.append('windGustDir')
-                elif cname.period == '10m':
-                    ten_min_obstypes.append(cname.obstype)
-                    if cname.obstype == 'wind':
-                        ten_min_obstypes.append('windSpeed')
-                        ten_min_obstypes.append('windDir')
-                        ten_min_obstypes.append('windGust')
-                        ten_min_obstypes.append('windGustDir')
-        trend_obstypes = list(dict.fromkeys(trend_obstypes))
-        ten_min_obstypes = list(dict.fromkeys(ten_min_obstypes))
+        fields_to_include, trend_obstypes, ten_min_obstypes = LoopData.get_fields_to_include(specified_fields)
 
         try:
             time_delta: int = to_int(target_report_dict.get('Units').get('Trend').get('time_delta'))
@@ -228,6 +202,35 @@ class LoopData(StdService):
 
         self.bind(weewx.PRE_LOOP, self.pre_loop)
         self.bind(weewx.NEW_LOOP_PACKET, self.new_loop)
+
+    @staticmethod
+    def get_fields_to_include(specified_fields: List[str]
+            ) -> Tuple[List[CheetahName], List[str], List[str]]:
+        """
+        Return fields_to_include, trend_obstypes, ten_min_obstypes
+        """
+        specified_fields = list(dict.fromkeys(specified_fields))
+        fields_to_include: List[CheetahName] = []
+        for field in specified_fields:
+            cname: Optional[CheetahName] = LoopData.parse_cname(field)
+            if cname is not None:
+                fields_to_include.append(cname)
+        trend_obstypes  : List[str] = LoopData.compute_period_obstypes(fields_to_include, 'trend')
+        ten_min_obstypes: List[str] = LoopData.compute_period_obstypes(fields_to_include, '10m')
+        return fields_to_include, trend_obstypes, ten_min_obstypes
+
+    @staticmethod
+    def compute_period_obstypes(fields_to_include: List[CheetahName], period: str) -> List[str]:
+        period_obstypes: List[str] = []
+        for cname in fields_to_include:
+            if cname.period == period:
+                period_obstypes.append(cname.obstype)
+                if cname.obstype == 'wind':
+                    period_obstypes.append('windSpeed')
+                    period_obstypes.append('windDir')
+                    period_obstypes.append('windGust')
+                    period_obstypes.append('windGustDir')
+        return list(dict.fromkeys(period_obstypes))
 
     @staticmethod
     def get_target_report_dict(config_dict, report) -> Dict[str, Any]:
@@ -291,9 +294,18 @@ class LoopData(StdService):
             binding = self.config_dict.get('StdReport')['data_binding']
             dbm = binder.get_manager(binding)
 
-            # Init trend_packets and ten_min_packets
-            trend_packets    = self.fill_in_trend_packets_at_startup(dbm)
-            ten_min_packets = self.fill_in_10m_packets_at_startup(dbm)
+            # Get archive packets to prime trend and 10m packets.
+            # Fetch them just once with the greater time period.
+            delta: int = max(600, self.cfg.time_delta)
+            earliest_time: int = to_int(time.time() - delta)
+            archive_pkts: List[Dict[str, Any]] = LoopData.get_archive_packets(
+                dbm, self.archive_columns, earliest_time)
+            trend_packets: List[PeriodPacket] = []
+            ten_min_packets: List[PeriodPacket] = []
+            for pkt in archive_pkts:
+                # It's ok to add more than needed, they will fall off the end.
+                LoopProcessor.save_period_packet(pkt['dateTime'], pkt, trend_packets, self.cfg.time_delta, self.cfg.trend_obstypes)
+                LoopProcessor.save_period_packet(pkt['dateTime'], pkt, ten_min_packets, 600, self.cfg.ten_min_obstypes)
 
             # Init day accumulator from day_summary
             day_summary = dbm._get_day_summary(time.time())
@@ -318,7 +330,21 @@ class LoopData(StdService):
             log.error('Error in LoopData setup.  LoopData is exiting. Exception: %s' % e)
             weeutil.logger.log_traceback(log.error, "    ****  ")
 
-    def fill_in_trend_packets_at_startup(self, dbm) -> List[TrendPacket]:
+    @staticmethod
+    def get_archive_packets(dbm, archive_columns: List[str],
+            earliest_time: int) -> List[Dict[str, Any]]:
+        packets = []
+        for cols in dbm.genSql('SELECT * FROM archive' \
+                ' WHERE dateTime >= %d ORDER BY dateTime ASC' % earliest_time):
+            pkt: Dict[str, Any] = {}
+            for i in range(len(cols)):
+                pkt[archive_columns[i]] = cols[i]
+            packets.append(pkt)
+            log.debug('get_archive_packets: pkt(%s): %s' % (
+                timestamp_to_string(pkt['dateTime']), pkt))
+        return packets
+
+    def fill_in_trend_packets_at_startup(self, dbm) -> List[PeriodPacket]:
         trend_packets = []
         earliest: int = to_int(time.time() - self.cfg.time_delta)
         for cols in dbm.genSql('SELECT * FROM archive' \
@@ -329,15 +355,15 @@ class LoopData(StdService):
                 if self.archive_columns[i] == 'dateTime':
                     timestamp = cols[i]
                 pkt[self.archive_columns[i]] = cols[i]
-            trend_packet = TrendPacket(
+            trend_packet = PeriodPacket(
                 timestamp = timestamp,
                 packet = pkt)
             trend_packets.append(trend_packet)
-            log.debug('fill_in_trend_packets_at_startup: TrendPacket(%s): %s' % (
+            log.debug('fill_in_trend_packets_at_startup: PeriodPacket(%s): %s' % (
                 timestamp_to_string(timestamp), pkt))
         return trend_packets
 
-    def fill_in_10m_packets_at_startup(self, dbm) -> List[TenMinPacket]:
+    def fill_in_10m_packets_at_startup(self, dbm) -> List[PeriodPacket]:
         ten_min_packets = []
         earliest: int = to_int(time.time() - 600)
         for cols in dbm.genSql('SELECT * FROM archive' \
@@ -348,11 +374,11 @@ class LoopData(StdService):
                 if self.archive_columns[i] == 'dateTime':
                     timestamp = cols[i]
                 pkt[self.archive_columns[i]] = cols[i]
-            ten_min_packet = TenMinPacket(
+            ten_min_packet = PeriodPacket(
                 timestamp = timestamp,
                 packet = pkt)
             ten_min_packets.append(ten_min_packet)
-            log.debug('fill_in_10m_packets_at_startup: TenMinPacket(%s): %s' % (
+            log.debug('fill_in_10m_packets_at_startup: PeriodPacket(%s): %s' % (
                 timestamp_to_string(timestamp), pkt))
         return ten_min_packets
 
@@ -433,21 +459,20 @@ class LoopData(StdService):
 
 class LoopProcessor:
     def __init__(self, cfg: Configuration, day_accum,
-                 trend_packets: List[TrendPacket],
-                 ten_min_packets: List[TenMinPacket]):
+                 trend_packets: List[PeriodPacket],
+                 ten_min_packets: List[PeriodPacket]):
         self.cfg = cfg
         self.archive_start: float = time.time()
         self.day_accum = day_accum
         self.arc_per_accum: Optional[weewx.accum.Accum] = None
-        self.trend_packets: List[TrendPacket] = trend_packets
-        self.ten_min_packets: List[TenMinPacket] = ten_min_packets
+        self.trend_packets: List[PeriodPacket] = trend_packets
+        self.ten_min_packets: List[PeriodPacket] = ten_min_packets
         LoopProcessor.log_configuration(cfg)
 
     def process_queue(self) -> None:
         try:
             while True:
                 event               = self.cfg.queue.get()
-                start_process_queue = time.time()
                 pkt: Dict[str, Any] = event.packet
                 pkt_time: int       = to_int(pkt['dateTime'])
 
@@ -458,10 +483,8 @@ class LoopProcessor:
                 # Process new packet.
                 log.debug(pkt)
 
-                if len(self.cfg.trend_obstypes) != 0:
-                    self.save_trend_packet(pkt_time, pkt, self.cfg.trend_obstypes)
-                if len(self.cfg.ten_min_obstypes) != 0:
-                    self.save_10m_packet(pkt_time, pkt, self.cfg.ten_min_obstypes)
+                LoopProcessor.save_period_packet(pkt_time, pkt, self.trend_packets, self.cfg.time_delta, self.cfg.trend_obstypes)
+                LoopProcessor.save_period_packet(pkt_time, pkt, self.ten_min_packets, 600, self.cfg.ten_min_obstypes)
 
                 try:
                   self.day_accum.addRecord(pkt)
@@ -484,19 +507,9 @@ class LoopProcessor:
                     # Try again:
                     self.arc_per_accum.addRecord(pkt)
 
-                if len(self.cfg.ten_min_obstypes) != 0 and len(self.ten_min_packets) > 0:
-                    # Construct a 10m accumulator
-                    start_accum_construction_time = time.time()
-                    ten_min_accum: Optional[weewx.accum.Accum] = weewx.accum.Accum(
-                        weeutil.weeutil.TimeSpan(
-                            self.ten_min_packets[0].timestamp - 1,
-                            self.ten_min_packets[-1].timestamp),
-                        self.cfg.unit_system)
-                    for ten_min_packet in self.ten_min_packets:
-                        if ten_min_accum is not None:
-                            ten_min_accum.addRecord(ten_min_packet.packet)
-                else:
-                    ten_min_accum = None
+                ten_min_accum = LoopProcessor.create_ten_min_accum(
+                    self.ten_min_packets, self.cfg.ten_min_obstypes,
+                    self.cfg.unit_system)
 
                 loopdata_pkt = LoopProcessor.create_loopdata_packet(pkt,
                     self.cfg.fields_to_include, self.trend_packets,
@@ -519,6 +532,26 @@ class LoopProcessor:
             raise
         finally:
             os.unlink(self.cfg.tmpname)
+
+    @staticmethod
+    def create_ten_min_accum(ten_min_packets: List[PeriodPacket],
+            ten_min_obstypes: List[str], unit_system: int
+            ) -> Optional[weewx.accum.Accum]:
+
+        if len(ten_min_obstypes) != 0 and len(ten_min_packets) > 0:
+            # Construct a 10m accumulator
+            ten_min_accum: Optional[weewx.accum.Accum] = weewx.accum.Accum(
+                weeutil.weeutil.TimeSpan(
+                    ten_min_packets[0].timestamp - 1,
+                    ten_min_packets[-1].timestamp),
+                unit_system)
+            for ten_min_packet in ten_min_packets:
+                if ten_min_accum is not None:
+                    ten_min_accum.addRecord(ten_min_packet.packet)
+        else:
+            ten_min_accum = None
+
+        return ten_min_accum
 
     @staticmethod
     def add_unit_obstype(cname: CheetahName, loopdata_pkt: Dict[str, Any],
@@ -652,7 +685,7 @@ class LoopProcessor:
         loopdata_pkt[cname.field] = formatter.toString((tgt_value, tgt_type, tgt_group))
 
     @staticmethod
-    def add_trend_obstype(cname: CheetahName, trend_packets: List[TrendPacket],
+    def add_trend_obstype(cname: CheetahName, trend_packets: List[PeriodPacket],
             pkt: Dict[str, Any], loopdata_pkt: Dict[str, Any], time_delta: int,
             converter: weewx.units.Converter, formatter: weewx.units.Formatter) -> None:
 
@@ -698,7 +731,7 @@ class LoopProcessor:
 
     @staticmethod
     def create_loopdata_packet(pkt: Dict[str, Any], fields_to_include: List[CheetahName],
-            trend_packets: List[TrendPacket], day_accum: weewx.accum.Accum,
+            trend_packets: List[PeriodPacket], day_accum: weewx.accum.Accum,
             ten_min_accum: Optional[weewx.accum.Accum], time_delta: int,
             converter: weewx.units.Converter,
             formatter: weewx.units.Formatter) -> Dict[str, Any]:
@@ -845,21 +878,21 @@ class LoopProcessor:
         return desc
 
     @staticmethod
-    def get_first_packet_with_obstype(cname: CheetahName, trend_packets: List[TrendPacket]) -> Optional[Dict[str, Any]]:
+    def get_first_packet_with_obstype(cname: CheetahName, trend_packets: List[PeriodPacket]) -> Optional[Dict[str, Any]]:
         for trend_pkt in trend_packets:
             if cname.obstype in trend_pkt.packet:
                 return trend_pkt.packet
         return None
 
     @staticmethod
-    def get_last_packet_with_obstype(cname: CheetahName, trend_packets: List[TrendPacket]) -> Optional[Dict[str, Any]]:
+    def get_last_packet_with_obstype(cname: CheetahName, trend_packets: List[PeriodPacket]) -> Optional[Dict[str, Any]]:
         for trend_pkt in reversed(trend_packets):
             if cname.obstype in trend_pkt.packet:
                 return trend_pkt.packet
         return None
 
     @staticmethod
-    def get_trend(cname: CheetahName, pkt: Dict[str, Any], trend_packets: List[TrendPacket],
+    def get_trend(cname: CheetahName, pkt: Dict[str, Any], trend_packets: List[PeriodPacket],
             converter) -> Tuple[Optional[Any], Optional[str], Optional[str]]:
         if len(trend_packets) != 0:
             start_packet = LoopProcessor.get_first_packet_with_obstype(cname, trend_packets)
@@ -892,60 +925,35 @@ class LoopProcessor:
                 log.debug('Could not compute trend for %s' % cname.field)
         return None, None, None
 
-    def save_trend_packet(self, pkt_time: int, pkt: Dict[str, Any], trend_obstypes: List[str]) -> None:
-        # Don't save the entire packet as only obstypes used by a trend field
-        # are needed.
+    @staticmethod
+    def save_period_packet(pkt_time: int, pkt: Dict[str, Any],
+            period_packets: List[PeriodPacket], period_length: int,
+            in_use_obstypes: List[str]) -> None:
+        # Don't save the entire packet as only in_use_obstypes are needed.
         new_pkt: Dict[str, Any] = {}
         new_pkt['dateTime'] = pkt['dateTime']
         new_pkt['usUnits'] = pkt['usUnits']
-        for obstype in trend_obstypes:
+        for obstype in in_use_obstypes:
             if obstype in pkt:
                 new_pkt[obstype] = pkt[obstype]
-        trend_packet: TrendPacket = TrendPacket(
+        period_packet: PeriodPacket = PeriodPacket(
             timestamp = pkt_time,
             packet = new_pkt)
-        self.trend_packets.append(trend_packet)
-        log.debug('save_trend_packet: TrendPacket(%s): %s' % (
+        period_packets.append(period_packet)
+        log.debug('save_period_packet: PeriodPacket(%s): %s' % (
             timestamp_to_string(pkt_time), new_pkt))
-        self.trim_old_trend_packets(pkt_time)
+        LoopProcessor.trim_old_period_packets(period_packets, period_length, pkt_time)
 
-    def trim_old_trend_packets(self, current_pkt_time) -> None:
+    @staticmethod
+    def trim_old_period_packets(period_packets: List[PeriodPacket],
+            period_length: int, current_pkt_time) -> None:
         # Trim readings older than time_delta
-        earliest: float = current_pkt_time - self.cfg.time_delta
+        earliest: float = current_pkt_time - period_length
         del_count: int = 0
-        for pkt in self.trend_packets:
+        for pkt in period_packets:
             if pkt.timestamp < earliest:
                 del_count += 1
         for i in range(del_count):
-            log.debug('trim_old_trend_packets: Deleting expired archive packet(%s)' % timestamp_to_string(
-                self.trend_packets[0].timestamp))
-            del self.trend_packets[0]
-
-    def save_10m_packet(self, pkt_time: int, pkt: Dict[str, Any], ten_min_obstypes: List[str]) -> None:
-        # Don't save the entire packet as only obstypes used by a 10m field
-        # are needed.
-        new_pkt: Dict[str, Any] = {}
-        new_pkt['dateTime'] = pkt['dateTime']
-        new_pkt['usUnits'] = pkt['usUnits']
-        for obstype in ten_min_obstypes:
-            if obstype in pkt:
-                new_pkt[obstype] = pkt[obstype]
-        ten_min_packet: TenMinPacket = TenMinPacket(
-            timestamp = pkt_time,
-            packet = new_pkt)
-        self.ten_min_packets.append(ten_min_packet)
-        log.debug('save_ten_min_packet: TrendPacket(%s): %s' % (
-            timestamp_to_string(pkt_time), new_pkt))
-        self.trim_old_10m_packets(pkt_time)
-
-    def trim_old_10m_packets(self, current_pkt_time) -> None:
-        # Trim readings older than 600 seconds
-        earliest: float = current_pkt_time - 600
-        del_count: int = 0
-        for pkt in self.ten_min_packets:
-            if pkt.timestamp < earliest:
-                del_count += 1
-        for i in range(del_count):
-            log.debug('trim_old_10m_packets: Deleting expired archive packet(%s)' % timestamp_to_string(
-                self.ten_min_packets[0].timestamp))
-            del self.ten_min_packets[0]
+            log.debug('trim_old_periodpackets: Deleting expired packet(%s)' % timestamp_to_string(
+                period_packets[0].timestamp))
+            del period_packets[0]

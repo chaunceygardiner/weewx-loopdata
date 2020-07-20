@@ -6,6 +6,7 @@
 
 import configobj
 import logging
+import time
 import unittest
 
 from typing import List, Optional
@@ -51,7 +52,34 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, 'max')
         self.assertEqual(cname.format_spec, 'raw')
 
+        cname = user.loopdata.LoopData.parse_cname('10m')
+        self.assertEqual(cname, None)
+
         cname = user.loopdata.LoopData.parse_cname('10m.wind')
+        self.assertEqual(cname, None)
+
+        cname = user.loopdata.LoopData.parse_cname('10m.wind.max.formatted.foo')
+        self.assertEqual(cname, None)
+
+        cname = user.loopdata.LoopData.parse_cname('current')
+        self.assertEqual(cname, None)
+
+        cname = user.loopdata.LoopData.parse_cname('current.wind.max.formatted.foo')
+        self.assertEqual(cname, None)
+
+        cname = user.loopdata.LoopData.parse_cname('day')
+        self.assertEqual(cname, None)
+
+        cname = user.loopdata.LoopData.parse_cname('day.wind')
+        self.assertEqual(cname, None)
+
+        cname = user.loopdata.LoopData.parse_cname('day.wind.max.formatted.foo')
+        self.assertEqual(cname, None)
+
+        cname = user.loopdata.LoopData.parse_cname('trend')
+        self.assertEqual(cname, None)
+
+        cname = user.loopdata.LoopData.parse_cname('trend.wind.formatted.foo')
         self.assertEqual(cname, None)
 
         cname = user.loopdata.LoopData.parse_cname('10m.windGust.max.formatted')
@@ -319,6 +347,24 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, 'avg')
         self.assertEqual(cname.format_spec, None)
 
+    #def test_save_period_packet(self):
+        config_dict = ProcessPacketTests._get_config_dict('us')
+        unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
+        fields_to_include, trend_obstypes, ten_min_obstypes = \
+            user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
+
+        ten_min_packets = []
+        dateTime: int = int(time.time())
+        for i in range(1000):
+            dateTime += 2
+            pkt = { 'dateTime': dateTime, 'usUnits': 16, 'outTemp': 72.4 }
+            user.loopdata.LoopProcessor.save_period_packet(
+                pkt['dateTime'], pkt, ten_min_packets, 600, ten_min_obstypes)
+        # last packet should be dateTime
+        self.assertEqual(ten_min_packets[-1].timestamp, dateTime)
+        # the first packet should be dateTime - 600
+        self.assertEqual(ten_min_packets[0].timestamp, dateTime - 600)
+
     def test_ip100_packet_processing(self):
 
         config_dict = ProcessPacketTests._get_config_dict('us')
@@ -331,92 +377,23 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
         unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
-        ten_min_accum: weewx.accum.Accum = weewx.accum.Accum(
-            weeutil.weeutil.TimeSpan(
-                pkts[0]['dateTime']-1,
-                pkts[-1]['dateTime']),
-            unit_system)
+
+        fields_to_include, trend_obstypes, ten_min_obstypes = \
+            user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
         trend_packets = []
+        ten_min_packets = []
         for pkt in pkts:
-            trend_packets.append(user.loopdata.TrendPacket(timestamp=pkt['dateTime'], packet=pkt))
             day_accum.addRecord(pkt)
-            ten_min_accum.addRecord(pkt)
-
-        specified_fields = [
-            '10m.windGust.max',
-            '10m.windGust.max.formatted',
-            '10m.windGust.max.raw',
-            '10m.windGust.maxtime',
-            '10m.windGust.maxtime.raw',
-            '10m.outTemp.max',
-            '10m.outTemp.max.formatted',
-            '10m.outTemp.max.raw',
-            '10m.outTemp.maxtime',
-            '10m.outTemp.maxtime.raw',
-            'current.dateTime.raw',
-            'current.dateTime',
-            'unit.label.outTemp',
-            'current.outTemp',
-            'current.barometer',
-            'current.windSpeed',
-            'current.windDir',
-            'current.windDir.ordinal_compass',
-            'day.barometer.avg',
-            'day.barometer.max',
-            'day.barometer.min',
-            'day.outTemp.avg',
-            'day.outTemp.min',
-            'day.outTemp.max',
-            'day.rain.sum',
-            'day.rain.sum.formatted',
-            'day.wind.avg',
-            'day.wind.avg.formatted',
-            'day.wind.max',
-            'day.wind.max.formatted',
-            'day.wind.gustdir',
-            'day.wind.gustdir.formatted',
-            'day.wind.gustdir.ordinal_compass',
-            'day.wind.maxtime',
-            'day.wind.min',
-            'day.wind.min.formatted',
-            'day.wind.mintime',
-            'day.wind.rms',
-            'day.wind.rms.formatted',
-            'day.wind.vecavg',
-            'day.wind.vecavg.formatted',
-            'day.wind.vecdir',
-            'day.wind.vecdir.formatted',
-            'day.windDir.avg',
-            'day.windDir.max',
-            'day.windDir.min',
-            'day.windSpeed.avg',
-            'day.windSpeed.max',
-            'day.windSpeed.min',
-            'trend.barometer',
-            'trend.barometer.raw',
-            'trend.barometer.formatted',
-            'trend.barometer.desc',
-            'trend.outTemp',
-            'trend.outTemp.raw',
-            'trend.outTemp.formatted',
-            'trend.dewpoint',
-            'trend.dewpoint.raw',
-            'trend.dewpoint.formatted',
-            'unit.label.barometer',
-            'unit.label.rain',
-            'unit.label.wind',
-            'unit.label.windDir',
-            'unit.label.windSpeed',
-            ]
-
-        fields_to_include: List[user.loopdata.CheetahName] = []
-        for field in specified_fields:
-            cname: Optional[user.loopdata.CheetahName] = user.loopdata.LoopData.parse_cname(field)
-            if cname is not None:
-                fields_to_include.append(cname)
+            user.loopdata.LoopProcessor.save_period_packet(
+                pkt['dateTime'], pkt, trend_packets, 10800, trend_obstypes)
+            user.loopdata.LoopProcessor.save_period_packet(
+                pkt['dateTime'], pkt, ten_min_packets, 600, ten_min_obstypes)
 
         time_delta = 10800
+
+        ten_min_accum = user.loopdata.LoopProcessor.create_ten_min_accum(
+            ten_min_packets, ten_min_obstypes, unit_system)
 
         loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(
             pkt, fields_to_include, trend_packets,
@@ -528,92 +505,23 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
         unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
-        ten_min_accum: weewx.accum.Accum = weewx.accum.Accum(
-            weeutil.weeutil.TimeSpan(
-                pkts[0]['dateTime']-1,
-                pkts[-1]['dateTime']),
-            unit_system)
+
+        fields_to_include, trend_obstypes, ten_min_obstypes = \
+            user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
         trend_packets = []
+        ten_min_packets = []
         for pkt in pkts:
-            trend_packets.append(user.loopdata.TrendPacket(timestamp=pkt['dateTime'], packet=pkt))
             day_accum.addRecord(pkt)
-            ten_min_accum.addRecord(pkt)
-
-        specified_fields = [
-            '10m.windGust.max',
-            '10m.windGust.max.formatted',
-            '10m.windGust.max.raw',
-            '10m.windGust.maxtime',
-            '10m.windGust.maxtime.raw',
-            '10m.outTemp.max',
-            '10m.outTemp.max.formatted',
-            '10m.outTemp.max.raw',
-            '10m.outTemp.maxtime',
-            '10m.outTemp.maxtime.raw',
-            'current.dateTime.raw',
-            'current.dateTime',
-            'unit.label.outTemp',
-            'current.outTemp',
-            'current.barometer',
-            'current.windSpeed',
-            'current.windDir',
-            'current.windDir.ordinal_compass',
-            'day.barometer.avg',
-            'day.barometer.max',
-            'day.barometer.min',
-            'day.outTemp.avg',
-            'day.outTemp.min',
-            'day.outTemp.max',
-            'day.rain.sum',
-            'day.rain.sum.formatted',
-            'day.wind.avg',
-            'day.wind.avg.formatted',
-            'day.wind.max',
-            'day.wind.max.formatted',
-            'day.wind.gustdir',
-            'day.wind.gustdir.formatted',
-            'day.wind.gustdir.ordinal_compass',
-            'day.wind.maxtime',
-            'day.wind.min',
-            'day.wind.min.formatted',
-            'day.wind.mintime',
-            'day.wind.rms',
-            'day.wind.rms.formatted',
-            'day.wind.vecavg',
-            'day.wind.vecavg.formatted',
-            'day.wind.vecdir',
-            'day.wind.vecdir.formatted',
-            'day.windDir.avg',
-            'day.windDir.max',
-            'day.windDir.min',
-            'day.windSpeed.avg',
-            'day.windSpeed.max',
-            'day.windSpeed.min',
-            'trend.barometer',
-            'trend.barometer.raw',
-            'trend.barometer.formatted',
-            'trend.barometer.desc',
-            'trend.outTemp',
-            'trend.outTemp.raw',
-            'trend.outTemp.formatted',
-            'trend.dewpoint',
-            'trend.dewpoint.raw',
-            'trend.dewpoint.formatted',
-            'unit.label.barometer',
-            'unit.label.rain',
-            'unit.label.wind',
-            'unit.label.windDir',
-            'unit.label.windSpeed',
-            ]
-
-        fields_to_include: List[user.loopdata.CheetahName] = []
-        for field in specified_fields:
-            cname: Optional[user.loopdata.CheetahName] = user.loopdata.LoopData.parse_cname(field)
-            if cname is not None:
-                fields_to_include.append(cname)
+            user.loopdata.LoopProcessor.save_period_packet(
+                pkt['dateTime'], pkt, trend_packets, 10800, trend_obstypes)
+            user.loopdata.LoopProcessor.save_period_packet(
+                pkt['dateTime'], pkt, ten_min_packets, 600, ten_min_obstypes)
 
         time_delta = 10800
+
+        ten_min_accum = user.loopdata.LoopProcessor.create_ten_min_accum(
+            ten_min_packets, ten_min_obstypes, unit_system)
 
         loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(
             pkt, fields_to_include, trend_packets,
@@ -725,92 +633,23 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
         unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
-        ten_min_accum: weewx.accum.Accum = weewx.accum.Accum(
-            weeutil.weeutil.TimeSpan(
-                pkts[0]['dateTime']-1,
-                pkts[-1]['dateTime']),
-            unit_system)
+
+        fields_to_include, trend_obstypes, ten_min_obstypes = \
+            user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
         trend_packets = []
+        ten_min_packets = []
         for pkt in pkts:
-            trend_packets.append(user.loopdata.TrendPacket(timestamp=pkt['dateTime'], packet=pkt))
             day_accum.addRecord(pkt)
-            ten_min_accum.addRecord(pkt)
-
-        specified_fields = [
-            '10m.windGust.max',
-            '10m.windGust.max.formatted',
-            '10m.windGust.max.raw',
-            '10m.windGust.maxtime',
-            '10m.windGust.maxtime.raw',
-            '10m.outTemp.max',
-            '10m.outTemp.max.formatted',
-            '10m.outTemp.max.raw',
-            '10m.outTemp.maxtime',
-            '10m.outTemp.maxtime.raw',
-            'current.dateTime.raw',
-            'current.dateTime',
-            'unit.label.outTemp',
-            'current.outTemp',
-            'current.barometer',
-            'current.windSpeed',
-            'current.windDir',
-            'current.windDir.ordinal_compass',
-            'day.barometer.avg',
-            'day.barometer.max',
-            'day.barometer.min',
-            'day.outTemp.avg',
-            'day.outTemp.min',
-            'day.outTemp.max',
-            'day.rain.sum',
-            'day.rain.sum.formatted',
-            'day.wind.avg',
-            'day.wind.avg.formatted',
-            'day.wind.max',
-            'day.wind.max.formatted',
-            'day.wind.gustdir',
-            'day.wind.gustdir.formatted',
-            'day.wind.gustdir.ordinal_compass',
-            'day.wind.maxtime',
-            'day.wind.min',
-            'day.wind.min.formatted',
-            'day.wind.mintime',
-            'day.wind.rms',
-            'day.wind.rms.formatted',
-            'day.wind.vecavg',
-            'day.wind.vecavg.formatted',
-            'day.wind.vecdir',
-            'day.wind.vecdir.formatted',
-            'day.windDir.avg',
-            'day.windDir.max',
-            'day.windDir.min',
-            'day.windSpeed.avg',
-            'day.windSpeed.max',
-            'day.windSpeed.min',
-            'trend.barometer',
-            'trend.barometer.raw',
-            'trend.barometer.formatted',
-            'trend.barometer.desc',
-            'trend.outTemp',
-            'trend.outTemp.raw',
-            'trend.outTemp.formatted',
-            'trend.dewpoint',
-            'trend.dewpoint.raw',
-            'trend.dewpoint.formatted',
-            'unit.label.barometer',
-            'unit.label.rain',
-            'unit.label.wind',
-            'unit.label.windDir',
-            'unit.label.windSpeed',
-            ]
-
-        fields_to_include: List[user.loopdata.CheetahName] = []
-        for field in specified_fields:
-            cname: Optional[user.loopdata.CheetahName] = user.loopdata.LoopData.parse_cname(field)
-            if cname is not None:
-                fields_to_include.append(cname)
+            user.loopdata.LoopProcessor.save_period_packet(
+                pkt['dateTime'], pkt, trend_packets, 10800, trend_obstypes)
+            user.loopdata.LoopProcessor.save_period_packet(
+                pkt['dateTime'], pkt, ten_min_packets, 600, ten_min_obstypes)
 
         time_delta = 10800
+
+        ten_min_accum = user.loopdata.LoopProcessor.create_ten_min_accum(
+            ten_min_packets, ten_min_obstypes, unit_system)
 
         loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(
             pkt, fields_to_include, trend_packets,
@@ -831,11 +670,11 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['10m.windGust.maxtime'], '07/05/20 12:33:35')
         self.assertEqual(loopdata_pkt['10m.windGust.maxtime.raw'], 1593977615)
 
-        self.assertEqual(loopdata_pkt['10m.outTemp.max'], '1.5°C')
-        self.assertEqual(loopdata_pkt['10m.outTemp.max.formatted'], '1.5')
-        self.assertTrue(loopdata_pkt['10m.outTemp.max.raw'] < 1.47346484734 and loopdata_pkt['10m.outTemp.max.raw'] < 1.47346484735)
-        self.assertEqual(loopdata_pkt['10m.outTemp.maxtime'], '07/05/20 12:18:37')
-        self.assertEqual(loopdata_pkt['10m.outTemp.maxtime.raw'], 1593976717)
+        self.assertEqual(loopdata_pkt['10m.outTemp.max'], '1.4°C')
+        self.assertEqual(loopdata_pkt['10m.outTemp.max.formatted'], '1.4')
+        self.assertTrue(loopdata_pkt['10m.outTemp.max.raw'] > 1.357893759375 and loopdata_pkt['10m.outTemp.max.raw'] < 1.357893759376)
+        self.assertEqual(loopdata_pkt['10m.outTemp.maxtime'], '07/05/20 12:33:19')
+        self.assertEqual(loopdata_pkt['10m.outTemp.maxtime.raw'], 1593977599)
 
         self.assertEqual(loopdata_pkt['current.outTemp'], '0.0°C')
         self.assertEqual(loopdata_pkt['current.barometer'], '1053.1 mbar')
@@ -935,6 +774,73 @@ class ProcessPacketTests(unittest.TestCase):
 
         return converter, formatter
 
+def _get_specified_fields():
+    return [
+        '10m.windGust.max',
+        '10m.windGust.max.formatted',
+        '10m.windGust.max.raw',
+        '10m.windGust.maxtime',
+        '10m.windGust.maxtime.raw',
+        '10m.outTemp.max',
+        '10m.outTemp.max.formatted',
+        '10m.outTemp.max.raw',
+        '10m.outTemp.maxtime',
+        '10m.outTemp.maxtime.raw',
+        'current.dateTime.raw',
+        'current.dateTime',
+        'unit.label.outTemp',
+        'current.outTemp',
+        'current.barometer',
+        'current.windSpeed',
+        'current.windDir',
+        'current.windDir.ordinal_compass',
+        'day.barometer.avg',
+        'day.barometer.max',
+        'day.barometer.min',
+        'day.outTemp.avg',
+        'day.outTemp.min',
+        'day.outTemp.max',
+        'day.rain.sum',
+        'day.rain.sum.formatted',
+        'day.wind.avg',
+        'day.wind.avg.formatted',
+        'day.wind.max',
+        'day.wind.max.formatted',
+        'day.wind.gustdir',
+        'day.wind.gustdir.formatted',
+        'day.wind.gustdir.ordinal_compass',
+        'day.wind.maxtime',
+        'day.wind.min',
+        'day.wind.min.formatted',
+        'day.wind.mintime',
+        'day.wind.rms',
+        'day.wind.rms.formatted',
+        'day.wind.vecavg',
+        'day.wind.vecavg.formatted',
+        'day.wind.vecdir',
+        'day.wind.vecdir.formatted',
+        'day.windDir.avg',
+        'day.windDir.max',
+        'day.windDir.min',
+        'day.windSpeed.avg',
+        'day.windSpeed.max',
+        'day.windSpeed.min',
+        'trend.barometer',
+        'trend.barometer.raw',
+        'trend.barometer.formatted',
+        'trend.barometer.desc',
+        'trend.outTemp',
+        'trend.outTemp.raw',
+        'trend.outTemp.formatted',
+        'trend.dewpoint',
+        'trend.dewpoint.raw',
+        'trend.dewpoint.formatted',
+        'unit.label.barometer',
+        'unit.label.rain',
+        'unit.label.wind',
+        'unit.label.windDir',
+        'unit.label.windSpeed',
+        ]
 
 if __name__ == '__main__':
     unittest.main()
