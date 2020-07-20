@@ -24,6 +24,7 @@ import time
 
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
+from enum import Enum
 
 import weewx
 import weewx.defaults
@@ -43,7 +44,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '2.0.b10'
+LOOP_DATA_VERSION = '2.0.b11'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -90,6 +91,18 @@ class Configuration:
     time_delta         : int
     trend_obstypes     : List[str]
     ten_min_obstypes   : List[str]
+    baro_trend_descs   : Any # Dict[BarometerTrend, str]
+
+class BarometerTrend(Enum):
+    RISING_VERY_RAPIDLY  = 1
+    RISING_QUICKLY       = 2
+    RISING               = 3
+    RISING_SLOWLY        = 4
+    STEADY               = 5
+    FALLING_SLOWLY       = 6
+    FALLING              = 7
+    FALLING_QUICKLY      = 8
+    FALLING_VERY_RAPIDLY = 9
 
 @dataclass
 class Reading:
@@ -111,14 +124,15 @@ class LoopData(StdService):
 
         self.loop_proccessor_started = False
 
-        std_archive_dict     = config_dict.get('StdArchive', {})
-        std_report_dict      = config_dict.get('StdReport', {})
+        std_archive_dict      = config_dict.get('StdArchive', {})
+        std_report_dict       = config_dict.get('StdReport', {})
 
-        loop_config_dict     = config_dict.get('LoopData', {})
-        file_spec_dict       = loop_config_dict.get('FileSpec', {})
-        formatting_spec_dict = loop_config_dict.get('Formatting', {})
-        rsync_spec_dict      = loop_config_dict.get('RsyncSpec', {})
-        include_spec_dict    = loop_config_dict.get('Include', {})
+        loop_config_dict      = config_dict.get('LoopData', {})
+        file_spec_dict        = loop_config_dict.get('FileSpec', {})
+        formatting_spec_dict  = loop_config_dict.get('Formatting', {})
+        rsync_spec_dict       = loop_config_dict.get('RsyncSpec', {})
+        include_spec_dict     = loop_config_dict.get('Include', {})
+        baro_trend_trans_dict = loop_config_dict.get('BarometerTrendDescriptions', {})
 
         # Get the unit_system as specified by StdConvert->target_unit.
         # Note: this value will be overwritten if the day accumulator has a a unit_system.
@@ -149,6 +163,8 @@ class LoopData(StdService):
         except Exception as e:
             log.error('Could not find target_report: %s.  LoopData is exiting. Exception: %s' % (target_report, e))
             return
+
+        baro_trend_descs = LoopData.construct_baro_trend_descs(baro_trend_trans_dict)
 
         specified_fields = include_spec_dict.get('fields', [])
         fields_to_include, trend_obstypes, ten_min_obstypes = LoopData.get_fields_to_include(specified_fields)
@@ -193,7 +209,8 @@ class LoopData(StdService):
             skip_if_older_than  = to_int(rsync_spec_dict.get('skip_if_older_than', 3)),
             time_delta          = time_delta,
             trend_obstypes      = trend_obstypes,
-            ten_min_obstypes    = ten_min_obstypes)
+            ten_min_obstypes    = ten_min_obstypes,
+            baro_trend_descs    = baro_trend_descs)
 
         if not os.path.exists(self.cfg.loop_data_dir):
             os.makedirs(self.cfg.loop_data_dir)
@@ -202,6 +219,20 @@ class LoopData(StdService):
 
         self.bind(weewx.PRE_LOOP, self.pre_loop)
         self.bind(weewx.NEW_LOOP_PACKET, self.new_loop)
+
+    @staticmethod
+    def construct_baro_trend_descs(baro_trend_trans_dict: Dict[str, str]) -> Dict[BarometerTrend, str]:
+        baro_trend_descs: Dict[BarometerTrend, str] = {}
+        baro_trend_descs[BarometerTrend.RISING_VERY_RAPIDLY]  = baro_trend_trans_dict.get('RISING_VERY_RAPIDLY', 'Rising Very Rapidly')
+        baro_trend_descs[BarometerTrend.RISING_QUICKLY]       = baro_trend_trans_dict.get('RISING_QUICKLY',       'Rising Quickly')
+        baro_trend_descs[BarometerTrend.RISING]               = baro_trend_trans_dict.get('RISING',               'Rising')
+        baro_trend_descs[BarometerTrend.RISING_SLOWLY]        = baro_trend_trans_dict.get('RISING_SLOWLY',        'Rising Slowly')
+        baro_trend_descs[BarometerTrend.STEADY]               = baro_trend_trans_dict.get('STEADY',               'Steady')
+        baro_trend_descs[BarometerTrend.FALLING_SLOWLY]       = baro_trend_trans_dict.get('FALLING_SLOWLY',       'Falling Slowly')
+        baro_trend_descs[BarometerTrend.FALLING]              = baro_trend_trans_dict.get('FALLING',              'Falling')
+        baro_trend_descs[BarometerTrend.FALLING_QUICKLY]      = baro_trend_trans_dict.get('FALLING_QUICKLY',      'Falling Quickly')
+        baro_trend_descs[BarometerTrend.FALLING_VERY_RAPIDLY] = baro_trend_trans_dict.get('FALLING_VERY_RAPIDLY', 'Falling Very Rapidly')
+        return baro_trend_descs
 
     @staticmethod
     def get_fields_to_include(specified_fields: List[str]
@@ -514,6 +545,7 @@ class LoopProcessor:
                 loopdata_pkt = LoopProcessor.create_loopdata_packet(pkt,
                     self.cfg.fields_to_include, self.trend_packets,
                     self.day_accum, ten_min_accum, self.cfg.time_delta,
+                    self.cfg.baro_trend_descs,
                     self.cfg.converter, self.cfg.formatter)
 
                 LoopProcessor.write_packet_to_file(loopdata_pkt,
@@ -687,7 +719,8 @@ class LoopProcessor:
     @staticmethod
     def add_trend_obstype(cname: CheetahName, trend_packets: List[PeriodPacket],
             pkt: Dict[str, Any], loopdata_pkt: Dict[str, Any], time_delta: int,
-            converter: weewx.units.Converter, formatter: weewx.units.Formatter) -> None:
+            baro_trend_descs, converter: weewx.units.Converter,
+            formatter: weewx.units.Formatter) -> None:
 
         if len(trend_packets) == 0:
             log.debug('No trend_packets with which to compute trend: %s.' % cname.field)
@@ -699,8 +732,11 @@ class LoopProcessor:
             return
 
         if cname.obstype == 'barometer' and cname.format_spec == 'desc':
-            desc: str = LoopProcessor.get_barometer_rate_desc(value, unit_type, group_type, time_delta)
-            loopdata_pkt[cname.field] = desc
+            baroTrend: BarometerTrend = LoopProcessor.get_barometer_trend(value, unit_type, group_type, time_delta)
+            loopdata_pkt[cname.field] = baro_trend_descs[baroTrend]
+            return
+        elif cname.format_spec == 'desc':
+            # desc is only supported for trend.barometer
             return
 
         if cname.format_spec == 'formatted':
@@ -733,6 +769,7 @@ class LoopProcessor:
     def create_loopdata_packet(pkt: Dict[str, Any], fields_to_include: List[CheetahName],
             trend_packets: List[PeriodPacket], day_accum: weewx.accum.Accum,
             ten_min_accum: Optional[weewx.accum.Accum], time_delta: int,
+            baro_trend_descs: Dict[BarometerTrend, str],
             converter: weewx.units.Converter,
             formatter: weewx.units.Formatter) -> Dict[str, Any]:
 
@@ -750,7 +787,7 @@ class LoopProcessor:
                 continue
             if cname.period == 'trend':
                 LoopProcessor.add_trend_obstype(cname, trend_packets, pkt,
-                    loopdata_pkt, time_delta, converter, formatter)
+                    loopdata_pkt, time_delta, baro_trend_descs, converter, formatter)
                 continue
             if cname.period == 'day':
                 LoopProcessor.add_period_obstype(cname, day_accum, loopdata_pkt, time_delta, converter, formatter)
@@ -807,6 +844,7 @@ class LoopProcessor:
         log.info('time_delta         : %d' % cfg.time_delta)
         log.info('trend_obstypes     : %s' % cfg.trend_obstypes)
         log.info('ten_min_obstypes   : %s' % cfg.ten_min_obstypes)
+        log.info('baro_trend_descs   : %s' % cfg.baro_trend_descs)
 
     @staticmethod
     def rsync_data(pktTime: int, skip_if_older_than: int, loop_data_dir: str,
@@ -838,7 +876,7 @@ class LoopProcessor:
             log.error("rsync_data: Caught exception %s: %s" % (cl, e))
 
     @staticmethod
-    def get_barometer_rate_desc(value, unit_type, group_type, time_delta: int) -> str:
+    def get_barometer_trend(value, unit_type, group_type, time_delta: int) -> BarometerTrend:
 
         # Forecast descriptions for the 3 hour change in barometer readings.
         # Falling (or rising) slowly: 0.1 - 1.5mb in 3 hours
@@ -850,32 +888,31 @@ class LoopProcessor:
         converter = weewx.units.Converter(weewx.units.MetricUnits)
         delta_mbar, _, _ = converter.convert((value, unit_type, group_type))
         log.debug('Converted to mbar/h: %f' % delta_mbar)
-        desc: str = ""
 
         # Normalize to one hour.
         delta_hours = time_delta / 3600.0
         delta_mbar = delta_mbar / delta_hours
 
         if delta_mbar > 6.0:
-            desc = 'Rising Very Rapidly'
+            baroTrend = BarometerTrend.RISING_VERY_RAPIDLY
         elif delta_mbar > 3.5:
-            desc = 'Rising Quickly'
+            baroTrend = BarometerTrend.RISING_QUICKLY
         elif delta_mbar > 1.5:
-            desc = 'Rising'
+            baroTrend = BarometerTrend.RISING
         elif delta_mbar > 0.1:
-            desc = 'Rising Slowly'
+            baroTrend = BarometerTrend.RISING_SLOWLY
         elif delta_mbar >= -0.1:
-            desc = 'Steady'
+            baroTrend = BarometerTrend.STEADY
         elif delta_mbar >= -1.5:
-            desc = 'Falling Slowly'
+            baroTrend = BarometerTrend.FALLING_SLOWLY
         elif delta_mbar >= -3.5:
-            desc = 'Falling'
+            baroTrend = BarometerTrend.FALLING
         elif delta_mbar >= -6.0:
-            desc = 'Falling Quickly'
+            baroTrend = BarometerTrend.FALLING_QUICKLY
         else:
-            desc = 'Falling Very Rapidly'
+            baroTrend = BarometerTrend.FALLING_VERY_RAPIDLY
 
-        return desc
+        return baroTrend
 
     @staticmethod
     def get_first_packet_with_obstype(cname: CheetahName, trend_packets: List[PeriodPacket]) -> Optional[Dict[str, Any]]:

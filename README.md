@@ -117,6 +117,16 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
         skip_if_older_than = 3
     [[Include]]
         fields = current.dateTime.raw, current.windDir.ordinal_compass, day.rain.sum, current.dewpoint, current.outTemp, current.rainRate, current.windSpeed, day.windGust.max, 10m.windGust.max, current.windSpeed
+    [[BarometerTrendDescriptions]]
+        RISING_VERY_RAPIDLY = Rising Very Rapidly
+        RISING_QUICKLY = Rising Quickly
+        RISING = Rising
+        RISING_SLOWLY = Rising Slowly
+        STEADY = Steady
+        FALLING_SLOWLY = Falling Slowly
+        FALLING = Falling
+        FALLING_QUICKLY = Falling Quickly
+        FALLING_VERY_RAPIDLY = Falling Very Rapidly
 ```
 
 ## Entries in `LoopData` sections of `weewx.conf`:
@@ -141,6 +151,7 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
  * `skip_if_older_than`: Don't bother to rsync if greater than this number of seconds.  Default is 4.
                          (Skip this and move on to the next if this data is older than 4 seconds.
  * `fields`            : Used to specify which fields to include in the file.
+ * `BarometerTrendDescriptions` : The descriptions associated with trand.barometer.desc.  Localize as necessary.
 
 ## What fields are available.
 
@@ -157,9 +168,8 @@ Add the following extenstions to specialize the fields:
 
 `unit.label.<obs>` is also supported.
 
-trend.barometer.desc is supported at present and yeilds a non-localized description of the 
-trend (e.g., `rising slowly`.  The .desc extension is expected to be removed from LoopData
-soon.  Don't depend on it!
+trend.barometer.desc is supported and provides a text version of the baromter rate.
+The text can be localized in weewx.conf.
 
 # How to Upgrade from LoopData 1.x.
 

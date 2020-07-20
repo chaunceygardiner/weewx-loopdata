@@ -1,6 +1,10 @@
 loopdata change history
 -----------------------
 
+2.0.b11 07/20/2020
+
+1. Ability to localize trend.barometer.desc text in weewx.conf.
+
 2.0.b10 07/19/2020
 
 1. Substantial refactoring.  More tests.

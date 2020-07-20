@@ -397,7 +397,9 @@ class ProcessPacketTests(unittest.TestCase):
 
         loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(
             pkt, fields_to_include, trend_packets,
-            day_accum, ten_min_accum, time_delta, converter, formatter)
+            day_accum, ten_min_accum, time_delta,
+            user.loopdata.LoopData.construct_baro_trend_descs({}),
+            converter, formatter)
 
             # {'dateTime': 1593883054, 'usUnits': 1, 'outTemp': 71.6, 'barometer': 30.060048358389471, 'dewpoint': 60.48739574937819
             # {'dateTime': 1593883332, 'usUnits': 1, 'outTemp': 72.0, 'barometer': 30.055425865734495, 'dewpoint': 59.57749595318801
@@ -525,7 +527,9 @@ class ProcessPacketTests(unittest.TestCase):
 
         loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(
             pkt, fields_to_include, trend_packets,
-            day_accum, ten_min_accum, time_delta, converter, formatter)
+            day_accum, ten_min_accum, time_delta,
+            user.loopdata.LoopData.construct_baro_trend_descs({}),
+            converter, formatter)
 
         # {'dateTime': 1593975030, 'outTemp': 76.1, 'barometer': 30.014857385736513, 'dewpoint': 54.73645937493746
         # {'dateTime': 1593975366, 'outTemp': 75.4, 'barometer': 30.005222168998216, 'dewpoint': 56.53264564000546
@@ -653,7 +657,9 @@ class ProcessPacketTests(unittest.TestCase):
 
         loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(
             pkt, fields_to_include, trend_packets,
-            day_accum, ten_min_accum, time_delta, converter, formatter)
+            day_accum, ten_min_accum, time_delta,
+            user.loopdata.LoopData.construct_baro_trend_descs({}),
+            converter, formatter)
             # {'dateTime': 1593976709, 'outTemp': 0.3770915275499615,  'barometer': 1053.1667173695532, 'dewpoint': -2.6645899102645934
             # {'dateTime': 1593977615, 'outTemp': 0.032246952164187964,'barometer': 1053.1483031344253, 'dewpoint': -3.003421962855377
 
