@@ -163,7 +163,7 @@ soon.  Don't depend on it!
 
 # How to Upgrade from LoopData 1.x.
 
-LoopData 2.x is a breaking change to 1.x installations.  The following steps will help guide
+LoopData 2.x is a breaking change to 1.x installations. The following steps will help guide 
 you through the process:
 
 1. Install 2.x as per above instructions, but DO NOT restart WeeWX.
@@ -175,13 +175,13 @@ you through the process:
  * `<obs>`              -> `current.<obs>.formatted`
  * `10mMaxGust`         -> `10m.windGust.max.formatted`
  * `AVG_<obs>`          -> `day.<obs>.avg`
- * `barometerRate`      -> `trend.barometerRate.formatted`
+ * `barometerRate`      -> `trend.barometer.formatted`
  * `COMPASS_<obs>`      -> `current.<obs>.ordinal_compass`
- * `DESC_barometerRate` -> `trend.barometerRate.desc`
+ * `DESC_barometerRate` -> `trend.barometer.desc`
  * `FMT_<obs>`          -> `current.<obs>`
  * `FMT_10mMaxGust`     -> `10m.windGust.max`
  * `FMT_AVG_<obs>`      -> `day.<obs>.avg.formatted`
- * `FMT_barometerRate`  -> `trend.barometerRate`
+ * `FMT_barometerRate`  -> `trend.barometer`
  * `FMT_HI_<obs>`       -> `day.<obs>.max`
  * `FMT_LO_<obs>`       -> `day.<obs>.min`
  * `FMT_T_HI_<obs>`     -> `day.<obs>.maxtime`
