@@ -44,7 +44,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '2.0.b11'
+LOOP_DATA_VERSION = '2.0.b12'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -889,9 +889,9 @@ class LoopProcessor:
         delta_mbar, _, _ = converter.convert((value, unit_type, group_type))
         log.debug('Converted to mbar/h: %f' % delta_mbar)
 
-        # Normalize to one hour.
-        delta_hours = time_delta / 3600.0
-        delta_mbar = delta_mbar / delta_hours
+        # Normalize to three hours.
+        delta_three_hours = time_delta / 10800.0
+        delta_mbar = delta_mbar / delta_three_hours
 
         if delta_mbar > 6.0:
             baroTrend = BarometerTrend.RISING_VERY_RAPIDLY
@@ -899,9 +899,9 @@ class LoopProcessor:
             baroTrend = BarometerTrend.RISING_QUICKLY
         elif delta_mbar > 1.5:
             baroTrend = BarometerTrend.RISING
-        elif delta_mbar > 0.1:
+        elif delta_mbar >= 0.1:
             baroTrend = BarometerTrend.RISING_SLOWLY
-        elif delta_mbar >= -0.1:
+        elif delta_mbar > -0.1:
             baroTrend = BarometerTrend.STEADY
         elif delta_mbar >= -1.5:
             baroTrend = BarometerTrend.FALLING_SLOWLY
