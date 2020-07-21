@@ -9,11 +9,11 @@ import logging
 import time
 import unittest
 
-from typing import List, Optional
-
 import weewx
 import weewx.accum
+from weeutil.weeutil import to_int
 
+from typing import Any, Dict
 
 import weeutil.logger
 
@@ -21,8 +21,6 @@ import user.loopdata
 import cc3000_packets
 import ip100_packets
 import simulator_packets
-
-weewx.debug = 1
 
 log = logging.getLogger(__name__)
 
@@ -542,28 +540,21 @@ class ProcessPacketTests(unittest.TestCase):
 
         trend_packets = []
         ten_min_packets = []
+        time_delta = 10800
+        baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
+
         for in_pkt in pkts:
             pkt = weewx.units.StdUnitConverters[unit_system].convertDict(in_pkt)
             pkt['usUnits'] = unit_system
-            day_accum.addRecord(pkt)
-            user.loopdata.LoopProcessor.save_period_packet(
-                pkt['dateTime'], pkt, trend_packets, 10800, trend_obstypes)
-            user.loopdata.LoopProcessor.save_period_packet(
-                pkt['dateTime'], pkt, ten_min_packets, 600, ten_min_obstypes)
+            pkt_time = to_int(pkt['dateTime'])
 
-        time_delta = 10800
+            loopdata_pkt: Dict[str, Any] =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+                pkt, pkt_time, unit_system, converter, formatter,
+                fields_to_include, day_accum, trend_packets, time_delta, trend_obstypes,
+                baro_trend_descs, ten_min_packets, ten_min_obstypes)
 
-        ten_min_accum = user.loopdata.LoopProcessor.create_ten_min_accum(
-            ten_min_packets, ten_min_obstypes, unit_system)
-
-        loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(
-            pkt, fields_to_include, trend_packets,
-            day_accum, ten_min_accum, time_delta,
-            user.loopdata.LoopData.construct_baro_trend_descs({}),
-            converter, formatter)
-
-            # {'dateTime': 1593883054, 'usUnits': 1, 'outTemp': 71.6, 'barometer': 30.060048358389471, 'dewpoint': 60.48739574937819
-            # {'dateTime': 1593883332, 'usUnits': 1, 'outTemp': 72.0, 'barometer': 30.055425865734495, 'dewpoint': 59.57749595318801
+        # {'dateTime': 1593883054, 'usUnits': 1, 'outTemp': 71.6, 'barometer': 30.060048358389471, 'dewpoint': 60.48739574937819
+        # {'dateTime': 1593883332, 'usUnits': 1, 'outTemp': 72.0, 'barometer': 30.055425865734495, 'dewpoint': 59.57749595318801
 
         self.maxDiff = None
 
@@ -672,28 +663,21 @@ class ProcessPacketTests(unittest.TestCase):
 
         trend_packets = []
         ten_min_packets = []
+        time_delta = 10800
+        baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
+
         for in_pkt in pkts:
             pkt = weewx.units.StdUnitConverters[unit_system].convertDict(in_pkt)
             pkt['usUnits'] = unit_system
-            day_accum.addRecord(pkt)
-            user.loopdata.LoopProcessor.save_period_packet(
-                pkt['dateTime'], pkt, trend_packets, 10800, trend_obstypes)
-            user.loopdata.LoopProcessor.save_period_packet(
-                pkt['dateTime'], pkt, ten_min_packets, 600, ten_min_obstypes)
+            pkt_time = to_int(pkt['dateTime'])
 
-        time_delta = 10800
+            loopdata_pkt: Dict[str, Any] =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+                pkt, pkt_time, unit_system, converter, formatter,
+                fields_to_include, day_accum, trend_packets, time_delta, trend_obstypes,
+                baro_trend_descs, ten_min_packets, ten_min_obstypes)
 
-        ten_min_accum = user.loopdata.LoopProcessor.create_ten_min_accum(
-            ten_min_packets, ten_min_obstypes, unit_system)
-
-        loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(
-            pkt, fields_to_include, trend_packets,
-            day_accum, ten_min_accum, time_delta,
-            user.loopdata.LoopData.construct_baro_trend_descs({}),
-            converter, formatter)
-
-            # {'dateTime': 1593883054, 'usUnits': 1, 'outTemp': 71.6, 'barometer': 30.060048358389471, 'dewpoint': 60.48739574937819
-            # {'dateTime': 1593883332, 'usUnits': 1, 'outTemp': 72.0, 'barometer': 30.055425865734495, 'dewpoint': 59.57749595318801
+        # {'dateTime': 1593883054, 'usUnits': 1, 'outTemp': 71.6, 'barometer': 30.060048358389471, 'dewpoint': 60.48739574937819
+        # {'dateTime': 1593883332, 'usUnits': 1, 'outTemp': 72.0, 'barometer': 30.055425865734495, 'dewpoint': 59.57749595318801
 
         self.maxDiff = None
 
@@ -793,7 +777,6 @@ class ProcessPacketTests(unittest.TestCase):
         first_pkt_time, pkts = cc3000_packets.CC3000Packets._get_packets()
         day_accum = ProcessPacketTests._get_day_accum(config_dict, first_pkt_time)
 
-
         converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
@@ -803,25 +786,18 @@ class ProcessPacketTests(unittest.TestCase):
 
         trend_packets = []
         ten_min_packets = []
+        time_delta = 10800
+        baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
+
         for in_pkt in pkts:
             pkt = weewx.units.StdUnitConverters[unit_system].convertDict(in_pkt)
             pkt['usUnits'] = unit_system
-            day_accum.addRecord(pkt)
-            user.loopdata.LoopProcessor.save_period_packet(
-                pkt['dateTime'], pkt, trend_packets, 10800, trend_obstypes)
-            user.loopdata.LoopProcessor.save_period_packet(
-                pkt['dateTime'], pkt, ten_min_packets, 600, ten_min_obstypes)
+            pkt_time = to_int(pkt['dateTime'])
 
-        time_delta = 10800
-
-        ten_min_accum = user.loopdata.LoopProcessor.create_ten_min_accum(
-            ten_min_packets, ten_min_obstypes, unit_system)
-
-        loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(
-            pkt, fields_to_include, trend_packets,
-            day_accum, ten_min_accum, time_delta,
-            user.loopdata.LoopData.construct_baro_trend_descs({}),
-            converter, formatter)
+            loopdata_pkt: Dict[str, Any] =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+                pkt, pkt_time, unit_system, converter, formatter,
+                fields_to_include, day_accum, trend_packets, time_delta, trend_obstypes,
+                baro_trend_descs, ten_min_packets, ten_min_obstypes)
 
         # {'dateTime': 1593975030, 'outTemp': 76.1, 'barometer': 30.014857385736513, 'dewpoint': 54.73645937493746
         # {'dateTime': 1593975366, 'outTemp': 75.4, 'barometer': 30.005222168998216, 'dewpoint': 56.53264564000546
@@ -924,7 +900,6 @@ class ProcessPacketTests(unittest.TestCase):
         first_pkt_time, pkts = simulator_packets.SimulatorPackets._get_packets()
         day_accum = ProcessPacketTests._get_day_accum(config_dict, first_pkt_time)
 
-
         converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
@@ -934,27 +909,21 @@ class ProcessPacketTests(unittest.TestCase):
 
         trend_packets = []
         ten_min_packets = []
+        time_delta = 10800
+        baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
+
         for in_pkt in pkts:
             pkt = weewx.units.StdUnitConverters[unit_system].convertDict(in_pkt)
             pkt['usUnits'] = unit_system
-            day_accum.addRecord(pkt)
-            user.loopdata.LoopProcessor.save_period_packet(
-                pkt['dateTime'], pkt, trend_packets, 10800, trend_obstypes)
-            user.loopdata.LoopProcessor.save_period_packet(
-                pkt['dateTime'], pkt, ten_min_packets, 600, ten_min_obstypes)
+            pkt_time = to_int(pkt['dateTime'])
 
-        time_delta = 10800
+            loopdata_pkt: Dict[str, Any] =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+                pkt, pkt_time, unit_system, converter, formatter,
+                fields_to_include, day_accum, trend_packets, time_delta, trend_obstypes,
+                baro_trend_descs, ten_min_packets, ten_min_obstypes)
 
-        ten_min_accum = user.loopdata.LoopProcessor.create_ten_min_accum(
-            ten_min_packets, ten_min_obstypes, unit_system)
-
-        loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(
-            pkt, fields_to_include, trend_packets,
-            day_accum, ten_min_accum, time_delta,
-            user.loopdata.LoopData.construct_baro_trend_descs({}),
-            converter, formatter)
-            # {'dateTime': 1593976709, 'outTemp': 0.3770915275499615,  'barometer': 1053.1667173695532, 'dewpoint': -2.6645899102645934
-            # {'dateTime': 1593977615, 'outTemp': 0.032246952164187964,'barometer': 1053.1483031344253, 'dewpoint': -3.003421962855377
+        # {'dateTime': 1593976709, 'outTemp': 0.3770915275499615,  'barometer': 1053.1667173695532, 'dewpoint': -2.6645899102645934
+        # {'dateTime': 1593977615, 'outTemp': 0.032246952164187964,'barometer': 1053.1483031344253, 'dewpoint': -3.003421962855377
 
         self.maxDiff = None
 

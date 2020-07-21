@@ -4,11 +4,11 @@
 #
 """Rainwise CC3000 packets to use for testing."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 class CC3000Packets():
     @staticmethod
-    def _get_packets() -> (int, List[Dict[str, Any]]):
+    def _get_packets() -> Tuple[int, List[Dict[str, Any]]]:
         return (1593975030, [
             {'dateTime': 1593975030, 'outTemp': 76.1, 'outHumidity': 52.0, 'pressure': 29.98, 'windDir': 22.0, 'windSpeed': 7.2, 'windGust': 7.2, 'day_rain_total': 0.0, 'supplyVoltage': 7.56, 'consBatteryVoltage': 5.26, 'inTemp': 86.1, 'usUnits': 1, 'rain': None, 'pm1_0': 8.811499999999999, 'pm2_5': 15.7985, 'pm10_0': 18.933999999999997, 'pm2_5_aqi': 62.0, 'pm2_5_aqic': 16776704, 'altimeter': 30.008705182754436, 'appTemp': 73.39573519912148, 'barometer': 30.014857385736513, 'beaufort': 2, 'cloudbase': 4312.035081816942, 'dewpoint': 54.73645937493746, 'heatindex': 75.4, 'humidex': 81.07075797833275, 'maxSolarRad': 954.9861641899106, 'rainRate': 0.0, 'windchill': 75.4},
             {'dateTime': 1593975032, 'outTemp': 75.4, 'outHumidity': 52.0, 'pressure': 29.98, 'windDir': 45.0, 'windSpeed': 7.2, 'windGust': 7.2, 'day_rain_total': 0.0, 'supplyVoltage': 7.56, 'consBatteryVoltage': 5.26, 'inTemp': 86.1, 'usUnits': 1, 'rain': 0.0, 'pm1_0': 8.811499999999999, 'pm2_5': 15.7985, 'pm10_0': 18.933999999999997, 'pm2_5_aqi': 62.0, 'pm2_5_aqic': 16776704, 'altimeter': 30.008705182754436, 'appTemp': 73.39573519912148, 'barometer': 30.005222168998216, 'beaufort': 2, 'cloudbase': 4312.035081816942, 'dewpoint': 56.53264564000546, 'heatindex': 75.4, 'humidex': 81.07075797833275, 'maxSolarRad': 955.034597882486, 'rainRate': 0.0, 'windchill': 75.4},

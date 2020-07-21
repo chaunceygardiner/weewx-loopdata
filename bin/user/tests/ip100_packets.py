@@ -4,11 +4,11 @@
 #
 """Rainwise IP100 packets to use for testing."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 class IP100Packets():
     @staticmethod
-    def _get_packets() -> (int, List[Dict[str, Any]]):
+    def _get_packets() -> Tuple[int, List[Dict[str, Any]]]:
         return (1593883054, [
             {'dateTime': 1593883054, 'usUnits': 1, 'outTemp': 71.6, 'inTemp': 74.0, 'outHumidity': 65.0, 'pressure': 30.03, 'windSpeed': 2.1, 'windDir': 22.0, 'windGust': 4.0, 'windGustDir': 45.0, 'day_rain_total': 0.0, 'rain': None, 'pm1_0': 11.74625, 'pm2_5': 21.67125, 'pm10_0': 24.32875, 'pm2_5_aqi': 74.0, 'pm2_5_aqic': 16774400, 'altimeter': 30.05874612262195, 'appTemp': 73.93585074149362, 'barometer': 30.060048358389471, 'beaufort': 1, 'cloudbase': 2847.2963742754514, 'dewpoint': 60.48739574937819, 'heatindex': 72.0, 'humidex': 79.50646352704942, 'maxSolarRad': 754.2268893343602, 'rainRate': 0.0, 'windchill': 72.0},
             {'dateTime': 1593883056, 'usUnits': 1, 'outTemp': 71.5, 'inTemp': 74.0, 'outHumidity': 65.0, 'pressure': 30.03, 'windSpeed': 2.1, 'windDir': 22.0, 'windGust': 4.0, 'windGustDir': 45.0, 'day_rain_total': 0.0, 'rain': 0.0, 'pm1_0': 11.74625, 'pm2_5': 21.67125, 'pm10_0': 24.32875, 'pm2_5_aqi': 74.0, 'pm2_5_aqic': 16774400, 'altimeter': 30.05874612262195, 'appTemp': 73.93585074149362, 'barometer': 30.055425865734495, 'beaufort': 1, 'cloudbase': 2847.2963742754514, 'dewpoint': 59.57749595318801, 'heatindex': 72.0, 'humidex': 79.50646352704942, 'maxSolarRad': 754.3208478216442, 'rainRate': 0.0, 'windchill': 72.0},

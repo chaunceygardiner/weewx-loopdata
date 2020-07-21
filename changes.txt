@@ -1,6 +1,12 @@
 loopdata change history
 -----------------------
 
+2.0.b14 07/21/2020
+
+[No user facing changes (but please report issues).]
+1. Internal refactoring so that tests use identical code
+   path on each loop packet as production uses.
+
 2.0.b13 07/21/2020
 
 [No user facing changes (but please report issues).]

@@ -44,7 +44,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '2.0.b13'
+LOOP_DATA_VERSION = '2.0.b14'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -468,31 +468,14 @@ class LoopProcessor:
                 log.debug(pkt)
 
                 # Process new packet.
-
-                # Save what is needed for delta. and 10m. fields
-                LoopProcessor.save_period_packet(pkt_time, pkt, self.trend_packets, self.cfg.time_delta, self.cfg.trend_obstypes)
-                LoopProcessor.save_period_packet(pkt_time, pkt, self.ten_min_packets, 600, self.cfg.ten_min_obstypes)
-
-                # Add to day accumulator.
-                try:
-                  self.day_accum.addRecord(pkt)
-                except weewx.accum.OutOfSpan:
-                    timespan = weeutil.weeutil.archiveDaySpan(pkt['dateTime'])
-                    self.day_accum = weewx.accum.Accum(timespan, unit_system=self.cfg.unit_system)
-                    # Try again:
-                    self.day_accum.addRecord(pkt)
-
-                # Create a 10m accumulator.
-                ten_min_accum = LoopProcessor.create_ten_min_accum(
-                    self.ten_min_packets, self.cfg.ten_min_obstypes,
-                    self.cfg.unit_system)
-
-                # Create the loopdata dictionary.
-                loopdata_pkt = LoopProcessor.create_loopdata_packet(pkt,
-                    self.cfg.fields_to_include, self.trend_packets,
-                    self.day_accum, ten_min_accum, self.cfg.time_delta,
+                loopdata_pkt: Dict[str, Any] = LoopProcessor.generate_loopdata_dictionary(
+                    pkt, pkt_time,
+                    self.cfg.unit_system, self.cfg.converter, self.cfg.formatter,
+                    self.cfg.fields_to_include,
+                    self.day_accum, 
+                    self.trend_packets, self.cfg.time_delta, self.cfg.trend_obstypes,
                     self.cfg.baro_trend_descs,
-                    self.cfg.converter, self.cfg.formatter)
+                    self.ten_min_packets, self.cfg.ten_min_obstypes)
 
                 # Write the loop-data.txt file.
                 LoopProcessor.write_packet_to_file(loopdata_pkt,
@@ -511,6 +494,41 @@ class LoopProcessor:
             raise
         finally:
             os.unlink(self.cfg.tmpname)
+
+    @staticmethod
+    def generate_loopdata_dictionary(
+            pkt: Dict[str, Any], pkt_time: int,
+            unit_system: int, converter: weewx.units.Converter, formatter: weewx.units.Formatter,
+            fields_to_include: List[CheetahName],
+            day_accum: weewx.accum.Accum,
+            trend_packets: List[PeriodPacket], time_delta: int, trend_obstypes: List[str],
+            baro_trend_descs: Dict[BarometerTrend, str],
+            ten_min_packets: List[PeriodPacket], ten_min_obstypes: List[str]) -> Dict[str, Any]:
+
+        # Save needed data for trend.
+        LoopProcessor.save_period_packet(pkt_time, pkt, trend_packets, time_delta, trend_obstypes)
+
+        # Save needed data for 10m.
+        LoopProcessor.save_period_packet(pkt_time, pkt, ten_min_packets, 600, ten_min_obstypes)
+
+        # Add packet to day accumulator.
+        try:
+          day_accum.addRecord(pkt)
+        except weewx.accum.OutOfSpan:
+            timespan = weeutil.weeutil.archiveDaySpan(pkt['dateTime'])
+            day_accum = weewx.accum.Accum(timespan, unit_system=unit_system)
+            # Try again:
+            day_accum.addRecord(pkt)
+
+        # Create a 10m accumulator.
+        ten_min_accum = LoopProcessor.create_ten_min_accum(
+            ten_min_packets, ten_min_obstypes, unit_system)
+
+        # Create the loopdata dictionary.
+        return LoopProcessor.create_loopdata_packet(pkt,
+            fields_to_include, trend_packets,
+            day_accum, ten_min_accum, time_delta,
+            baro_trend_descs, converter, formatter)
 
     @staticmethod
     def create_ten_min_accum(ten_min_packets: List[PeriodPacket],

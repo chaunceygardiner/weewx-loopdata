@@ -4,11 +4,11 @@
 #
 """Simulator packets to use for testing."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 class SimulatorPackets():
     @staticmethod
-    def _get_packets() -> (int, List[Dict[str, Any]]):
+    def _get_packets() -> Tuple[int, List[Dict[str, Any]]]:
         return (1593976709, [
             {'dateTime': 1593976709, 'outTemp': 0.3770915275499615, 'inTemp': 17.222222229567354, 'barometer': 1053.1667173695532, 'pressure': 1053.1667173695532, 'windSpeed': 5.3193819300076944e-09, 'windDir': 359.9999998810088, 'windGust': 6.3832571725015445e-09, 'windGustDir': 359.9999998810088, 'outHumidity': 79.99999998016814, 'inHumidity': 29.999999973557514, 'radiation': 993.5332048891827, 'UV': 13.90946486844856, 'rain': 0.0, 'txBatteryStatus': 0, 'windBatteryStatus': 0, 'rainBatteryStatus': 0, 'outTempBatteryStatus': 0, 'inTempBatteryStatus': 0, 'consBatteryVoltage': 12.0, 'heatingVoltage': 12.321096786413074, 'supplyVoltage': 12.0, 'referenceVoltage': 12.54708930817752, 'rxCheckPercent': 20.642821796661767, 'usUnits': 16, 'altimeter': 1054.169767556071, 'appTemp': -1.966492902500411, 'beaufort': 0, 'cloudbase': 378.1560609948845, 'dewpoint': -2.6645899102645934, 'heatindex': 0.3770915275499615, 'humidex': 0.3770915275499615, 'inDewpoint': -0.5113700923303394, 'maxSolarRad': 989.0023559380375, 'rainRate': 0.0, 'windchill': 0.3770915275499615},
             {'dateTime': 1593976711, 'outTemp': 0.3762837083117058, 'inTemp': 17.222222288328435, 'barometer': 1053.1667171904642, 'pressure': 1053.1667171904642, 'windSpeed': 4.7874434511300025e-08, 'windDir': 359.9999989290794, 'windGust': 5.7449321699436953e-08, 'windGustDir': 359.9999989290794, 'outHumidity': 79.99999982151323, 'inHumidity': 29.99999976201764, 'radiation': 993.5098675895888, 'UV': 13.909138146254243, 'rain': 0.0, 'txBatteryStatus': 0, 'windBatteryStatus': 0, 'rainBatteryStatus': 0, 'outTempBatteryStatus': 0, 'inTempBatteryStatus': 0, 'consBatteryVoltage': 12.67009090259493, 'heatingVoltage': 11.147639683954154, 'supplyVoltage': 12.0, 'referenceVoltage': 12.86349070198896, 'rxCheckPercent': 13.608003770911866, 'usUnits': 16, 'altimeter': 1054.1697673768367, 'appTemp': -1.9673976410609186, 'beaufort': 0, 'cloudbase': 378.15356372891176, 'dewpoint': -2.6653772466273598, 'heatindex': 0.3762837083117058, 'humidex': 0.3762837083117058, 'inDewpoint': -0.5113701380959043, 'maxSolarRad': 989.0348343612544, 'rainRate': 0.0, 'windchill': 0.3762837083117058},
