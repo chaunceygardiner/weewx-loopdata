@@ -347,6 +347,36 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, 'avg')
         self.assertEqual(cname.format_spec, None)
 
+    def test_get_fields_to_include(self):
+
+        specified_fields = [ 'current.dateTime.raw', 'current.outTemp',
+            'trend.barometer.desc', '10m.wind.max', '10m.wind.gustdir' ]
+
+        fields_to_include, trend_obstypes, ten_min_obstypes = \
+            user.loopdata.LoopData.get_fields_to_include(specified_fields)
+
+        self.assertEqual(len(fields_to_include), 5)
+        self.assertTrue(user.loopdata.CheetahName(
+            'current.dateTime.raw', None, None, 'current', 'dateTime', None, 'raw') in fields_to_include)
+        self.assertTrue(user.loopdata.CheetahName(
+            'current.outTemp', None, None, 'current', 'outTemp', None, None) in fields_to_include)
+        self.assertTrue(user.loopdata.CheetahName(
+            'trend.barometer.desc', None, None, 'trend', 'barometer', None, 'desc') in fields_to_include)
+        self.assertTrue(user.loopdata.CheetahName(
+            '10m.wind.max', None, None, '10m', 'wind', 'max', None) in fields_to_include)
+        self.assertTrue(user.loopdata.CheetahName(
+            '10m.wind.gustdir', None, None, '10m', 'wind', 'gustdir', None) in fields_to_include)
+
+        self.assertEqual(len(trend_obstypes), 1)
+        self.assertTrue('barometer' in trend_obstypes)
+
+        self.assertEqual(len(ten_min_obstypes), 5)
+        self.assertTrue('wind' in ten_min_obstypes)
+        self.assertTrue('windDir' in ten_min_obstypes)
+        self.assertTrue('windGust' in ten_min_obstypes)
+        self.assertTrue('windGustDir' in ten_min_obstypes)
+        self.assertTrue('windSpeed' in ten_min_obstypes)
+
     def test_get_barometer_trend_mbar(self):
         # Forecast descriptions for the 3 hour change in barometer readings.
         # Falling (or rising) slowly: 0.1 - 1.5mb in 3 hours
