@@ -835,7 +835,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # 75.4 - 76.1
         self.assertEqual(loopdata_pkt['trend.outTemp'], '-0.7°F')
-        self.assertTrue(loopdata_pkt['trend.outTemp.raw'], -0.6999 and loopdata_pkt['trend.outTemp.raw'] < -0.7001)
+        self.assertTrue(loopdata_pkt['trend.outTemp.raw'] > -0.6999 and loopdata_pkt['trend.outTemp.raw'] < -0.7001)
         self.assertEqual(loopdata_pkt['trend.outTemp.formatted'], '-0.7')
 
         # 56.53264564000546 - 54.73645937493746
@@ -888,6 +888,129 @@ class ProcessPacketTests(unittest.TestCase):
 
         self.assertEqual(loopdata_pkt['day.wind.vecavg.formatted'], '3')
         self.assertEqual(loopdata_pkt['day.wind.vecavg'], '3 mph')
+
+        self.assertEqual(loopdata_pkt['day.wind.vecdir.formatted'], '22')
+        self.assertEqual(loopdata_pkt['day.wind.vecdir'], '22°')
+
+    def test_cc3000_packet_processing_us_device_us_database_metric_report(self):
+
+        config_dict = ProcessPacketTests._get_config_dict('db-us.report-metric')
+        unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
+
+        first_pkt_time, pkts = cc3000_packets.CC3000Packets._get_packets()
+        day_accum = ProcessPacketTests._get_day_accum(config_dict, first_pkt_time)
+
+        converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
+        self.assertEqual(type(converter), weewx.units.Converter)
+        self.assertEqual(type(formatter), weewx.units.Formatter)
+
+        fields_to_include, trend_obstypes, ten_min_obstypes = \
+            user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
+
+        trend_packets = []
+        ten_min_packets = []
+        time_delta = 10800
+        baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
+
+        for in_pkt in pkts:
+            pkt = weewx.units.StdUnitConverters[unit_system].convertDict(in_pkt)
+            pkt['usUnits'] = unit_system
+            pkt_time = to_int(pkt['dateTime'])
+
+            loopdata_pkt: Dict[str, Any] =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+                pkt, pkt_time, unit_system, converter, formatter,
+                fields_to_include, day_accum, trend_packets, time_delta, trend_obstypes,
+                baro_trend_descs, ten_min_packets, ten_min_obstypes)
+
+        # {'dateTime': 1593975030, 'outTemp': 76.1, 'barometer': 30.014857385736513, 'dewpoint': 54.73645937493746
+        # {'dateTime': 1593975366, 'outTemp': 75.4, 'barometer': 30.005222168998216, 'dewpoint': 56.53264564000546
+
+        self.maxDiff = None
+
+        self.assertEqual(loopdata_pkt['unit.label.outTemp'], '°C')
+
+        self.assertEqual(loopdata_pkt['current.dateTime.raw'], 1593975366)
+        self.assertEqual(loopdata_pkt['current.dateTime'], '07/05/20 11:56:06')
+
+        self.assertEqual(loopdata_pkt['10m.windGust.max'], '12 km/h')
+        self.assertEqual(loopdata_pkt['10m.windGust.max.formatted'], '12')
+        self.assertTrue(loopdata_pkt['10m.windGust.max.raw'] > 11.5872 and loopdata_pkt['10m.windGust.max.raw'] < 11.5873)
+        self.assertEqual(loopdata_pkt['10m.windGust.maxtime'], '07/05/20 11:50:30')
+        self.assertEqual(loopdata_pkt['10m.windGust.maxtime.raw'], 1593975030)
+
+        self.assertEqual(loopdata_pkt['10m.outTemp.max'], '24.6°C')
+        self.assertEqual(loopdata_pkt['10m.outTemp.max.formatted'], '24.6')
+        self.assertTrue(loopdata_pkt['10m.outTemp.max.raw'] > 24.611 and loopdata_pkt['10m.outTemp.max.raw'] < 24.612)
+        self.assertEqual(loopdata_pkt['10m.outTemp.maxtime'], '07/05/20 11:50:34')
+        self.assertEqual(loopdata_pkt['10m.outTemp.maxtime.raw'], 1593975034)
+
+        self.assertEqual(loopdata_pkt['current.outTemp'], '24.1°C')
+        self.assertEqual(loopdata_pkt['current.barometer'], '1016.1 mbar')
+        self.assertEqual(loopdata_pkt['current.windSpeed'], '3 km/h')
+        self.assertEqual(loopdata_pkt['current.windDir'], '45°')
+        self.assertEqual(loopdata_pkt['current.windDir.ordinal_compass'], 'NE')
+
+        # 30.005222168998216 - 30.014857385736513
+        self.assertEqual(loopdata_pkt['trend.barometer'], '-0.3 mbar')
+        self.assertTrue(loopdata_pkt['trend.barometer.raw'] > -0.3262858387019 and loopdata_pkt['trend.barometer.raw'] < -0.3262858387018)
+        self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '-0.3')
+        self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Falling Slowly')
+
+        # 75.4 - 76.1
+        self.assertEqual(loopdata_pkt['trend.outTemp'], '-0.4°C')
+        self.assertTrue(loopdata_pkt['trend.outTemp.raw'] > -0.3889 and loopdata_pkt['trend.outTemp.raw'] < -0.3888)
+        self.assertEqual(loopdata_pkt['trend.outTemp.formatted'], '-0.4')
+
+        # 56.53264564000546 - 54.73645937493746
+        self.assertEqual(loopdata_pkt['trend.dewpoint'], '1.0°C')
+        self.assertTrue(loopdata_pkt['trend.dewpoint.raw'] > 0.99788125837and loopdata_pkt['trend.dewpoint.raw'] < 0.99788126)
+        self.assertEqual(loopdata_pkt['trend.dewpoint.formatted'], '1.0')
+
+        self.assertEqual(loopdata_pkt['day.rain.sum'], '0.0 mm')
+        self.assertEqual(loopdata_pkt['day.rain.sum.formatted'], '0.0')
+        self.assertEqual(loopdata_pkt['unit.label.rain'], ' mm')
+
+        self.assertEqual(loopdata_pkt['day.outTemp.avg'], '24.1°C')
+        self.assertEqual(loopdata_pkt['day.barometer.avg'], '1016.1 mbar')
+        self.assertEqual(loopdata_pkt['day.windSpeed.avg'], '6 km/h')
+        self.assertEqual(loopdata_pkt['day.windDir.avg'], '166°')
+
+        self.assertEqual(loopdata_pkt['day.outTemp.max'], '24.6°C')
+        self.assertEqual(loopdata_pkt['day.barometer.max'], '1016.4 mbar')
+        self.assertEqual(loopdata_pkt['day.windSpeed.max'], '12 km/h')
+        self.assertEqual(loopdata_pkt['day.windDir.max'], '360°')
+
+        self.assertEqual(loopdata_pkt['day.outTemp.min'], '23.8°C')
+        self.assertEqual(loopdata_pkt['day.barometer.min'], '1016.1 mbar')
+        self.assertEqual(loopdata_pkt['day.windSpeed.min'], '0 km/h')
+        self.assertEqual(loopdata_pkt['day.windDir.min'], '22°')
+
+        self.assertEqual(loopdata_pkt['unit.label.outTemp'], '°C')
+        self.assertEqual(loopdata_pkt['unit.label.barometer'], ' mbar')
+        self.assertEqual(loopdata_pkt['unit.label.windSpeed'], ' km/h')
+        self.assertEqual(loopdata_pkt['unit.label.windDir'], '°')
+
+        self.assertEqual(loopdata_pkt['unit.label.wind'], ' km/h')
+        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '07/05/20 11:50:30')
+        self.assertEqual(loopdata_pkt['day.wind.max.formatted'], '12')
+        self.assertEqual(loopdata_pkt['day.wind.max'], '12 km/h')
+        self.assertEqual(loopdata_pkt['day.wind.gustdir.formatted'], '22')
+        self.assertEqual(loopdata_pkt['day.wind.gustdir.ordinal_compass'], 'NNE')
+        self.assertEqual(loopdata_pkt['day.wind.gustdir'], '22°')
+
+        self.assertEqual(loopdata_pkt['day.wind.mintime'], '07/05/20 11:51:58')
+        self.assertEqual(loopdata_pkt['day.wind.min.formatted'], '0')
+        self.assertEqual(loopdata_pkt['day.wind.min'], '0 km/h')
+        self.assertEqual(loopdata_pkt['unit.label.wind'], ' km/h')
+
+        self.assertEqual(loopdata_pkt['day.wind.avg.formatted'], '6')
+        self.assertEqual(loopdata_pkt['day.wind.avg'], '6 km/h')
+
+        self.assertEqual(loopdata_pkt['day.wind.rms.formatted'], '6')
+        self.assertEqual(loopdata_pkt['day.wind.rms'], '6 km/h')
+
+        self.assertEqual(loopdata_pkt['day.wind.vecavg.formatted'], '5')
+        self.assertEqual(loopdata_pkt['day.wind.vecavg'], '5 km/h')
 
         self.assertEqual(loopdata_pkt['day.wind.vecdir.formatted'], '22')
         self.assertEqual(loopdata_pkt['day.wind.vecdir'], '22°')
