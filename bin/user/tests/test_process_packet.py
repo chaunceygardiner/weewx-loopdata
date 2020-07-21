@@ -835,7 +835,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # 75.4 - 76.1
         self.assertEqual(loopdata_pkt['trend.outTemp'], '-0.7°F')
-        self.assertTrue(loopdata_pkt['trend.outTemp.raw'] > -0.6999 and loopdata_pkt['trend.outTemp.raw'] < -0.7001)
+        self.assertTrue(loopdata_pkt['trend.outTemp.raw'] > -0.7001 and loopdata_pkt['trend.outTemp.raw'] < -0.6999)
         self.assertEqual(loopdata_pkt['trend.outTemp.formatted'], '-0.7')
 
         # 56.53264564000546 - 54.73645937493746
