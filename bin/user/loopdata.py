@@ -44,7 +44,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '2.0.b12'
+LOOP_DATA_VERSION = '2.0.b13'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -164,24 +164,18 @@ class LoopData(StdService):
             log.error('Could not find target_report: %s.  LoopData is exiting. Exception: %s' % (target_report, e))
             return
 
+        # Get [possibly localized] strings for trend.barometer.desc
         baro_trend_descs = LoopData.construct_baro_trend_descs(baro_trend_trans_dict)
 
+        # Process fields line of LoopData section.
         specified_fields = include_spec_dict.get('fields', [])
         fields_to_include, trend_obstypes, ten_min_obstypes = LoopData.get_fields_to_include(specified_fields)
 
+        # Get the time span (number of seconds) to use for trend.
         try:
             time_delta: int = to_int(target_report_dict.get('Units').get('Trend').get('time_delta'))
         except:
             time_delta = 10800
-
-        # Get converter from target report (if specified),
-        # else Defaults (if specified),
-        # else USUnits converter.
-        try:
-            group_unit_dict = target_report_dict['Units']['Groups']
-        except KeyError:
-            group_unit_dict = weewx.units.USUnits
-        converter = weewx.units.Converter(group_unit_dict)
 
         self.cfg: Configuration = Configuration(
             queue               = queue.SimpleQueue(),
@@ -194,7 +188,7 @@ class LoopData(StdService):
             specified_fields    = specified_fields,
             fields_to_include   = fields_to_include,
             formatter           = weewx.units.Formatter.fromSkinDict(target_report_dict),
-            converter           = converter,
+            converter           = weewx.units.Converter.fromSkinDict(target_report_dict),
             tmpname             = tmp.name,
             enable              = to_bool(rsync_spec_dict.get('enable')),
             remote_server       = rsync_spec_dict.get('remote_server'),
@@ -266,12 +260,12 @@ class LoopData(StdService):
     @staticmethod
     def get_target_report_dict(config_dict, report) -> Dict[str, Any]:
         # This code is from WeeWX's ReportEngine. Copyright Tom Keffer
-        # TODO: See if Tom will take a PR to make this available as a staticmethod.
+        # TODO: See if Tom will take a PR to make this available to extensions.
         # In the meaintime, it's probably safe to copy as the cofiguration files are public API.
         try:
             skin_dict = weeutil.config.deep_copy(weewx.defaults.defaults)
         except Exception:
-            # Fall back to copy.deepcopy for earlier weewx 4 installs.
+            # Fall back to copy.deepcopy for earlier than weewx 4.1.2 installs.
             skin_dict = copy.deepcopy(weewx.defaults.defaults)
         skin_dict['REPORT_NAME'] = report
         skin_config_path = os.path.join(
@@ -375,44 +369,6 @@ class LoopData(StdService):
                 timestamp_to_string(pkt['dateTime']), pkt))
         return packets
 
-    def fill_in_trend_packets_at_startup(self, dbm) -> List[PeriodPacket]:
-        trend_packets = []
-        earliest: int = to_int(time.time() - self.cfg.time_delta)
-        for cols in dbm.genSql('SELECT * FROM archive' \
-                ' WHERE dateTime >= %d ORDER BY dateTime ASC' % earliest):
-            pkt: Dict[str, Any] = {}
-            timestamp = 0
-            for i in range(len(cols)):
-                if self.archive_columns[i] == 'dateTime':
-                    timestamp = cols[i]
-                pkt[self.archive_columns[i]] = cols[i]
-            trend_packet = PeriodPacket(
-                timestamp = timestamp,
-                packet = pkt)
-            trend_packets.append(trend_packet)
-            log.debug('fill_in_trend_packets_at_startup: PeriodPacket(%s): %s' % (
-                timestamp_to_string(timestamp), pkt))
-        return trend_packets
-
-    def fill_in_10m_packets_at_startup(self, dbm) -> List[PeriodPacket]:
-        ten_min_packets = []
-        earliest: int = to_int(time.time() - 600)
-        for cols in dbm.genSql('SELECT * FROM archive' \
-                ' WHERE dateTime >= %d ORDER BY dateTime ASC' % earliest):
-            pkt: Dict[str, Any] = {}
-            timestamp = 0
-            for i in range(len(cols)):
-                if self.archive_columns[i] == 'dateTime':
-                    timestamp = cols[i]
-                pkt[self.archive_columns[i]] = cols[i]
-            ten_min_packet = PeriodPacket(
-                timestamp = timestamp,
-                packet = pkt)
-            ten_min_packets.append(ten_min_packet)
-            log.debug('fill_in_10m_packets_at_startup: PeriodPacket(%s): %s' % (
-                timestamp_to_string(timestamp), pkt))
-        return ten_min_packets
-
     def new_loop(self, event):
         log.debug('new_loop: event: %s' % event)
         self.cfg.queue.put(event)
@@ -495,7 +451,6 @@ class LoopProcessor:
         self.cfg = cfg
         self.archive_start: float = time.time()
         self.day_accum = day_accum
-        self.arc_per_accum: Optional[weewx.accum.Accum] = None
         self.trend_packets: List[PeriodPacket] = trend_packets
         self.ten_min_packets: List[PeriodPacket] = ten_min_packets
         LoopProcessor.log_configuration(cfg)
@@ -510,13 +465,15 @@ class LoopProcessor:
                 # This is a loop packet.
                 assert event.event_type == weewx.NEW_LOOP_PACKET
                 log.debug('Dequeued loop event(%s): %s' % (event, timestamp_to_string(pkt_time)))
-
-                # Process new packet.
                 log.debug(pkt)
 
+                # Process new packet.
+
+                # Save what is needed for delta. and 10m. fields
                 LoopProcessor.save_period_packet(pkt_time, pkt, self.trend_packets, self.cfg.time_delta, self.cfg.trend_obstypes)
                 LoopProcessor.save_period_packet(pkt_time, pkt, self.ten_min_packets, 600, self.cfg.ten_min_obstypes)
 
+                # Add to day accumulator.
                 try:
                   self.day_accum.addRecord(pkt)
                 except weewx.accum.OutOfSpan:
@@ -525,32 +482,23 @@ class LoopProcessor:
                     # Try again:
                     self.day_accum.addRecord(pkt)
 
-                if self.arc_per_accum is None:
-                    self.arc_per_accum = LoopProcessor.create_arc_per_accum(pkt_time,
-                        self.cfg.archive_interval, self.cfg.unit_system)
-
-                try:
-                  self.arc_per_accum.addRecord(pkt)
-                except weewx.accum.OutOfSpan:
-                    log.debug('Creating new arc_per_accum')
-                    self.arc_per_accum = LoopProcessor.create_arc_per_accum(pkt_time,
-                        self.cfg.archive_interval, self.cfg.unit_system)
-                    # Try again:
-                    self.arc_per_accum.addRecord(pkt)
-
+                # Create a 10m accumulator.
                 ten_min_accum = LoopProcessor.create_ten_min_accum(
                     self.ten_min_packets, self.cfg.ten_min_obstypes,
                     self.cfg.unit_system)
 
+                # Create the loopdata dictionary.
                 loopdata_pkt = LoopProcessor.create_loopdata_packet(pkt,
                     self.cfg.fields_to_include, self.trend_packets,
                     self.day_accum, ten_min_accum, self.cfg.time_delta,
                     self.cfg.baro_trend_descs,
                     self.cfg.converter, self.cfg.formatter)
 
+                # Write the loop-data.txt file.
                 LoopProcessor.write_packet_to_file(loopdata_pkt,
                     self.cfg.tmpname, self.cfg.loop_data_dir, self.cfg.filename)
                 if self.cfg.enable:
+                    # Rsync the loop-data.txt file.
                     LoopProcessor.rsync_data(pkt_time,
                         self.cfg.skip_if_older_than, self.cfg.loop_data_dir,
                         self.cfg.filename, self.cfg.remote_dir,
@@ -558,7 +506,6 @@ class LoopProcessor:
                         self.cfg.timeout, self.cfg.remote_user,
                         self.cfg.ssh_options, self.cfg.compress,
                         self.cfg.log_success)
-
         except Exception:
             weeutil.logger.log_traceback(log.critical, "    ****  ")
             raise
@@ -810,12 +757,6 @@ class LoopProcessor:
         # move it to filename
         shutil.move(tmpname, os.path.join(loop_data_dir, filename))
         log.debug('Moved to %s' % os.path.join(loop_data_dir, filename))
-
-    @staticmethod
-    def create_arc_per_accum(ts: int, arcint: int, unit_system: int) -> weewx.accum.Accum:
-        start_ts = weeutil.weeutil.startOfInterval(ts, arcint)
-        end_ts = start_ts + arcint
-        return weewx.accum.Accum(weeutil.weeutil.TimeSpan(start_ts, end_ts), unit_system)
 
     @staticmethod
     def log_configuration(cfg: Configuration):

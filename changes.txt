@@ -1,6 +1,13 @@
 loopdata change history
 -----------------------
 
+2.0.b13 07/21/2020
+
+[No user facing changes (but please report issues).]
+1. Clean up dead code.
+2. Simplify creation of target report converter.
+3. Elminate unused archivet period accumulator.
+
 2.0.b12 07/20/2020
 
 1. Test and fixes for trend.barometer.desc

@@ -1063,12 +1063,7 @@ class ProcessPacketTests(unittest.TestCase):
     def _get_converter_and_formatter(config_dict):
         target_report_dict = user.loopdata.LoopData.get_target_report_dict(config_dict, 'SeasonsReport')
 
-        try:
-            group_unit_dict = target_report_dict['Units']['Groups']
-        except KeyError:
-            group_unit_dict = weewx.units.USUnits
-        converter = weewx.units.Converter(group_unit_dict)
-
+        converter = weewx.units.Converter.fromSkinDict(target_report_dict)
         formatter = weewx.units.Formatter.fromSkinDict(target_report_dict)
 
         return converter, formatter
