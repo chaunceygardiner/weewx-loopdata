@@ -365,12 +365,13 @@ class ProcessPacketTests(unittest.TestCase):
     def test_get_fields_to_include(self):
 
         specified_fields = [ 'current.dateTime.raw', 'current.outTemp',
-            'trend.barometer.desc', '10m.wind.max', '10m.wind.gustdir' ]
+            'trend.barometer.desc', '10m.wind.max', '10m.wind.gustdir',
+            'day.barometer.min', 'day.barometer.max', 'day.wind.max', 'day.wind.gustdir', 'day.wind.maxtime' ]
 
         fields_to_include, trend_obstypes, day_obstypes, ten_min_obstypes = \
             user.loopdata.LoopData.get_fields_to_include(specified_fields)
 
-        self.assertEqual(len(fields_to_include), 5)
+        self.assertEqual(len(fields_to_include), 10)
         self.assertTrue(user.loopdata.CheetahName(
             'current.dateTime.raw', None, None, 'current', 'dateTime', None, 'raw') in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
@@ -381,6 +382,16 @@ class ProcessPacketTests(unittest.TestCase):
             '10m.wind.max', None, None, '10m', 'wind', 'max', None) in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
             '10m.wind.gustdir', None, None, '10m', 'wind', 'gustdir', None) in fields_to_include)
+        self.assertTrue(user.loopdata.CheetahName(
+            'day.barometer.min', None, None, 'day', 'barometer', 'min', None) in fields_to_include)
+        self.assertTrue(user.loopdata.CheetahName(
+            'day.barometer.max', None, None, 'day', 'barometer', 'max', None) in fields_to_include)
+        self.assertTrue(user.loopdata.CheetahName(
+            'day.wind.max', None, None, 'day', 'wind', 'max', None) in fields_to_include)
+        self.assertTrue(user.loopdata.CheetahName(
+            'day.wind.gustdir', None, None, 'day', 'wind', 'gustdir', None) in fields_to_include)
+        self.assertTrue(user.loopdata.CheetahName(
+            'day.wind.maxtime', None, None, 'day', 'wind', 'maxtime', None) in fields_to_include)
 
         self.assertEqual(len(trend_obstypes), 1)
         self.assertTrue('barometer' in trend_obstypes)
@@ -391,6 +402,14 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertTrue('windGust' in ten_min_obstypes)
         self.assertTrue('windGustDir' in ten_min_obstypes)
         self.assertTrue('windSpeed' in ten_min_obstypes)
+
+        self.assertEqual(len(day_obstypes), 6)
+        self.assertTrue('barometer' in day_obstypes)
+        self.assertTrue('wind' in day_obstypes)
+        self.assertTrue('windDir' in day_obstypes)
+        self.assertTrue('windGust' in day_obstypes)
+        self.assertTrue('windGustDir' in day_obstypes)
+        self.assertTrue('windSpeed' in day_obstypes)
 
     def test_get_barometer_trend_mbar(self):
         # Forecast descriptions for the 3 hour change in barometer readings.
@@ -539,6 +558,33 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(ten_min_packets[-1].timestamp, dateTime)
         # the first packet should be dateTime - 600
         self.assertEqual(ten_min_packets[0].timestamp, dateTime - 600)
+
+    def test_prune_period_packet(self):
+        """ test that packet is pruned to just the observations needed. """
+
+        pkt = { 'dateTime': 123456789, 'usUnits': 1, 'windSpeed': 10, 'windDir': 27 }
+        in_use_obstypes = { 'barometer' }
+        new_pkt = user.loopdata.LoopProcessor.prune_period_packet(pkt['dateTime'], pkt, in_use_obstypes)
+        self.assertEqual(len(new_pkt), 2)
+        self.assertEqual(new_pkt['dateTime'], 123456789)
+        self.assertEqual(new_pkt['usUnits'], 1)
+
+        pkt = { 'dateTime': 123456789, 'usUnits': 1, 'windSpeed': 10, 'windDir': 27 }
+        in_use_obstypes = { 'windSpeed' }
+        new_pkt = user.loopdata.LoopProcessor.prune_period_packet(pkt['dateTime'], pkt, in_use_obstypes)
+        self.assertEqual(len(new_pkt), 3)
+        self.assertEqual(new_pkt['dateTime'], 123456789)
+        self.assertEqual(new_pkt['usUnits'], 1)
+        self.assertEqual(new_pkt['windSpeed'], 10)
+
+        pkt = { 'dateTime': 123456789, 'usUnits': 1, 'windSpeed': 10, 'windDir': 27, 'barometer': 1035.01 }
+        in_use_obstypes = { 'windSpeed', 'barometer', 'windDir' }
+        new_pkt = user.loopdata.LoopProcessor.prune_period_packet(pkt['dateTime'], pkt, in_use_obstypes)
+        self.assertEqual(len(new_pkt), 5)
+        self.assertEqual(new_pkt['dateTime'], 123456789)
+        self.assertEqual(new_pkt['usUnits'], 1)
+        self.assertEqual(new_pkt['windSpeed'], 10)
+        self.assertEqual(new_pkt['barometer'], 1035.01)
 
     def test_ip100_packet_processing(self):
 

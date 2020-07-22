@@ -948,7 +948,8 @@ class LoopProcessor:
         LoopProcessor.trim_old_period_packets(period_packets, period_length, pkt_time)
 
     @staticmethod
-    def prune_period_packet(pkt_time: int, pkt: Dict[str, Any], in_use_obstypes: List[str]):
+    def prune_period_packet(pkt_time: int, pkt: Dict[str, Any], in_use_obstypes: List[str]
+            ) -> Dict[str, Any]:
         # Prune to only the observations needed.
         new_pkt: Dict[str, Any] = {}
         new_pkt['dateTime'] = pkt['dateTime']
