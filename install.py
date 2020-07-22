@@ -22,7 +22,7 @@ def loader():
 class LoopDataInstaller(ExtensionInstaller):
     def __init__(self):
         super(LoopDataInstaller, self).__init__(
-            version = "2.0.b14",
+            version = "2.0.b15",
             name = 'loopdata',
             description = 'Loop statistics for real time reporting.',
             author = "John A Kline",
@@ -31,10 +31,10 @@ class LoopDataInstaller(ExtensionInstaller):
             config = {
                 'LoopData': {
                     'FileSpec': {
-                        'loop_data_dir': '/home/weewx/public_html',
+                        'loop_data_dir': '.',
                         'filename':  'loop-data.txt'},
                     'Formatting': {
-                        'target_report': 'SeasonsReport'},
+                        'target_report': 'WeatherBoardReport'},
                     'RsyncSpec': {
                         'enable':'false',
                         'remote_server': 'www.foobar.com',

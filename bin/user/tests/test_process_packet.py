@@ -345,6 +345,23 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, 'avg')
         self.assertEqual(cname.format_spec, None)
 
+    def test_compose_loop_data_dir(self):
+        config_dict       : Dict[str, Any] = { 'WEEWX_ROOT'   : '/etc/weewx' }
+        target_report_dict: Dict[str, Any] = { 'HTML_ROOT'    : 'public_html/weatherboard'}
+        file_spec_dict    : Dict[str, Any] = { 'loop_data_dir': '.'}
+
+        self.assertEqual(user.loopdata.LoopData.compose_loop_data_dir(
+            config_dict, target_report_dict, file_spec_dict), '/etc/weewx/public_html/weatherboard/.')
+
+        self.assertEqual(user.loopdata.LoopData.compose_loop_data_dir(
+            config_dict, target_report_dict, {'loop_data_dir':'/var/weewx/loopdata'}), '/var/weewx/loopdata')
+
+        self.assertEqual(user.loopdata.LoopData.compose_loop_data_dir(
+            config_dict, {'HTML_ROOT':'/home/weewx/public_html/weatherboard'}, file_spec_dict), '/home/weewx/public_html/weatherboard/.')
+
+        self.assertEqual(user.loopdata.LoopData.compose_loop_data_dir(
+            config_dict, target_report_dict, {'loop_data_dir':'foobar'}), '/etc/weewx/public_html/weatherboard/foobar')
+
     def test_get_fields_to_include(self):
 
         specified_fields = [ 'current.dateTime.raw', 'current.outTemp',

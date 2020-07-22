@@ -44,7 +44,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '2.0.b14'
+LOOP_DATA_VERSION = '2.0.b15'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -145,12 +145,6 @@ class LoopData(StdService):
         # Get the column names of the archive table.
         self.archive_columns: List[str] = dbm.connection.columnsOf('archive')
 
-        # Compose the directory in which to write the file.
-        weewx_root: str = config_dict.get('WEEWX_ROOT')
-        html_root: str = std_report_dict.get('HTML_ROOT')
-        loop_dir: str = file_spec_dict.get('loop_data_dir', '.')
-        loop_data_dir = os.path.join(weewx_root, html_root, loop_dir)
-
         # Get a temporay file in which to write data before renaming.
         tmp = tempfile.NamedTemporaryFile(prefix='LoopData', delete=False)
         tmp.close()
@@ -163,6 +157,8 @@ class LoopData(StdService):
         except Exception as e:
             log.error('Could not find target_report: %s.  LoopData is exiting. Exception: %s' % (target_report, e))
             return
+
+        loop_data_dir = LoopData.compose_loop_data_dir(config_dict, target_report_dict, file_spec_dict)
 
         # Get [possibly localized] strings for trend.barometer.desc
         baro_trend_descs = LoopData.construct_baro_trend_descs(baro_trend_trans_dict)
@@ -213,6 +209,17 @@ class LoopData(StdService):
 
         self.bind(weewx.PRE_LOOP, self.pre_loop)
         self.bind(weewx.NEW_LOOP_PACKET, self.new_loop)
+
+    @staticmethod
+    def compose_loop_data_dir(config_dict: Dict[str, Any],
+            target_report_dict: Dict[str, Any], file_spec_dict: Dict[str, Any]
+            ) -> str:
+        # Compose the directory in which to write the file (if
+        # relative it is relative to the target_report_directory).
+        weewx_root: str = config_dict.get('WEEWX_ROOT')
+        html_root: str = target_report_dict.get('HTML_ROOT')
+        loop_data_dir: str = file_spec_dict.get('loop_data_dir', '.')
+        return os.path.join(weewx_root, html_root, loop_data_dir)
 
     @staticmethod
     def construct_baro_trend_descs(baro_trend_trans_dict: Dict[str, str]) -> Dict[BarometerTrend, str]:
@@ -472,7 +479,7 @@ class LoopProcessor:
                     pkt, pkt_time,
                     self.cfg.unit_system, self.cfg.converter, self.cfg.formatter,
                     self.cfg.fields_to_include,
-                    self.day_accum, 
+                    self.day_accum,
                     self.trend_packets, self.cfg.time_delta, self.cfg.trend_obstypes,
                     self.cfg.baro_trend_descs,
                     self.ten_min_packets, self.cfg.ten_min_obstypes)

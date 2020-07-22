@@ -5,6 +5,8 @@ Copyright (C)2020 by John A Kline (john@johnkline.com)
 
 **This extension requires Python 3.7 or later and WeeWX 4.**
 
+**LoopData 2.0.b15 is a breaking change from earlier 2.x betas.  `loop_data_dir` is now relative to the `target_report` directory.**
+
 **LoopData 2.x is a breaking change from 1.x.  See "How to Upgrade from LoopData 1.x." below.**
 
 ## Description
@@ -101,7 +103,7 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
 ```
 [LoopData]
     [[FileSpec]]
-        loop_data_dir = /home/weewx/public_html
+        loop_data_dir = .
         filename = loop-data.txt
     [[Formatting]]
         target_report = SeasonsReport
@@ -131,6 +133,8 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
 
 ## Entries in `LoopData` sections of `weewx.conf`:
  * `loop_data_dir`     : The directory into which the loop data file should be written.
+ *                       If a relative path is specified, it is relative to the
+ *                       `target_report` directory.
  * `filename`          : The name of the loop data file to write.
  * `target_report`     : The WeeWX report to target.  LoopData will use this report to determine the
                          units to use and the formatting to apply.
