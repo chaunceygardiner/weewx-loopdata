@@ -1,6 +1,14 @@
 loopdata change history
 -----------------------
 
+2.0.rc0 07/22/2020
+
+Release Candidate 0
+1. Fix regression in day accumulator introduced in 2.0.b14.
+2. Add test to cover above (added a previous day packet
+   so that tests cover a day boundary.
+3. Only accumulate specified day fields in the day accumulator.
+
 2.0.b15 07/21/2020
 
 1. Breaking change.  If loop_data_dir is a relative path, it

@@ -44,7 +44,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '2.0.b15'
+LOOP_DATA_VERSION = '2.0.rc0'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -90,6 +90,7 @@ class Configuration:
     timeout            : int
     time_delta         : int
     trend_obstypes     : List[str]
+    day_obstypes       : List[str]
     ten_min_obstypes   : List[str]
     baro_trend_descs   : Any # Dict[BarometerTrend, str]
 
@@ -125,8 +126,6 @@ class LoopData(StdService):
         self.loop_proccessor_started = False
 
         std_archive_dict      = config_dict.get('StdArchive', {})
-        std_report_dict       = config_dict.get('StdReport', {})
-
         loop_config_dict      = config_dict.get('LoopData', {})
         file_spec_dict        = loop_config_dict.get('FileSpec', {})
         formatting_spec_dict  = loop_config_dict.get('Formatting', {})
@@ -165,7 +164,7 @@ class LoopData(StdService):
 
         # Process fields line of LoopData section.
         specified_fields = include_spec_dict.get('fields', [])
-        fields_to_include, trend_obstypes, ten_min_obstypes = LoopData.get_fields_to_include(specified_fields)
+        fields_to_include, trend_obstypes, day_obstypes, ten_min_obstypes = LoopData.get_fields_to_include(specified_fields)
 
         # Get the time span (number of seconds) to use for trend.
         try:
@@ -199,6 +198,7 @@ class LoopData(StdService):
             skip_if_older_than  = to_int(rsync_spec_dict.get('skip_if_older_than', 3)),
             time_delta          = time_delta,
             trend_obstypes      = trend_obstypes,
+            day_obstypes        = day_obstypes,
             ten_min_obstypes    = ten_min_obstypes,
             baro_trend_descs    = baro_trend_descs)
 
@@ -216,9 +216,9 @@ class LoopData(StdService):
             ) -> str:
         # Compose the directory in which to write the file (if
         # relative it is relative to the target_report_directory).
-        weewx_root: str = config_dict.get('WEEWX_ROOT')
-        html_root: str = target_report_dict.get('HTML_ROOT')
-        loop_data_dir: str = file_spec_dict.get('loop_data_dir', '.')
+        weewx_root   : str = str(config_dict.get('WEEWX_ROOT'))
+        html_root    : str = str(target_report_dict.get('HTML_ROOT'))
+        loop_data_dir: str = str(file_spec_dict.get('loop_data_dir', '.'))
         return os.path.join(weewx_root, html_root, loop_data_dir)
 
     @staticmethod
@@ -237,9 +237,9 @@ class LoopData(StdService):
 
     @staticmethod
     def get_fields_to_include(specified_fields: List[str]
-            ) -> Tuple[List[CheetahName], List[str], List[str]]:
+            ) -> Tuple[List[CheetahName], List[str], List[str], List[str]]:
         """
-        Return fields_to_include, trend_obstypes, ten_min_obstypes
+        Return fields_to_include, trend_obstypes, day_obstypes, ten_min_obstypes
         """
         specified_fields = list(dict.fromkeys(specified_fields))
         fields_to_include: List[CheetahName] = []
@@ -248,8 +248,9 @@ class LoopData(StdService):
             if cname is not None:
                 fields_to_include.append(cname)
         trend_obstypes  : List[str] = LoopData.compute_period_obstypes(fields_to_include, 'trend')
+        day_obstypes    : List[str] = LoopData.compute_period_obstypes(fields_to_include, 'day')
         ten_min_obstypes: List[str] = LoopData.compute_period_obstypes(fields_to_include, '10m')
-        return fields_to_include, trend_obstypes, ten_min_obstypes
+        return fields_to_include, trend_obstypes, day_obstypes, ten_min_obstypes
 
     @staticmethod
     def compute_period_obstypes(fields_to_include: List[CheetahName], period: str) -> List[str]:
@@ -335,7 +336,7 @@ class LoopData(StdService):
             trend_packets: List[PeriodPacket] = []
             ten_min_packets: List[PeriodPacket] = []
             for pkt in archive_pkts:
-                # It's ok to add more than needed, they will fall off the end.
+                # It's OK to add more than needed, they will fall off the end.
                 LoopProcessor.save_period_packet(pkt['dateTime'], pkt, trend_packets, self.cfg.time_delta, self.cfg.trend_obstypes)
                 LoopProcessor.save_period_packet(pkt['dateTime'], pkt, ten_min_packets, 600, self.cfg.ten_min_obstypes)
 
@@ -475,11 +476,11 @@ class LoopProcessor:
                 log.debug(pkt)
 
                 # Process new packet.
-                loopdata_pkt: Dict[str, Any] = LoopProcessor.generate_loopdata_dictionary(
+                loopdata_pkt, self.day_accum = LoopProcessor.generate_loopdata_dictionary(
                     pkt, pkt_time,
                     self.cfg.unit_system, self.cfg.converter, self.cfg.formatter,
                     self.cfg.fields_to_include,
-                    self.day_accum,
+                    self.day_accum, self.cfg.day_obstypes,
                     self.trend_packets, self.cfg.time_delta, self.cfg.trend_obstypes,
                     self.cfg.baro_trend_descs,
                     self.ten_min_packets, self.cfg.ten_min_obstypes)
@@ -507,10 +508,11 @@ class LoopProcessor:
             pkt: Dict[str, Any], pkt_time: int,
             unit_system: int, converter: weewx.units.Converter, formatter: weewx.units.Formatter,
             fields_to_include: List[CheetahName],
-            day_accum: weewx.accum.Accum,
+            day_accum: weewx.accum.Accum, day_obstypes: List[str],
             trend_packets: List[PeriodPacket], time_delta: int, trend_obstypes: List[str],
             baro_trend_descs: Dict[BarometerTrend, str],
-            ten_min_packets: List[PeriodPacket], ten_min_obstypes: List[str]) -> Dict[str, Any]:
+            ten_min_packets: List[PeriodPacket], ten_min_obstypes: List[str]
+            ) -> Tuple[Dict[str, Any], weewx.accum.Accum]:
 
         # Save needed data for trend.
         LoopProcessor.save_period_packet(pkt_time, pkt, trend_packets, time_delta, trend_obstypes)
@@ -520,7 +522,8 @@ class LoopProcessor:
 
         # Add packet to day accumulator.
         try:
-          day_accum.addRecord(pkt)
+          pruned_pkt = LoopProcessor.prune_period_packet(pkt_time, pkt, day_obstypes)
+          day_accum.addRecord(pruned_pkt)
         except weewx.accum.OutOfSpan:
             timespan = weeutil.weeutil.archiveDaySpan(pkt['dateTime'])
             day_accum = weewx.accum.Accum(timespan, unit_system=unit_system)
@@ -535,7 +538,7 @@ class LoopProcessor:
         return LoopProcessor.create_loopdata_packet(pkt,
             fields_to_include, trend_packets,
             day_accum, ten_min_accum, time_delta,
-            baro_trend_descs, converter, formatter)
+            baro_trend_descs, converter, formatter), day_accum
 
     @staticmethod
     def create_ten_min_accum(ten_min_packets: List[PeriodPacket],
@@ -605,7 +608,7 @@ class LoopProcessor:
 
     @staticmethod
     def add_period_obstype(cname: CheetahName, period_accum: weewx.accum.Accum,
-            loopdata_pkt: Dict[str, Any], time_delta: int, converter: weewx.units.Converter,
+            loopdata_pkt: Dict[str, Any], converter: weewx.units.Converter,
             formatter: weewx.units.Formatter) -> None:
         if cname.obstype not in period_accum:
             log.debug('No %s stats for %s, skipping %s' % (cname.period, cname.obstype, cname.field))
@@ -762,10 +765,10 @@ class LoopProcessor:
                     loopdata_pkt, time_delta, baro_trend_descs, converter, formatter)
                 continue
             if cname.period == 'day':
-                LoopProcessor.add_period_obstype(cname, day_accum, loopdata_pkt, time_delta, converter, formatter)
+                LoopProcessor.add_period_obstype(cname, day_accum, loopdata_pkt, converter, formatter)
                 continue
             if cname.period == '10m' and ten_min_accum is not None:
-                LoopProcessor.add_period_obstype(cname, ten_min_accum, loopdata_pkt, time_delta, converter, formatter)
+                LoopProcessor.add_period_obstype(cname, ten_min_accum, loopdata_pkt, converter, formatter)
                 continue
 
         return loopdata_pkt
@@ -932,13 +935,10 @@ class LoopProcessor:
     def save_period_packet(pkt_time: int, pkt: Dict[str, Any],
             period_packets: List[PeriodPacket], period_length: int,
             in_use_obstypes: List[str]) -> None:
+
         # Don't save the entire packet as only in_use_obstypes are needed.
-        new_pkt: Dict[str, Any] = {}
-        new_pkt['dateTime'] = pkt['dateTime']
-        new_pkt['usUnits'] = pkt['usUnits']
-        for obstype in in_use_obstypes:
-            if obstype in pkt:
-                new_pkt[obstype] = pkt[obstype]
+        new_pkt = LoopProcessor.prune_period_packet(pkt_time, pkt, in_use_obstypes)
+
         period_packet: PeriodPacket = PeriodPacket(
             timestamp = pkt_time,
             packet = new_pkt)
@@ -946,6 +946,17 @@ class LoopProcessor:
         log.debug('save_period_packet: PeriodPacket(%s): %s' % (
             timestamp_to_string(pkt_time), new_pkt))
         LoopProcessor.trim_old_period_packets(period_packets, period_length, pkt_time)
+
+    @staticmethod
+    def prune_period_packet(pkt_time: int, pkt: Dict[str, Any], in_use_obstypes: List[str]):
+        # Prune to only the observations needed.
+        new_pkt: Dict[str, Any] = {}
+        new_pkt['dateTime'] = pkt['dateTime']
+        new_pkt['usUnits'] = pkt['usUnits']
+        for obstype in in_use_obstypes:
+            if obstype in pkt:
+                new_pkt[obstype] = pkt[obstype]
+        return new_pkt
 
     @staticmethod
     def trim_old_period_packets(period_packets: List[PeriodPacket],

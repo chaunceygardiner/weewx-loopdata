@@ -367,7 +367,7 @@ class ProcessPacketTests(unittest.TestCase):
         specified_fields = [ 'current.dateTime.raw', 'current.outTemp',
             'trend.barometer.desc', '10m.wind.max', '10m.wind.gustdir' ]
 
-        fields_to_include, trend_obstypes, ten_min_obstypes = \
+        fields_to_include, trend_obstypes, day_obstypes, ten_min_obstypes = \
             user.loopdata.LoopData.get_fields_to_include(specified_fields)
 
         self.assertEqual(len(fields_to_include), 5)
@@ -523,7 +523,7 @@ class ProcessPacketTests(unittest.TestCase):
 
     def test_save_period_packet(self):
         config_dict = ProcessPacketTests._get_config_dict('us')
-        fields_to_include, trend_obstypes, ten_min_obstypes = \
+        fields_to_include, trend_obstypes, day_obstypes, ten_min_obstypes = \
             user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
         unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
@@ -552,7 +552,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
-        fields_to_include, trend_obstypes, ten_min_obstypes = \
+        fields_to_include, trend_obstypes, day_obstypes, ten_min_obstypes = \
             user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
         trend_packets = []
@@ -565,9 +565,9 @@ class ProcessPacketTests(unittest.TestCase):
             pkt['usUnits'] = unit_system
             pkt_time = to_int(pkt['dateTime'])
 
-            loopdata_pkt: Dict[str, Any] =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+            loopdata_pkt, day_accum =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, converter, formatter,
-                fields_to_include, day_accum, trend_packets, time_delta, trend_obstypes,
+                fields_to_include, day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
                 baro_trend_descs, ten_min_packets, ten_min_obstypes)
 
         # {'dateTime': 1593883054, 'usUnits': 1, 'outTemp': 71.6, 'barometer': 30.060048358389471, 'dewpoint': 60.48739574937819
@@ -618,14 +618,14 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.rain.sum.formatted'], '0.00')
         self.assertEqual(loopdata_pkt['unit.label.rain'], ' in')
 
-        self.assertEqual(loopdata_pkt['day.outTemp.avg'], '72.0°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.avg'], '72.1°F')
         self.assertEqual(loopdata_pkt['day.barometer.avg'], '30.055 inHg')
         self.assertEqual(loopdata_pkt['day.windSpeed.avg'], '3 mph')
-        self.assertEqual(loopdata_pkt['day.windDir.avg'], '87°')
+        self.assertEqual(loopdata_pkt['day.windDir.avg'], '88°')
 
-        self.assertEqual(loopdata_pkt['day.outTemp.max'], '72.1°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.max'], '89.6°F')
         self.assertEqual(loopdata_pkt['day.barometer.max'], '30.060 inHg')
-        self.assertEqual(loopdata_pkt['day.windSpeed.max'], '6 mph')
+        self.assertEqual(loopdata_pkt['day.windSpeed.max'], '17 mph')
         self.assertEqual(loopdata_pkt['day.windDir.max'], '360°')
 
         self.assertEqual(loopdata_pkt['day.outTemp.min'], '71.4°F')
@@ -639,12 +639,12 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['unit.label.windDir'], '°')
 
         self.assertEqual(loopdata_pkt['unit.label.wind'], ' mph')
-        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '07/04/20 10:18:20')
-        self.assertEqual(loopdata_pkt['day.wind.max.formatted'], '6')
-        self.assertEqual(loopdata_pkt['day.wind.max'], '6 mph')
-        self.assertEqual(loopdata_pkt['day.wind.gustdir.formatted'], '45')
-        self.assertEqual(loopdata_pkt['day.wind.gustdir.ordinal_compass'], 'NE')
-        self.assertEqual(loopdata_pkt['day.wind.gustdir'], '45°')
+        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '07/04/20 06:40:00')
+        self.assertEqual(loopdata_pkt['day.wind.max.formatted'], '20')
+        self.assertEqual(loopdata_pkt['day.wind.max'], '20 mph')
+        self.assertEqual(loopdata_pkt['day.wind.gustdir.formatted'], '244')
+        self.assertEqual(loopdata_pkt['day.wind.gustdir.ordinal_compass'], 'WSW')
+        self.assertEqual(loopdata_pkt['day.wind.gustdir'], '244°')
 
         self.assertEqual(loopdata_pkt['day.wind.mintime'], '07/04/20 10:17:48')
         self.assertEqual(loopdata_pkt['day.wind.min.formatted'], '1')
@@ -660,8 +660,8 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.wind.vecavg.formatted'], '3')
         self.assertEqual(loopdata_pkt['day.wind.vecavg'], '3 mph')
 
-        self.assertEqual(loopdata_pkt['day.wind.vecdir.formatted'], '28')
-        self.assertEqual(loopdata_pkt['day.wind.vecdir'], '28°')
+        self.assertEqual(loopdata_pkt['day.wind.vecdir.formatted'], '26')
+        self.assertEqual(loopdata_pkt['day.wind.vecdir'], '26°')
 
     def test_ip100_us_packets_to_metric_db_to_us_report_processing(self):
 
@@ -675,7 +675,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
-        fields_to_include, trend_obstypes, ten_min_obstypes = \
+        fields_to_include, trend_obstypes, day_obstypes, ten_min_obstypes = \
             user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
         trend_packets = []
@@ -688,9 +688,9 @@ class ProcessPacketTests(unittest.TestCase):
             pkt['usUnits'] = unit_system
             pkt_time = to_int(pkt['dateTime'])
 
-            loopdata_pkt: Dict[str, Any] =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+            loopdata_pkt, day_accum =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, converter, formatter,
-                fields_to_include, day_accum, trend_packets, time_delta, trend_obstypes,
+                fields_to_include, day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
                 baro_trend_descs, ten_min_packets, ten_min_obstypes)
 
         # {'dateTime': 1593883054, 'usUnits': 1, 'outTemp': 71.6, 'barometer': 30.060048358389471, 'dewpoint': 60.48739574937819
@@ -741,14 +741,14 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.rain.sum.formatted'], '0.00')
         self.assertEqual(loopdata_pkt['unit.label.rain'], ' in')
 
-        self.assertEqual(loopdata_pkt['day.outTemp.avg'], '72.0°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.avg'], '72.1°F')
         self.assertEqual(loopdata_pkt['day.barometer.avg'], '30.055 inHg')
         self.assertEqual(loopdata_pkt['day.windSpeed.avg'], '3 mph')
-        self.assertEqual(loopdata_pkt['day.windDir.avg'], '87°')
+        self.assertEqual(loopdata_pkt['day.windDir.avg'], '88°')
 
-        self.assertEqual(loopdata_pkt['day.outTemp.max'], '72.1°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.max'], '89.6°F')
         self.assertEqual(loopdata_pkt['day.barometer.max'], '30.060 inHg')
-        self.assertEqual(loopdata_pkt['day.windSpeed.max'], '7 mph')
+        self.assertEqual(loopdata_pkt['day.windSpeed.max'], '17 mph')
         self.assertEqual(loopdata_pkt['day.windDir.max'], '360°')
 
         self.assertEqual(loopdata_pkt['day.outTemp.min'], '71.4°F')
@@ -762,12 +762,12 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['unit.label.windDir'], '°')
 
         self.assertEqual(loopdata_pkt['unit.label.wind'], ' mph')
-        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '07/04/20 10:18:20')
-        self.assertEqual(loopdata_pkt['day.wind.max.formatted'], '7')
-        self.assertEqual(loopdata_pkt['day.wind.max'], '7 mph')
-        self.assertEqual(loopdata_pkt['day.wind.gustdir.formatted'], '45')
-        self.assertEqual(loopdata_pkt['day.wind.gustdir.ordinal_compass'], 'NE')
-        self.assertEqual(loopdata_pkt['day.wind.gustdir'], '45°')
+        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '07/04/20 06:40:00')
+        self.assertEqual(loopdata_pkt['day.wind.max.formatted'], '20')
+        self.assertEqual(loopdata_pkt['day.wind.max'], '20 mph')
+        self.assertEqual(loopdata_pkt['day.wind.gustdir.formatted'], '244')
+        self.assertEqual(loopdata_pkt['day.wind.gustdir.ordinal_compass'], 'WSW')
+        self.assertEqual(loopdata_pkt['day.wind.gustdir'], '244°')
 
         self.assertEqual(loopdata_pkt['day.wind.mintime'], '07/04/20 10:17:48')
         self.assertEqual(loopdata_pkt['day.wind.min.formatted'], '1')
@@ -783,8 +783,8 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.wind.vecavg.formatted'], '3')
         self.assertEqual(loopdata_pkt['day.wind.vecavg'], '3 mph')
 
-        self.assertEqual(loopdata_pkt['day.wind.vecdir.formatted'], '28')
-        self.assertEqual(loopdata_pkt['day.wind.vecdir'], '28°')
+        self.assertEqual(loopdata_pkt['day.wind.vecdir.formatted'], '26')
+        self.assertEqual(loopdata_pkt['day.wind.vecdir'], '26°')
 
     def test_cc3000_packet_processing(self):
 
@@ -798,7 +798,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
-        fields_to_include, trend_obstypes, ten_min_obstypes = \
+        fields_to_include, trend_obstypes, day_obstypes, ten_min_obstypes = \
             user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
         trend_packets = []
@@ -811,9 +811,9 @@ class ProcessPacketTests(unittest.TestCase):
             pkt['usUnits'] = unit_system
             pkt_time = to_int(pkt['dateTime'])
 
-            loopdata_pkt: Dict[str, Any] =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+            loopdata_pkt, day_accum =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, converter, formatter,
-                fields_to_include, day_accum, trend_packets, time_delta, trend_obstypes,
+                fields_to_include, day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
                 baro_trend_descs, ten_min_packets, ten_min_obstypes)
 
         # {'dateTime': 1593975030, 'outTemp': 76.1, 'barometer': 30.014857385736513, 'dewpoint': 54.73645937493746
@@ -921,7 +921,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
-        fields_to_include, trend_obstypes, ten_min_obstypes = \
+        fields_to_include, trend_obstypes, day_obstypes, ten_min_obstypes = \
             user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
         trend_packets = []
@@ -934,9 +934,9 @@ class ProcessPacketTests(unittest.TestCase):
             pkt['usUnits'] = unit_system
             pkt_time = to_int(pkt['dateTime'])
 
-            loopdata_pkt: Dict[str, Any] =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+            loopdata_pkt, day_accum =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, converter, formatter,
-                fields_to_include, day_accum, trend_packets, time_delta, trend_obstypes,
+                fields_to_include, day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
                 baro_trend_descs, ten_min_packets, ten_min_obstypes)
 
         # {'dateTime': 1593975030, 'outTemp': 76.1, 'barometer': 30.014857385736513, 'dewpoint': 54.73645937493746
@@ -1044,7 +1044,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
-        fields_to_include, trend_obstypes, ten_min_obstypes = \
+        fields_to_include, trend_obstypes, day_obstypes, ten_min_obstypes = \
             user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
         trend_packets = []
@@ -1057,9 +1057,9 @@ class ProcessPacketTests(unittest.TestCase):
             pkt['usUnits'] = unit_system
             pkt_time = to_int(pkt['dateTime'])
 
-            loopdata_pkt: Dict[str, Any] =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+            loopdata_pkt, day_accum =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, converter, formatter,
-                fields_to_include, day_accum, trend_packets, time_delta, trend_obstypes,
+                fields_to_include, day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
                 baro_trend_descs, ten_min_packets, ten_min_obstypes)
 
         # {'dateTime': 1593976709, 'outTemp': 0.3770915275499615,  'barometer': 1053.1667173695532, 'dewpoint': -2.6645899102645934
