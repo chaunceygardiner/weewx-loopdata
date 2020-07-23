@@ -80,13 +80,12 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
 
 # Installation Instructions
 
-1. cd to the directory where you have cloned this extension, e.g.,
-
-   `cd ~/software/weewx-loopdata`
+1. Download the lastest release, weewx-loopdata-2.0.zip, from the
+   [GitHub Repository](https://github.com/chaunceygardiner/weewx-loopdata).
 
 1. Run the following command.
 
-   `sudo /home/weewx/bin/wee_extension --install .`
+   `sudo /home/weewx/bin/wee_extension --install weewx-loopdata-2.0.zip`
 
    Note: this command assumes weewx is installed in /home/weewx.  If it's installed
    elsewhere, adjust the path of wee_extension accordingly.
