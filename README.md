@@ -5,8 +5,6 @@ Copyright (C)2020 by John A Kline (john@johnkline.com)
 
 **This extension requires Python 3.7 or later and WeeWX 4.**
 
-**LoopData 2.0.b15 is a breaking change from earlier 2.x betas.  `loop_data_dir` is now relative to the `target_report` directory.**
-
 **LoopData 2.x is a breaking change from 1.x.  See "How to Upgrade from LoopData 1.x." below.**
 
 ## Description
@@ -14,51 +12,55 @@ Copyright (C)2020 by John A Kline (john@johnkline.com)
 LoopData is a WeeWX service that generates a json file (loop-data.txt)
 on every loop (e.g., every 2s).  Contained in the json are values for:
 
-* observations in the loop packet (e.g., current.outTemp)
-* trends (e.g., trend.barometer) -- see time_delta below
-* daily aggregate values (e.g., day.rain.sum)
-* rolling 10 min. aggregate values (e.g., 10m.outTemp.max, 10m.wind.gustdir)
+* observations in the loop packet (e.g., `current.outTemp`)
+* trends (e.g., `trend.barometer`) -- see time_delta below
+* daily aggregate values (e.g., `day.rain.sum`)
+* rolling 10 min. aggregate values (e.g., `10m.outTemp.max`, `10m.wind.gustdir`)
 
-The trend time_delta cannot be changed on a cast by case basis, but
-it can be changed for the entire target report (this is standard
+The trend time_delta *cannot* be changed on a cast by case basis, but
+it can be changed for the entire target report (i.e., by using the standard
 WeeWX customization):
 ```
     [[[Units]]]
         [[[[Trend]]]]
-            time_delta = 86400    # 24 hours
+            time_delta = 86400    # for a 24 hour trend.
 ```
+The default trend is 10800 (3 hours).  This is a WeeWX default.
 
 The json file will only include observations that are specified on the
-fields line in the LoopData section of the weewx.conf file.
+`fields` line in the `LoopData` section of the weewx.conf file.
 
 Typically, the loop-data.txt file is read by JavaScript on an HTML page
-to update the values on the page for every loop packet.
+to update the values on the page on every loop packet.
 
 A WeeWX report is specified in the LoopData configuration (e.g.,
-`SeasonsReport`).  With this information, LoopData automatically converts
+`WeatherBoardReport`).  With this information, LoopData automatically converts
 all values to the units called for in the report and also formats all
-readings according to the report specified (unless the .raw is specified).
-Thus, it is simple to replace the reports observations in JavaScript as
-they will already be in the correct units and in the correct format.
+readings according to the report specification (unless `.raw` is specified,
+e.g., `day.barometer.max.raw`).  Thus, it is simple to replace the reports
+observations with updated values in JavaScript as they will already be in the
+correct units and in the correct format.
 
-The keys in the json file use WeeWX cheetah syntax.
+The fields specified in weewx.conf on the fields line will be the keys
+in the json file.  They are specified using WeeWX Cheetah syntax.
 
 For example, the current outside temperature can be included as:
 
-* `current.outTemp.formatted`: 79.2
-* `current.outTemp`          : 79.2°F
-* `current.outTemp.raw`      : 79.175
+* `current.outTemp.formatted` which might yield `79.2`
+* `current.outTemp`          which might yeild `79.2°F`
+* `current.outTemp.raw`      which might yeild `79.175`
 
 The day average of outside tempeture can be included as:
 
-* `day.outTemp.avg.formatted`: 64.7
-* `day.outTemp.avg`          : 64.7°
-* `day.outTemp.avg.raw`      : 64.711
+* `day.outTemp.avg.formatted`which might yeild `64.7`
+* `day.outTemp.avg`          which might yeild `64.7°`
+* `day.outTemp.avg.raw`      which might yeild `64.711`
 
-Note: week, month, year and rainYear are under consideration.
+Note: week, month, year and rainYear periods are under consideration.
 
 If a field is requested, but the data is missing, it will not be present
-in loop-data.txt.
+in loop-data.txt.  Your JavaScript should expect this and react
+accordingly.
 
 ### Example of LoopData in Action
 
@@ -92,13 +94,14 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
 1. The install creates a LoopData section in weewx.conf as shown below.  Adjust
    the values accordingly.  In particular, specify the `target_report` for the
    report you wish to use for formatting and units and specify the `loop_data_dir`
-   where the loop-data.txt file should be writen.  You will eventually need  to
-   update the fields line with the fields you actually need for the report you
-   are targetting.  If you know them now, fill them in.  If not, you can change
-   this line later after you are sure LoopData is running correctly.  If you need
-   the loop-data.txt file pushed to a remote webserver, you will also need to
-   fill in the `RsyncSpec` fields; but it's best to fill that in later, after
-   you are up and running.
+   where the loop-data.txt file should be writen.  If `loop_data_dir` is a relative
+   path, it will be interpreted as being relatgive to the target_report directory.
+   You will eventually need  to update the fields line with the fields you actually
+   need for the report you are targetting.  If you know them now, fill them in.
+   If not, you can change this line later after you are sure LoopData is running
+   correctly.  If you need the loop-data.txt file pushed to a remote webserver,
+   you will also need to fill in the `RsyncSpec` fields; but one can fill
+   that in later, after LoopData is up and running.
 
 ```
 [LoopData]
@@ -106,7 +109,7 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
         loop_data_dir = .
         filename = loop-data.txt
     [[Formatting]]
-        target_report = SeasonsReport
+        target_report = WeatherBoardReport
     [[RsyncSpec]]
         enable = false
         remote_server = foo.bar.com
@@ -133,11 +136,13 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
 
 ## Entries in `LoopData` sections of `weewx.conf`:
  * `loop_data_dir`     : The directory into which the loop data file should be written.
- *                       If a relative path is specified, it is relative to the
- *                       `target_report` directory.
+                         If a relative path is specified, it is relative to the
+                         `target_report` directory.
  * `filename`          : The name of the loop data file to write.
- * `target_report`     : The WeeWX report to target.  LoopData will use this report to determine the
-                         units to use and the formatting to apply.
+ * `target_report`     : The WeeWX report to target.  LoopData will use this report to
+                         determine the units to use and the formatting to apply.  Also,
+                         if `loop_data_dir` is a relative path, it will be relative to
+                         the directory of the directory of `target report `.
  * `enable`            : Set to true to rsync the loop data file to `remote_server`.
  * `remote_server`     : The server to which gauge-data.txt will be copied.
                          To use rsync to sync loop-data.txt to a remote computer, passwordless ssh
@@ -164,18 +169,76 @@ Generally, if you can specify a field in a Cheetah template, and that field begi
 can specify with `day.`, you can also specify with `10m.` and the aggregate will apply to a
 rolling 10 minute window.
 
-Add the following extenstions to specialize the fields:
+For example, just like in a report, one can add the following extenstions to specialize the fields:
 * No extension specified`: Field is converted and formatted per the report.  A label is added.
 * `.raw`: field is converted per the report, but not formatted.
 * `.formatted`: Field is converted and formatted per the report.  NO label is added.
 * `.ordinal_compass`: for directional observations, the value is converted to text.
 
-`unit.label.<obs>` is also supported.
+Note: `unit.label.<obs>` is also supported (e.g., `unit.label.<obs>`).
 
-trend.barometer.desc is supported and provides a text version of the baromter rate.
-The text can be localized in weewx.conf.
+Lastly, `trend.barometer.desc` is also supported and provides a text version of the
+baromter rate (e.g., `Falling Slowly`).  Baromter trend descriptions can be localize in
+the `LoopData` section of weewx.conf
+```
+[LoopData]
+    [[BarometerTrendDescriptions]]
+        RISING_VERY_RAPIDLY = Rising Very Rapidly
+        RISING_QUICKLY = Rising Quickly
+        RISING = Rising
+        RISING_SLOWLY = Rising Slowly
+        STEADY = Steady
+        FALLING_SLOWLY = Falling Slowly
+        FALLING = Falling
+        FALLING_QUICKLY = Falling Quickly
+        FALLING_VERY_RAPIDLY = Falling Very Rapidly
+```
+
+## Rsync isn't Working for Me, Help!
+LoopData's uses WeeWX's `weeutil.rsyncupload.RsyncUpload` utility.  If you have rsync working
+for WeeWX to push your web pages to a remote server, loopdata's rsync is likely to work too.
+First get WeeWX working with rsync before you try to get loopdata working with rsync.
+
+By the way, it's best to put loop-data.txt outside of WeeWX's html tree so that WeeWX's rsync
+and loopdata's rsync don't both write the loop-data.txt file.  If you're up for configuring
+your websever to move it elsewhere (e.g., /home/weewx/loopdata/loop-data.txt), you should
+do so.  If not, it's probably OK.  There just *might* be the rare complaint in the log
+because the WeeWX main thread and the LoopData thread both tried to sync the same file at
+the same time.
+
+## Do I have to use rsync to sync loop-data.txt to a remote server?
+You don't have to sync to a remote server; but if you do want to sync to a remote server,
+rsync is the only mechanism provided.
+
+## About those Rsync Errors in the Log
+If one is using rsync, especially if the loop interval is short (e.g., 2s), it is expected that
+there will be log entries for connection timeouts, transmit timeouts, write errors and skipped
+packets.  By default only one second is allowed to connect or transmit the data.  Also, by
+default, if the loop data is older than 3s, it is skipped.  With these settings, the remote
+server may miss receiving some loop-data packets, but it won't get caught behind trying to send
+a backlog of old loop data.
+
+Following are examples of a connection timeout, transmission timeout, writer error and a skipped
+packet.  These errors are fine in moderation.  If too many packets are timing out, one might try
+changing the connection timeout or timeout values.
+```
+Jul  1 04:12:03 charlemagne weewx[1126] ERROR weeutil.rsyncupload: [['rsync', '--archive', '--stats', '--timeout=1', '-e ssh -o ConnectTimeout=1', '/home/weewx/gauge-data/loop-data.txt', 'root@www.paloaltoweather.com:/home/weewx/gauge-data/loop-data.txt']] reported errors: ssh: connect to host www.paloaltoweather.com port 22: Connection timed out. rsync: connection unexpectedly closed (0 bytes received so far) [sender]. rsync error: unexplained error (code 255) at io.c(235) [sender=3.1.3]
+Jun 30 20:51:48 charlemagne weewx[1126] ERROR weeutil.rsyncupload: [['rsync', '--archive', '--stats', '--timeout=1', '-e ssh -o ConnectTimeout=1', '/home/weewx/gauge-data/loop-data.txt', 'root@www.paloaltoweather.com:/home/weewx/gauge-data/loop-data.txt']] reported errors: [sender] io timeout after 1 seconds -- exiting. rsync error: timeout in data send/receive (code 30) at io.c(204) [sender=3.1.3]
+Jun 27 10:18:37 charlemagne weewx[17982] ERROR weeutil.rsyncupload: [['rsync', '--archive', '--stats', '--timeout=1', '-e ssh -o ConnectTimeout=1', '/home/weewx/gauge-data/loop-data.txt', 'root@www.paloaltoweather.com:/home/weewx/gauge-data/loop-data.txt']] reported errors: rsync: [sender] write error: Broken pipe (32). rsync error: error in socket IO (code 10) at io.c(829) [sender=3.1.3]
+Jun 27 23:15:53 charlemagne weewx[10156] INFO user.loopdata: skipping packet (2020-06-27 23:15:50 PDT (1593324950)) with age: 3.348237
+```
+
+## Why require Python 3.7 or later?
+
+LoopData code includes type annotation which do not work with Python 2, nor in
+earlier versions of Python 3.
 
 # How to Upgrade from LoopData 1.x.
+
+[PLEASE NOTE: IF YOU ARE NOT UPGRADING FROM LoopData 1.x, no good will come from reading
+this section.  Furthermore, it may confuse you.  If you are looking for what fields
+can be in `loop-data.txt`, look for fields in your reports.  It is those you can add
+in `loop-data.txt`.]
 
 LoopData 2.x is a breaking change to 1.x installations. The following steps will help guide 
 you through the process:
@@ -217,45 +280,6 @@ you through the process:
 
 The followiung have been removed from LoopData: `windRose` observations,
 `UNITS_<obs>` fields and the capability to `rename` the keys in loop-data.txt.
-
-## Rsync isn't Working for Me, Help!
-LoopData's uses WeeWX's `weeutil.rsyncupload.RsyncUpload` utility.  If you have rsync working
-for WeeWX to push your web pages to a remote server, loopdata's rsync is likely to work too.
-First get WeeWX working with rsync before you try to get loopdata working with rsync.
-
-By the way, it's best to put loop-data.txt outside of WeeWX's html tree so that WeeWX's rsync
-and loopdata's rsync don't both write the loop-data.txt file.  If you're up for configuring
-your websever to move it elsewhere (e.g., /home/weewx/loopdata/loop-data.txt), you should
-do so.  If not, it's probably OK.  There just *might* be the rare complaint in the log
-because the WeeWX main thread and the LoopData thread both tried to sync the same file at
-the same time.
-
-## Do I have to use rsync to sync loop-data.txt to a remote server?
-You don't have to sync to a remote server; but if you do want to sync to a remote server,
-rsync is the only mechanism provided.
-
-## About those Rsync Errors in the Log
-If one is using rsync, especially if the loop interval is short (e.g., 2s), it is expected that
-there will be log entries for connection timeouts, transmit timeouts, write errors and skipped
-packets.  By default only one second is allowed to connect or transmit the data.  Also, by
-default, if the loop data is older than 3s, it is skipped.  With these settings, the remote
-server may miss receiving some loop-data packets, but it won't get caught behind trying to send
-a backlog of old loop data.
-
-Following are examples of a connection timeout, transmission timeout, writer error and a skipped
-packet.  These errors are fine in moderation.  If too many packets are timing out, one might try
-changing the connection timeout or timeout values.
-```
-Jul  1 04:12:03 charlemagne weewx[1126] ERROR weeutil.rsyncupload: [['rsync', '--archive', '--stats', '--timeout=1', '-e ssh -o ConnectTimeout=1', '/home/weewx/gauge-data/loop-data.txt', 'root@www.paloaltoweather.com:/home/weewx/gauge-data/loop-data.txt']] reported errors: ssh: connect to host www.paloaltoweather.com port 22: Connection timed out. rsync: connection unexpectedly closed (0 bytes received so far) [sender]. rsync error: unexplained error (code 255) at io.c(235) [sender=3.1.3]
-Jun 30 20:51:48 charlemagne weewx[1126] ERROR weeutil.rsyncupload: [['rsync', '--archive', '--stats', '--timeout=1', '-e ssh -o ConnectTimeout=1', '/home/weewx/gauge-data/loop-data.txt', 'root@www.paloaltoweather.com:/home/weewx/gauge-data/loop-data.txt']] reported errors: [sender] io timeout after 1 seconds -- exiting. rsync error: timeout in data send/receive (code 30) at io.c(204) [sender=3.1.3]
-Jun 27 10:18:37 charlemagne weewx[17982] ERROR weeutil.rsyncupload: [['rsync', '--archive', '--stats', '--timeout=1', '-e ssh -o ConnectTimeout=1', '/home/weewx/gauge-data/loop-data.txt', 'root@www.paloaltoweather.com:/home/weewx/gauge-data/loop-data.txt']] reported errors: rsync: [sender] write error: Broken pipe (32). rsync error: error in socket IO (code 10) at io.c(829) [sender=3.1.3]
-Jun 27 23:15:53 charlemagne weewx[10156] INFO user.loopdata: skipping packet (2020-06-27 23:15:50 PDT (1593324950)) with age: 3.348237
-```
-
-## Why require Python 3.7 or later?
-
-LoopData code includes type annotation which do not work with Python 2, nor in
-earlier versions of Python 3.
 
 ## Licensing
 

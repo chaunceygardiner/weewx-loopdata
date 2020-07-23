@@ -1,8 +1,14 @@
 loopdata change history
 -----------------------
 
-2.0.rc0 07/22/2020
+2.0 Release
+-----------
+1. The release is identical to rc0; except for a small
+   type annotation change and additional tests.
+2. Updated documentation (README).
 
+2.0.rc0 07/22/2020
+------------------
 Release Candidate 0
 1. Fix regression in day accumulator introduced in 2.0.b14.
 2. Add test to cover above (added a previous day packet
@@ -10,7 +16,7 @@ Release Candidate 0
 3. Only accumulate specified day fields in the day accumulator.
 
 2.0.b15 07/21/2020
-
+------------------
 1. Breaking change.  If loop_data_dir is a relative path, it
    is now relative to the target_report directory.  After
    installing, check loop_data_dir before you restart WeeWX.
@@ -20,89 +26,89 @@ Release Candidate 0
    installs.
 
 2.0.b14 07/21/2020
-
+------------------
 [No user facing changes (but please report issues).]
 1. Internal refactoring so that tests use identical code
    path on each loop packet as production uses.
 
 2.0.b13 07/21/2020
-
+------------------
 [No user facing changes (but please report issues).]
 1. Clean up dead code.
 2. Simplify creation of target report converter.
 3. Elminate unused archivet period accumulator.
 
 2.0.b12 07/20/2020
-
+------------------
 1. Test and fixes for trend.barometer.desc
 
 2.0.b11 07/20/2020
-
+------------------
 1. Ability to localize trend.barometer.desc text in weewx.conf.
 
 2.0.b10 07/19/2020
-
+------------------
 1. Substantial refactoring.  More tests.
 
 2.0.b9 07/19/2020
-
+-----------------
 1. 10m. is now a full fledged time period (rolling 10 minutes)
    and supports all that day. supports.  For example, 10m.wind.gustdir
 
 2.0.b8 07/18/2020
-
+-----------------
 1. Save values for trends for only trend fields specified in fields clause.
 2. Only parse fields one time.
 
 2.0.b7 07/18/2020
-
+-----------------
 1. trend no longer restricted to barometer.
 
 2.0.b6 07/13/2020
-
+-----------------
 1. Install no longer adds the rename line to weewx.conf.  rename
    is no longer supported.  Note: it will not remove rename on
    existing installations, but rename will be ignored.
 1. Updated README.
 
 2.0.b5 07/12/2020
-
+-----------------
 1. Fix for case where barometer is reported intermittently.
 2. LoopData now tested in simulator for both intermittent case and
    when batometer/pressure never reported.
 
 2.0.b4 07/12/2020
-
+-----------------
 1. If not observation available, the key/value pair
    will not be present in the json file.
 
 2.0.b3 07/12/2020
-
+-----------------
 1. Handle stations with no barometer.
 
 2.0.b2 07/12/2020
-
+-----------------
 1. Watch for None when formatting.
 
 2. pyflakes and mypy cleanup.
 
 2.0.b1 07/11/2020
-
+-----------------
 1. Rewritten to use cheetah like identifiers for fields (e.g., $day.rain.sum).
 
 2. Old names are NOT supported.  For existing installations, fields need to be
    renamed in weewx.conf (LoopData fields), your Cheetah templates/JavasScript.
 
 1.3.19 07/09/2020
-
+-----------------
 1. Catch and log setup errors.  Allow WeeWX to continue with LoopData.
 
 1.3.18 07/09/2020
-
+-----------------
 1. Handle null barometer values in database.
 
 1.3.17 07/08/2020
-
+-----------------
 1. Bug fix for wind (not FMT_) version of day stats.
    The values were not being formatted to the proper
    number of decimal places.
@@ -110,36 +116,36 @@ Release Candidate 0
 2. Add missing highs and lows for vector stats (aka, wind).
 
 1.3.16 07/07/2020
-
+-----------------
 1. Add missing highs and lows for vector stats (aka, wind).
 2. Add formatting for all times (e.g., FMT_dateTime, FMT_T_HI_wind)
 
 1.3.15 07/06/2020
-
+-----------------
 Fix OutOfSpan error caused by creating accumulator with current time
 rather than packet time.
 
 1.3.14 07/06/2020
-
+-----------------
 1. Add support for VectorStats:  Wind Avg, Wind RMS, Wind Vector Avg, Wind Vector Dir.
 2. More tests written.
 
 
 1.3.13 07/05/2020
-
+-----------------
 Fall back to using copy.deepcopy for earlier WeeWX 4 versions.
 
 1.3.12 07/05/2020
-
+-----------------
 1. Properly import weeutil.config
 
 1.3.11 07/05/2020
-
+-----------------
 1. pyflakes found some issues including lots of unused imports.
 2. Update one test.
 
 1.3.10 07/05/2020
-
+-----------------
 1. Redo how 10m max gust is handled when windGust not in packet.
    Simply substitue windSpeed for windGust.
 2. Test overriding km_per_hour label in weewx.conf Defaults>Units.
@@ -148,7 +154,7 @@ Fall back to using copy.deepcopy for earlier WeeWX 4 versions.
 5. Add test of Simulator packets.
 
 1.3.9 07/05/2020
-
+----------------
 1. Properly construct dictionary of target_report so formatting
    and conversion actually does what it should.
 2. Fix a problem reported by a user running pyflakes.  USUnit
@@ -158,17 +164,18 @@ Fall back to using copy.deepcopy for earlier WeeWX 4 versions.
    accumulator stats is used to compute 10m gust.
 
 1.3.8 07/05/2020
+----------------
 Require at least Python 3.7.
 Handle None for windSpeed and and windDir in the database (as some drivers write None rather than omitting).
 More tests.
 
 
 1.3.7 07/04/2020
-
+----------------
 Refactor loopdata.py to facilitate testing.
 
 1.3.6 07/04/2020
-
+----------------
 Add tests for conversions and formatting:
 weewx.METRIC   -> metric reports
 weewx.METRIC   -> us     reports
@@ -178,54 +185,55 @@ weewx.METRICWX -> metric reports
 weewx.METRICWX -> us     reports
 
 1.3.5 07/03/2020
-
+----------------
 Converting to report units was being done correctly for observations.
 This release fixes conversions for highs, lows, sums, averages and weighed averages.
 
 1.3.4 07/02/2020
-
+----------------
 Installer uses FMT_SUM_rain rather than FMT_day_rain_total in LoopData section of weewx.conf.
 day_rain_total is not emitted by many drivers and was a source of confusion.
 
 1.3.3 07/02/2020
-
+----------------
 Refrain from trying to format the sum of unix_epoch observations.
 
 1.3.2 07/02/2020
-
+----------------
 Catch FMT_SUM_ formatting exceptions and print error to log with obstype,
 unit_type and unit_group.
 
 1.3.1 06/30/2020
-
+----------------
 Fixed issue when specifying port in rsync section.  RsyncUpload was expecting a string
 for port, loopdata was passing an int.
 
 1.3 06/29/2020
-
+--------------
 Introduced AVG_/FMT_AVG_ and WAVG_/FMT_WAVG_ prefixes for today's average
 and weighted average of an observation, respectively.
 
 1.2.2 06/28/2020
-
+----------------
 Introduced SUM_ and FMT_SUM_ prefixes for today's totals of observations.
 This is most useful for rain, where SUM_rain (or FMT_SUM_rain) will yield
 today's cumultive rainfall.
 
 1.2.1 06/27/2020
+----------------
 Inexplicably, just a version bump.  No other changes.
 
 1.2 06/27/2020
-
+--------------
 Fixed issue where loop thread was created multiple times.
 
 
 1.1 06/27/2020
-
+--------------
 Fixes to work with Metric/Mixed database and to correctly target
 non-US reports.
 
 
 1.0 01/19/2020
-
+--------------
 Initial release of loopdata.
