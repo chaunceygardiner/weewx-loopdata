@@ -89,6 +89,7 @@ class Configuration:
     skip_if_older_than : int
     timeout            : int
     time_delta         : int
+    current_obstypes   : List[str]
     trend_obstypes     : List[str]
     day_obstypes       : List[str]
     ten_min_obstypes   : List[str]
@@ -164,7 +165,8 @@ class LoopData(StdService):
 
         # Process fields line of LoopData section.
         specified_fields = include_spec_dict.get('fields', [])
-        fields_to_include, trend_obstypes, day_obstypes, ten_min_obstypes = LoopData.get_fields_to_include(specified_fields)
+        (fields_to_include, current_obstypes, trend_obstypes, day_obstypes,
+            ten_min_obstypes) = LoopData.get_fields_to_include(specified_fields)
 
         # Get the time span (number of seconds) to use for trend.
         try:
@@ -197,6 +199,7 @@ class LoopData(StdService):
             timeout             = to_int(rsync_spec_dict.get('timeout', 1)),
             skip_if_older_than  = to_int(rsync_spec_dict.get('skip_if_older_than', 3)),
             time_delta          = time_delta,
+            current_obstypes    = current_obstypes,
             trend_obstypes      = trend_obstypes,
             day_obstypes        = day_obstypes,
             ten_min_obstypes    = ten_min_obstypes,
@@ -237,9 +240,10 @@ class LoopData(StdService):
 
     @staticmethod
     def get_fields_to_include(specified_fields: List[str]
-            ) -> Tuple[List[CheetahName], List[str], List[str], List[str]]:
+            ) -> Tuple[
+            List[CheetahName], List[str], List[str], List[str], List[str]]:
         """
-        Return fields_to_include, trend_obstypes, day_obstypes, ten_min_obstypes
+        Return fields_to_include, current_obstypes, trend_obstypes, day_obstypes, ten_min_obstypes
         """
         specified_fields = list(dict.fromkeys(specified_fields))
         fields_to_include: List[CheetahName] = []
@@ -247,10 +251,23 @@ class LoopData(StdService):
             cname: Optional[CheetahName] = LoopData.parse_cname(field)
             if cname is not None:
                 fields_to_include.append(cname)
-        trend_obstypes  : List[str] = LoopData.compute_period_obstypes(fields_to_include, 'trend')
-        day_obstypes    : List[str] = LoopData.compute_period_obstypes(fields_to_include, 'day')
-        ten_min_obstypes: List[str] = LoopData.compute_period_obstypes(fields_to_include, '10m')
-        return fields_to_include, trend_obstypes, day_obstypes, ten_min_obstypes
+        current_obstypes  : List[str] = LoopData.compute_period_obstypes(
+            fields_to_include, 'current')
+        trend_obstypes  : List[str] = LoopData.compute_period_obstypes(
+            fields_to_include, 'trend')
+        day_obstypes    : List[str] = LoopData.compute_period_obstypes(
+            fields_to_include, 'day')
+        ten_min_obstypes: List[str] = LoopData.compute_period_obstypes(
+            fields_to_include, '10m')
+
+        # current_obstypes is special because current observations are
+        # needed to feed all the others.  As such, take the union of all.
+        current_obstypes = current_obstypes + trend_obstypes + day_obstypes \
+            + ten_min_obstypes
+        current_obstypes = list(dict.fromkeys(current_obstypes))
+
+        return (fields_to_include, current_obstypes, trend_obstypes,
+            day_obstypes, ten_min_obstypes)
 
     @staticmethod
     def compute_period_obstypes(fields_to_include: List[CheetahName], period: str) -> List[str]:
@@ -479,7 +496,7 @@ class LoopProcessor:
                 loopdata_pkt, self.day_accum = LoopProcessor.generate_loopdata_dictionary(
                     pkt, pkt_time,
                     self.cfg.unit_system, self.cfg.converter, self.cfg.formatter,
-                    self.cfg.fields_to_include,
+                    self.cfg.fields_to_include, self.cfg.current_obstypes,
                     self.day_accum, self.cfg.day_obstypes,
                     self.trend_packets, self.cfg.time_delta, self.cfg.trend_obstypes,
                     self.cfg.baro_trend_descs,
@@ -507,7 +524,7 @@ class LoopProcessor:
     def generate_loopdata_dictionary(
             in_pkt: Dict[str, Any], pkt_time: int,
             unit_system: int, converter: weewx.units.Converter, formatter: weewx.units.Formatter,
-            fields_to_include: List[CheetahName],
+            fields_to_include: List[CheetahName], current_obstypes: List[str],
             day_accum: weewx.accum.Accum, day_obstypes: List[str],
             trend_packets: List[PeriodPacket], time_delta: int, trend_obstypes: List[str],
             baro_trend_descs: Dict[BarometerTrend, str],
@@ -515,7 +532,8 @@ class LoopProcessor:
             ) -> Tuple[Dict[str, Any], weewx.accum.Accum]:
 
         # pkt needs to be in the units that the accumulators are expecting.
-        pkt = weewx.units.StdUnitConverters[unit_system].convertDict(in_pkt)
+        pruned_pkt = LoopProcessor.prune_period_packet(pkt_time, in_pkt, current_obstypes)
+        pkt = weewx.units.StdUnitConverters[unit_system].convertDict(pruned_pkt)
         pkt['usUnits'] = unit_system
 
         # Save needed data for trend.
