@@ -1,6 +1,11 @@
 loopdata change history
 -----------------------
 
+2.0.1 Release
+-----------
+1. Handle case where driver emits packets in a unit_system
+   other than the database unit_system.
+
 2.0 Release
 -----------
 1. The release is identical to rc0; except for a small

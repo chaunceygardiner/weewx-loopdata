@@ -607,11 +607,8 @@ class ProcessPacketTests(unittest.TestCase):
         time_delta = 10800
         baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
 
-        for in_pkt in pkts:
-            pkt = weewx.units.StdUnitConverters[unit_system].convertDict(in_pkt)
-            pkt['usUnits'] = unit_system
+        for pkt in pkts:
             pkt_time = to_int(pkt['dateTime'])
-
             loopdata_pkt, day_accum =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, converter, formatter,
                 fields_to_include, day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
@@ -730,11 +727,8 @@ class ProcessPacketTests(unittest.TestCase):
         time_delta = 10800
         baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
 
-        for in_pkt in pkts:
-            pkt = weewx.units.StdUnitConverters[unit_system].convertDict(in_pkt)
-            pkt['usUnits'] = unit_system
+        for pkt in pkts:
             pkt_time = to_int(pkt['dateTime'])
-
             loopdata_pkt, day_accum =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, converter, formatter,
                 fields_to_include, day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
@@ -853,11 +847,8 @@ class ProcessPacketTests(unittest.TestCase):
         time_delta = 10800
         baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
 
-        for in_pkt in pkts:
-            pkt = weewx.units.StdUnitConverters[unit_system].convertDict(in_pkt)
-            pkt['usUnits'] = unit_system
+        for pkt in pkts:
             pkt_time = to_int(pkt['dateTime'])
-
             loopdata_pkt, day_accum =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, converter, formatter,
                 fields_to_include, day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
@@ -976,11 +967,8 @@ class ProcessPacketTests(unittest.TestCase):
         time_delta = 10800
         baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
 
-        for in_pkt in pkts:
-            pkt = weewx.units.StdUnitConverters[unit_system].convertDict(in_pkt)
-            pkt['usUnits'] = unit_system
+        for pkt in pkts:
             pkt_time = to_int(pkt['dateTime'])
-
             loopdata_pkt, day_accum =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, converter, formatter,
                 fields_to_include, day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
@@ -1101,11 +1089,8 @@ class ProcessPacketTests(unittest.TestCase):
 
         # Pre Midnight
 
-        for in_pkt in pkts:
-            pkt = weewx.units.StdUnitConverters[unit_system].convertDict(in_pkt)
-            pkt['usUnits'] = unit_system
+        for pkt in pkts:
             pkt_time = to_int(pkt['dateTime'])
-
             loopdata_pkt, day_accum =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, converter, formatter,
                 fields_to_include, day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
@@ -1206,11 +1191,8 @@ class ProcessPacketTests(unittest.TestCase):
 
         first_pkt_time, pkts = cc3000_cross_midnight_packets.CC3000CrossMidnightPackets._get_post_midnight_packets()
 
-        for in_pkt in pkts:
-            pkt = weewx.units.StdUnitConverters[unit_system].convertDict(in_pkt)
-            pkt['usUnits'] = unit_system
+        for pkt in pkts:
             pkt_time = to_int(pkt['dateTime'])
-
             loopdata_pkt, day_accum =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, converter, formatter,
                 fields_to_include, day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
@@ -1328,11 +1310,8 @@ class ProcessPacketTests(unittest.TestCase):
         time_delta = 10800
         baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
 
-        for in_pkt in pkts:
-            pkt = weewx.units.StdUnitConverters[unit_system].convertDict(in_pkt)
-            pkt['usUnits'] = unit_system
+        for pkt in pkts:
             pkt_time = to_int(pkt['dateTime'])
-
             loopdata_pkt, day_accum =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, converter, formatter,
                 fields_to_include, day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,

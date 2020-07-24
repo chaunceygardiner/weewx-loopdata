@@ -44,7 +44,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '2.0'
+LOOP_DATA_VERSION = '2.0.1'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -505,7 +505,7 @@ class LoopProcessor:
 
     @staticmethod
     def generate_loopdata_dictionary(
-            pkt: Dict[str, Any], pkt_time: int,
+            in_pkt: Dict[str, Any], pkt_time: int,
             unit_system: int, converter: weewx.units.Converter, formatter: weewx.units.Formatter,
             fields_to_include: List[CheetahName],
             day_accum: weewx.accum.Accum, day_obstypes: List[str],
@@ -513,6 +513,10 @@ class LoopProcessor:
             baro_trend_descs: Dict[BarometerTrend, str],
             ten_min_packets: List[PeriodPacket], ten_min_obstypes: List[str]
             ) -> Tuple[Dict[str, Any], weewx.accum.Accum]:
+
+        # pkt needs to be in the units that the accumulators are expecting.
+        pkt = weewx.units.StdUnitConverters[unit_system].convertDict(in_pkt)
+        pkt['usUnits'] = unit_system
 
         # Save needed data for trend.
         LoopProcessor.save_period_packet(pkt_time, pkt, trend_packets, time_delta, trend_obstypes)
