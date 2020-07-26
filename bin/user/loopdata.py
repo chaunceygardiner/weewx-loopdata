@@ -382,49 +382,49 @@ class LoopData(StdService):
             binding = self.config_dict.get('StdReport')['data_binding']
             dbm = binder.get_manager(binding)
 
-            # Get archive packets to prime trend and 10m packets.
-            # Fetch them just once with the greater time period.
+            # Get archive packets to prime accumulators.  First find earliest
+            # record we need to fetch.
+
+            # Fetch them just once with the greatest time period.
             now = time.time()
-            # estimate rainyear span from current time, if we don't get it right
-            # because we are right at the start of a new rainyear, and perhaps
-            # the station clock is off, we might have and empty rainyear_accum for
-            # perhaps one loop-data.txt rendering.  That's OK.
+
+            # Estimate rainyear span from current time.
             rainyear_span = weeutil.weeutil.archiveRainYearSpan(time.time(), self.cfg.rainyear_start)
             earliest_rainyear = rainyear_span.start if len(self.cfg.rainyear_obstypes) > 0 else now
-            log.info('Earliest time for rainyear is %s' % timestamp_to_string(earliest_rainyear))
-            # estimate year span from current time, if we don't get it right
-            # because we are right at the start of a new year, and perhaps
-            # the station clock is off, we might have and empty year_accum for
-            # perhaps one loop-data.txt rendering.  That's OK.
+            log.debug('Earliest time for rainyear is %s' % timestamp_to_string(earliest_rainyear))
+
+            # Estimate year span from current time.
             year_span = weeutil.weeutil.archiveYearSpan(time.time())
             earliest_year = year_span.start if len(self.cfg.year_obstypes) > 0 else now
-            log.info('Earliest time for year is %s' % timestamp_to_string(earliest_year))
-            # estimate month span from current time, if we don't get it right
-            # because we are right at the start of a new month, and perhaps
-            # the station clock is off, we might have and empty month_accum for
-            # perhaps one loop-data.txt rendering.  That's OK.
+            log.debug('Earliest time for year is %s' % timestamp_to_string(earliest_year))
+
+            # Estimate month span from current time.
             month_span = weeutil.weeutil.archiveMonthSpan(time.time())
             earliest_month = month_span.start if len(self.cfg.month_obstypes) > 0 else now
-            log.info('Earliest time for month is %s' % timestamp_to_string(earliest_month))
-            # estimate week span from current time, if we don't get it right
-            # because we are right at the start of a new week, and perhaps
-            # the station clock is off, we might have and empty week_accum for
-            # perhaps one loop-data.txt rendering.  That's OK.
+            log.debug('Earliest time for month is %s' % timestamp_to_string(earliest_month))
+
+            # Estimate week span from current time.
             week_span = weeutil.weeutil.archiveWeekSpan(time.time(), self.cfg.week_start)
             earliest_week = week_span.start if len(self.cfg.week_obstypes) > 0 else now
-            log.info('Earliest time for week is %s' % timestamp_to_string(earliest_week))
+            log.debug('Earliest time for week is %s' % timestamp_to_string(earliest_week))
+
             # ten_min and trend are fixed at now - 600, and now - time_delta
             earliest_ten_min = now - 600 if len(self.cfg.ten_min_obstypes) > 0 else now
-            log.info('Earliest time for 10m is %s' % timestamp_to_string(earliest_ten_min))
+            log.debug('Earliest time for 10m is %s' % timestamp_to_string(earliest_ten_min))
             earliest_trend = now - self.cfg.time_delta if len(self.cfg.trend_obstypes) > 0 else now
-            log.info('Earliest time for trend is %s' % timestamp_to_string(earliest_trend))
+            log.debug('Earliest time for trend is %s' % timestamp_to_string(earliest_trend))
+
             # We want the earliest time needed.
             earliest_time: int = to_int(min(earliest_rainyear, earliest_year,
                 earliest_month, earliest_week, earliest_ten_min, earliest_trend))
-            log.info('Earliest time selected is %s' % timestamp_to_string(earliest_time))
+            log.debug('Earliest time selected is %s' % timestamp_to_string(earliest_time))
+
+            # Fetch the records.
             start = time.time()
             archive_pkts: List[Dict[str, Any]] = LoopData.get_archive_packets(
                 dbm, self.archive_columns, earliest_time)
+
+            # Save packets as appropriate.
             rainyear_packets: List[Dict[str, Any]] = []
             year_packets: List[Dict[str, Any]] = []
             month_packets: List[Dict[str, Any]] = []
@@ -447,7 +447,7 @@ class LoopData(StdService):
                 if len(self.cfg.ten_min_obstypes) > 0 and pkt_time >= earliest_ten_min:
                     LoopProcessor.save_period_packet(pkt['dateTime'], pkt, ten_min_packets, 600, self.cfg.ten_min_obstypes)
                 pkt_count += 1
-            log.info('Collected %d archive packets in %f seconds.' % (pkt_count, time.time() - start))
+            log.debug('Collected %d archive packets in %f seconds.' % (pkt_count, time.time() - start))
 
             # Init day accumulator from day_summary
             day_summary = dbm._get_day_summary(time.time())
@@ -649,50 +649,50 @@ class LoopProcessor:
 
     @staticmethod
     def create_rainyear_accum(unit_system: int, pkt_time: int, rainyear_start: int, rainyear_packets: List[Dict[str, Any]]) -> weewx.accum.Accum:
-        log.info('Creating initial rainyear_accum')
+        log.debug('Creating initial rainyear_accum')
         start = time.time()
         span = weeutil.weeutil.archiveRainYearSpan(pkt_time, rainyear_start)
         accum = weewx.accum.Accum(span, unit_system)
         for pkt in rainyear_packets:
             if pkt['dateTime'] > span.start:
                 accum.addRecord(pkt)
-        log.info('Initial rainyear_accum created in %f seconds.' % (time.time() - start))
+        log.debug('Initial rainyear_accum created in %f seconds.' % (time.time() - start))
         return accum
 
     @staticmethod
     def create_year_accum(unit_system: int, pkt_time: int, year_packets: List[Dict[str, Any]]) -> weewx.accum.Accum:
-        log.info('Creating initial year_accum')
+        log.debug('Creating initial year_accum')
         start = time.time()
         span = weeutil.weeutil.archiveYearSpan(pkt_time)
         accum = weewx.accum.Accum(span, unit_system)
         for pkt in year_packets:
             if pkt['dateTime'] > span.start:
                 accum.addRecord(pkt)
-        log.info('Initial year_accum created in %f seconds.' % (time.time() - start))
+        log.debug('Initial year_accum created in %f seconds.' % (time.time() - start))
         return accum
 
     @staticmethod
     def create_month_accum(unit_system: int, pkt_time: int, month_packets: List[Dict[str, Any]]) -> weewx.accum.Accum:
-        log.info('Creating initial month_accum')
+        log.debug('Creating initial month_accum')
         start = time.time()
         span = weeutil.weeutil.archiveMonthSpan(pkt_time)
         accum = weewx.accum.Accum(span, unit_system)
         for pkt in month_packets:
             if pkt['dateTime'] > span.start:
                 accum.addRecord(pkt)
-        log.info('Initial month_accum created in %f seconds.' % (time.time() - start))
+        log.debug('Initial month_accum created in %f seconds.' % (time.time() - start))
         return accum
 
     @staticmethod
     def create_week_accum(unit_system: int, pkt_time: int, week_start: int, week_packets: List[Dict[str, Any]]) -> weewx.accum.Accum:
-        log.info('Creating initial week_accum')
+        log.debug('Creating initial week_accum')
         start = time.time()
         span = weeutil.weeutil.archiveWeekSpan(pkt_time, week_start)
         accum = weewx.accum.Accum(span, unit_system)
         for pkt in week_packets:
             if pkt['dateTime'] > span.start:
                 accum.addRecord(pkt)
-        log.info('Initial week_accum created in %f seconds.' % (time.time() - start))
+        log.debug('Initial week_accum created in %f seconds.' % (time.time() - start))
         return accum
 
     @staticmethod
@@ -1076,11 +1076,11 @@ class LoopProcessor:
         log.info('skip_if_older_than : %d' % cfg.skip_if_older_than)
         log.info('time_delta         : %d' % cfg.time_delta)
         log.info('trend_obstypes     : %s' % cfg.trend_obstypes)
-        log.info('rainyear_obstypes   : %s' % cfg.rainyear_obstypes)
-        log.info('year_obstypes   : %s' % cfg.year_obstypes)
-        log.info('month_obstypes   : %s' % cfg.month_obstypes)
-        log.info('week_obstypes   : %s' % cfg.week_obstypes)
-        log.info('day_obstypes   : %s' % cfg.day_obstypes)
+        log.info('rainyear_obstypes  : %s' % cfg.rainyear_obstypes)
+        log.info('year_obstypes      : %s' % cfg.year_obstypes)
+        log.info('month_obstypes     : %s' % cfg.month_obstypes)
+        log.info('week_obstypes      : %s' % cfg.week_obstypes)
+        log.info('day_obstypes       : %s' % cfg.day_obstypes)
         log.info('ten_min_obstypes   : %s' % cfg.ten_min_obstypes)
         log.info('baro_trend_descs   : %s' % cfg.baro_trend_descs)
 
