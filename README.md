@@ -102,17 +102,17 @@ accmodate the month field(s).
 
 #### Estimated Added Startup Time on a NUC 7i5
 
-* `rainyear` ~5.5s  (365 days into rainyear)
-* `year`     ~5.5s  (365 days into year)
-* `month`    ~0.5s  (end of a 31 day month)
-* `week`     ~0.1s  (end of a week)
+* `rainyear` ~9s (365 days into rainyear)
+* `year`     ~9s (365 days into year)
+* `month`    ~1s (end of a 31 day month)
+* `week`     ~0s (end of a week)
 
 #### Estimated Added Startup Time on a Raspbery Pi 4
 
-* `rainyear` ~25.0s (365 days into rainyear)
-* `year`     ~25.0s (365 days into year)
-* `month`     ~2.6s (end of a 31 day month)
-* `week`      ~0.6s (end of a week)
+* `rainyear` ~47s (365 days into rainyear)
+* `year`     ~47s (365 days into year)
+* `month`    ~5s (end of a 31 day month)
+* `week`     ~1s (end of a week)
 
 ### Example of LoopData in Action
 
