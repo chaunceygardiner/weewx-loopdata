@@ -15,12 +15,13 @@ on every loop (e.g., every 2s).  Contained in the json are values for:
 * trends (e.g., `trend.barometer`) -- see time_delta below
 * daily aggregate values (e.g., `day.rain.sum`)
 
-The following also work, but will extend weewx startup time
-(see `Using week, month, year and rainyear Fields` below):
+The following also work, but will extend weewx startup time, especially
+on underpowered computers.  See
+[Using week, month, year and rainyear fields](###-Using-week,-month,-year-and-rainyear-fields).
 * weekly aggregate values (e.g., `week.wind.avg`)
 * monthly aggregate values (e.g., `month.barometer.avg`)
 * yearly aggregate values (e.g., `year.wind.max`)
-* rainyear-ly aggregate values (e.g., `rainyear.rain.sum`)
+* rainyear aggregate values (e.g., `rainyear.rain.sum`)
 
 The trend time_delta *cannot* be changed on a cast by case basis, but
 it can be changed for the entire target report (i.e., by using the standard
@@ -84,7 +85,7 @@ efficient and never touches any other part of WeeWX.  It's only connection
 to the WeeWX main thread is that NEW_LOOP_PACKET is bound to queue each
 loop packet.
 
-### Using week, month, year and rainyear Fields
+### Using week, month, year and rainyear fields
 
 Since LoopData primes its accumlators at startup with archive records, there
 can be a significant startup penalty to use week, month, year and rainyear
