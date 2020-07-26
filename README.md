@@ -5,8 +5,6 @@ Copyright (C)2020 by John A Kline (john@johnkline.com)
 
 **This extension requires Python 3.7 or later and WeeWX 4.**
 
-**LoopData 2.x is a breaking change from 1.x.  See "How to Upgrade from LoopData 1.x." below.**
-
 ## Description
 
 LoopData is a WeeWX service that generates a json file (loop-data.txt)
@@ -216,14 +214,14 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
 ## What fields are available.
 
 Generally, if you can specify a field in a Cheetah template, and that field begins with $current,
-`$day` or `$trend`, you can specify it here (don't include the dollar sign).  Also, anything you
-can specify with `day.`, you can also specify with `10m.` and the aggregate will apply to a
-rolling 10 minute window.
+`$trend`, `$day`, `$week`, `$month`, `$year`, or `$rainyear`, you can specify it here (but don't
+include the dollar sign).  Also, anything you can use the `10m` prefix to get aggregate values
+for a rolling ten minutes.  `10m` acts just like `day`, `week`, `month`, `year` and `rainyear`.
 
 For example, just like in a report, one can add the following extenstions to specialize the fields:
-* No extension specified`: Field is converted and formatted per the report.  A label is added.
+* `No extension`: Field is converted and formatted per the report and a label is added.
 * `.raw`: field is converted per the report, but not formatted.
-* `.formatted`: Field is converted and formatted per the report.  NO label is added.
+* `.formatted`: Field is converted and formatted per the report and no label is added.
 * `.ordinal_compass`: for directional observations, the value is converted to text.
 
 Note: `unit.label.<obs>` is also supported (e.g., `unit.label.<obs>`).
@@ -245,23 +243,23 @@ the `LoopData` section of weewx.conf
         FALLING_VERY_RAPIDLY = Falling Very Rapidly
 ```
 
-## Rsync isn't Working for Me, Help!
+## Rsync isn't Working for me, help!
 LoopData's uses WeeWX's `weeutil.rsyncupload.RsyncUpload` utility.  If you have rsync working
 for WeeWX to push your web pages to a remote server, loopdata's rsync is likely to work too.
 First get WeeWX working with rsync before you try to get loopdata working with rsync.
 
-By the way, it's best to put loop-data.txt outside of WeeWX's html tree so that WeeWX's rsync
-and loopdata's rsync don't both write the loop-data.txt file.  If you're up for configuring
-your websever to move it elsewhere (e.g., /home/weewx/loopdata/loop-data.txt), you should
-do so.  If not, it's probably OK.  There just *might* be the rare complaint in the log
-because the WeeWX main thread and the LoopData thread both tried to sync the same file at
+By the way, it's probably better  to put loop-data.txt outside of WeeWX's html tree so that
+WeeWX's rsync and loopdata's rsync don't both write the loop-data.txt file.  If you're up
+for configuring your websever to move it elsewhere (e.g., /home/weewx/loopdata/loop-data.txt),
+you should do so.  If not, it's probably OK.  There just *might* be the rare complaint in the
+log because the WeeWX main thread and the LoopData thread both tried to sync the same file at
 the same time.
 
 ## Do I have to use rsync to sync loop-data.txt to a remote server?
-You don't have to sync to a remote server; but if you do want to sync to a remote server,
-rsync is the only mechanism provided.
+You don't *have* to sync to a remote server; but if you want to sync to a remote server,
+rsync is the *only* mechanism provided.
 
-## About those Rsync Errors in the Log
+## What about those rsync errors in the log?
 If one is using rsync, especially if the loop interval is short (e.g., 2s), it is expected that
 there will be log entries for connection timeouts, transmit timeouts, write errors and skipped
 packets.  By default only one second is allowed to connect or transmit the data.  Also, by
@@ -283,54 +281,6 @@ Jun 27 23:15:53 charlemagne weewx[10156] INFO user.loopdata: skipping packet (20
 
 LoopData code includes type annotation which do not work with Python 2, nor in
 earlier versions of Python 3.
-
-# How to Upgrade from LoopData 1.x.
-
-[PLEASE NOTE: IF YOU ARE NOT UPGRADING FROM LoopData 1.x, no good will come from reading
-this section.  Furthermore, it may confuse you.  If you are looking for what fields
-can be in `loop-data.txt`, look for fields in your reports.  It is those you can add
-in `loop-data.txt`.]
-
-LoopData 2.x is a breaking change to 1.x installations. The following steps will help guide 
-you through the process:
-
-1. Install 2.x as per above instructions, but DO NOT restart WeeWX.
-
-1. Edit the LoopData->Include->fields line in weewx.conf.  Every field listed needs to be
-   translated into the new (Cheetah) style of specifying fields.
-
- * `dateTime`           -> `current.dateTime.raw`
- * `<obs>`              -> `current.<obs>.formatted`
- * `10mMaxGust`         -> `10m.windGust.max.formatted`
- * `AVG_<obs>`          -> `day.<obs>.avg`
- * `barometerRate`      -> `trend.barometer.formatted`
- * `COMPASS_<obs>`      -> `current.<obs>.ordinal_compass`
- * `DESC_barometerRate` -> `trend.barometer.desc`
- * `FMT_<obs>`          -> `current.<obs>`
- * `FMT_10mMaxGust`     -> `10m.windGust.max`
- * `FMT_AVG_<obs>`      -> `day.<obs>.avg.formatted`
- * `FMT_barometerRate`  -> `trend.barometer`
- * `FMT_HI_<obs>`       -> `day.<obs>.max`
- * `FMT_LO_<obs>`       -> `day.<obs>.min`
- * `FMT_T_HI_<obs>`     -> `day.<obs>.maxtime`
- * `FMT_T_LO_<obs>`     -> `day.<obs>.mintime`
- * `HI_<obs>`           -> `day.<obs>.max.formatted`
- * `LABEL_<obs>`        -> `unit.label.<obs>`
- * `LO_<obs>`           -> `day.<obs>.min.formatted`
- * `RMS_<obs>`          -> `day.<obs>.rms`
- * `SUM_<obs>`          -> `day.<obs>.sum`
- * `T_10mMaxGust`       -> `10m.windGust.maxtime`
- * `T_HI_<obs>`         -> `day.<obs>.maxtime.formatted`
- * `T_LO_<obs>`         -> `day.<obs>.mintime.formatted`
- * `VEC_AVG_<obs>`      -> `day.<obs>.vecavg`
- * `VEC_DIR_<obs`       -> `day.<obs>.vecdir`
-
-1. Make the same changes as above to your .tmpl and JavaScript files for the skins
-   that are using LoopData.  Note: A 2.x version of WeatherBoard has been released.  It uses
-   the new naming scheme.
-
-The followiung have been removed from LoopData: `windRose` observations,
-`UNITS_<obs>` fields and the capability to `rename` the keys in loop-data.txt.
 
 ## Licensing
 

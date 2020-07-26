@@ -703,12 +703,12 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
         specified_fields = [ 'current.outTemp', 'trend.outTemp',
-                             '10m.outTemp.max', '10m.outTemp.min',
-                             'day.outTemp.max', 'day.outTemp.min',
-                             'week.outTemp.max', 'week.outTemp.min',
-                             'month.outTemp.max', 'month.outTemp.min',
-                             'year.outTemp.max', 'year.outTemp.min',
-                             'rainyear.outTemp.max', 'rainyear.outTemp.min']
+                             '10m.outTemp.max', '10m.outTemp.min', '10m.outTemp.avg',
+                             'day.outTemp.max', 'day.outTemp.min', 'day.outTemp.avg',
+                             'week.outTemp.max', 'week.outTemp.min', 'week.outTemp.avg',
+                             'month.outTemp.max', 'month.outTemp.min', 'month.outTemp.avg',
+                             'year.outTemp.max', 'year.outTemp.min', 'year.outTemp.avg',
+                             'rainyear.outTemp.max', 'rainyear.outTemp.min', 'rainyear.outTemp.avg']
 
         (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes,
@@ -979,6 +979,40 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['rainyear.outTemp.min'],  '41.0°F')
         self.assertEqual(loopdata_pkt['rainyear.outTemp.max'],  '41.0°F')
         self.assertEqual(loopdata_pkt.get('trend.outTemp'), None)
+
+        # 1s later
+        pkt = {'dateTime': 1634324401, 'usUnits': 1, 'outTemp': 42.0}
+        pkt_time = pkt['dateTime']
+        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+            day_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+            pkt, pkt_time, unit_system, converter, formatter,
+            fields_to_include, current_obstypes, rainyear_accum,
+            rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
+            month_accum, month_obstypes, week_accum, week_start, week_obstypes,
+            day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
+            baro_trend_descs, ten_min_packets, ten_min_obstypes)
+
+        self.maxDiff = None
+        self.assertEqual(loopdata_pkt['current.outTemp'],       '42.0°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.min'],       '41.0°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.max'],       '42.0°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.avg'],       '41.5°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.min'],       '41.0°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.max'],       '42.0°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.avg'],       '41.5°F')
+        self.assertEqual(loopdata_pkt['week.outTemp.min'],      '41.0°F')
+        self.assertEqual(loopdata_pkt['week.outTemp.max'],      '42.0°F')
+        self.assertEqual(loopdata_pkt['week.outTemp.avg'],      '41.5°F')
+        self.assertEqual(loopdata_pkt['month.outTemp.min'],     '41.0°F')
+        self.assertEqual(loopdata_pkt['month.outTemp.max'],     '42.0°F')
+        self.assertEqual(loopdata_pkt['month.outTemp.avg'],     '41.5°F')
+        self.assertEqual(loopdata_pkt['year.outTemp.min'],      '41.0°F')
+        self.assertEqual(loopdata_pkt['year.outTemp.max'],      '99.0°F')
+        self.assertEqual(loopdata_pkt['year.outTemp.avg'],      '69.8°F')
+        self.assertEqual(loopdata_pkt['rainyear.outTemp.min'],  '41.0°F')
+        self.assertEqual(loopdata_pkt['rainyear.outTemp.max'],  '42.0°F')
+        self.assertEqual(loopdata_pkt['rainyear.outTemp.avg'],  '41.5°F')
+        self.assertEqual(loopdata_pkt['trend.outTemp'],         '1.0°F')
 
     def test_ip100_packet_processing(self):
 
