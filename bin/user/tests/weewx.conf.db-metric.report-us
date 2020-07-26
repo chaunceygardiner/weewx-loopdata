@@ -52,7 +52,7 @@ version = 4.1.1
 
     # The start of the rain year (1=January; 10=October, etc.). This is
     # downloaded from the station if the hardware supports it.
-    rain_year_start = 1
+    rain_year_start = 10
 
     # Start of week (0=Monday, 6=Sunday)
     week_start = 6

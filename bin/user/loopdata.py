@@ -794,8 +794,6 @@ class LoopProcessor:
 
         if len(ten_min_obstypes) != 0 and len(ten_min_packets) > 0:
             # Construct a 10m accumulator
-            # With some archive records used to kick things off, the first
-            # record might not be the earliest timestamp.
             ten_min_accum: Optional[weewx.accum.Accum] = weewx.accum.Accum(
                 weeutil.weeutil.TimeSpan(
                     ten_min_packets[0].timestamp - 1,
