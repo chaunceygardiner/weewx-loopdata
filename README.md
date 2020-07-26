@@ -17,7 +17,7 @@ on every loop (e.g., every 2s).  Contained in the json are values for:
 
 The following also work, but will extend weewx startup time, especially
 on underpowered computers.  See
-[Using week, month, year and rainyear fields](###-using-week,-month,-year-and-rainyear-fields).
+[Using week, month, year and rainyear fields](#using-week-month-year-and-rainyear-fields).
 * weekly aggregate values (e.g., `week.wind.avg`)
 * monthly aggregate values (e.g., `month.barometer.avg`)
 * yearly aggregate values (e.g., `year.wind.max`)
