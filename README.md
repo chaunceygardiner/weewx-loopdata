@@ -13,9 +13,16 @@ LoopData is a WeeWX service that generates a json file (loop-data.txt)
 on every loop (e.g., every 2s).  Contained in the json are values for:
 
 * observations in the loop packet (e.g., `current.outTemp`)
+* rolling 10 min. aggregate values (e.g., `10m.outTemp.max`, `10m.wind.gustdir`)
 * trends (e.g., `trend.barometer`) -- see time_delta below
 * daily aggregate values (e.g., `day.rain.sum`)
-* rolling 10 min. aggregate values (e.g., `10m.outTemp.max`, `10m.wind.gustdir`)
+
+The following also work, but will extend weewx startup time
+(see `Using week, month, year and rainyear Fields` below):
+* weekly aggregate values (e.g., `week.wind.avg`)
+* monthly aggregate values (e.g., `month.barometer.avg`)
+* yearly aggregate values (e.g., `year.wind.max`)
+* rainyear-ly aggregate values (e.g., `rainyear.rain.sum`)
 
 The trend time_delta *cannot* be changed on a cast by case basis, but
 it can be changed for the entire target report (i.e., by using the standard
@@ -56,11 +63,56 @@ The day average of outside tempeture can be included as:
 * `day.outTemp.avg`          which might yeild `64.7°`
 * `day.outTemp.avg.raw`      which might yeild `64.711`
 
-Note: week, month, year and rainYear periods are under consideration.
-
 If a field is requested, but the data is missing, it will not be present
 in loop-data.txt.  Your JavaScript should expect this and react
 accordingly.
+
+### How LoopData Works
+
+LoopData gathers all of the necessary information at startup and then spawns a
+separate thread.  The information gathered is only that which is needed
+for LoopData to prime it's accumulators.  For example, if a week field is
+included in the weewx.conf fields line (week.rain.sum), archive recordds from
+the beginning of the week until present will be read to prime the week
+accumulator.  If no week field is include, this isn't necessary.  Ditto
+for rainyear, year, month and 10m accumulators.  They are populated only
+if they are used.  Lastly, only the necessary observation types are tracked
+in the accumulators.  For example, if no flavor of monthy.barometer is
+specified on the fields line, the monthly accumulator will not accumulate
+baromter readings.
+
+Once LoopData's thread starts and the accumulators are built, LoopData is
+efficient and never touches any other part of WeeWX.  It's only connection
+to the WeeWX main thread is that NEW_LOOP_PACKET is bound to queue each
+loop packet.
+
+### Using week, month, year and rainyear Fields
+
+Since LoopData primes its accumlators at startup with archive records, there
+can be a significant startup penalty to use week, month, year and rainyear
+fields. Please keep this in mind when deciding whether or not to use these
+fields.  This should be The aren't may applications where using these fields.
+
+Below are increases in startup time to use each type of field.  Of course, the
+times are not cumulative.  For example, if you are using one or more month
+fields, that might add 2.6s of start up time on a Raspbery Pi 4 (no matter how
+many month fields you are using).  Adding week fields would not add any
+more to the startup time since the needed records are already being read to
+accmodate the month field(s).
+
+#### Estimated Added Startup Time on a NUC 7i5
+
+* `rainyear` ~5.5s  (365 days into rainyear)
+* `year`     ~5.5s  (365 days into year)
+* `month`    ~0.5s  (end of a 31 day month)
+* `week`     ~0.1s  (end of a week)
+
+#### Estimated Added Startup Time on a Raspbery Pi 4
+
+* `rainyear` ~25.0s (365 days into rainyear)
+* `year`     ~25.0s (365 days into year)
+* `month`     ~2.6s (end of a 31 day month)
+* `week`      ~0.6s (end of a week)
 
 ### Example of LoopData in Action
 

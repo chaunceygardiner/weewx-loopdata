@@ -369,9 +369,9 @@ class ProcessPacketTests(unittest.TestCase):
             'trend.barometer.desc', '10m.wind.max', '10m.wind.gustdir',
             'day.barometer.min', 'day.barometer.max', 'day.wind.max', 'day.wind.gustdir', 'day.wind.maxtime' ]
 
-        fields_to_include, current_obstypes, trend_obstypes, day_obstypes, \
-            ten_min_obstypes = user.loopdata.LoopData.get_fields_to_include(
-            specified_fields)
+        (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
+            year_obstypes, month_obstypes, week_obstypes, day_obstypes,
+            ten_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(specified_fields)
 
         self.assertEqual(len(fields_to_include), 10)
         self.assertTrue(user.loopdata.CheetahName(
@@ -553,8 +553,9 @@ class ProcessPacketTests(unittest.TestCase):
 
     def test_save_period_packet(self):
         config_dict = ProcessPacketTests._get_config_dict('us')
-        fields_to_include, current_obstypes, trend_obstypes, day_obstypes, ten_min_obstypes = \
-            user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
+        (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
+            year_obstypes, month_obstypes, week_obstypes, day_obstypes,
+            ten_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
         unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
 
@@ -567,8 +568,8 @@ class ProcessPacketTests(unittest.TestCase):
                 pkt['dateTime'], pkt, ten_min_packets, 600, ten_min_obstypes)
         # last packet should be dateTime
         self.assertEqual(ten_min_packets[-1].timestamp, dateTime)
-        # the first packet should be dateTime - 600
-        self.assertEqual(ten_min_packets[0].timestamp, dateTime - 600)
+        # the first packet should be dateTime - 598 (the being time is not included)
+        self.assertEqual(ten_min_packets[0].timestamp, dateTime - 598)
 
     def test_prune_period_packet(self):
         """ test that packet is pruned to just the observations needed. """
@@ -603,14 +604,17 @@ class ProcessPacketTests(unittest.TestCase):
         unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
 
         first_pkt_time, pkts = ip100_packets.IP100Packets._get_packets()
-        day_accum = ProcessPacketTests._get_day_accum(config_dict, first_pkt_time)
+        (rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
+            week_start, day_accum) = ProcessPacketTests._get_accums(
+            config_dict, first_pkt_time)
 
         converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
-        fields_to_include, current_obstypes, trend_obstypes, day_obstypes, ten_min_obstypes = \
-            user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
+        (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
+            year_obstypes, month_obstypes, week_obstypes, day_obstypes,
+            ten_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
         trend_packets = []
         ten_min_packets = []
@@ -619,9 +623,13 @@ class ProcessPacketTests(unittest.TestCase):
 
         for pkt in pkts:
             pkt_time = to_int(pkt['dateTime'])
-            loopdata_pkt, day_accum =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+            (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+                day_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, converter, formatter,
-                fields_to_include, current_obstypes, day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
+                fields_to_include, current_obstypes, rainyear_accum,
+                rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
+                month_accum, month_obstypes, week_accum, week_start, week_obstypes,
+                day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
                 baro_trend_descs, ten_min_packets, ten_min_obstypes)
 
         # {'dateTime': 1593883054, 'usUnits': 1, 'outTemp': 71.6, 'barometer': 30.060048358389471, 'dewpoint': 60.48739574937819
@@ -723,14 +731,17 @@ class ProcessPacketTests(unittest.TestCase):
         unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
 
         first_pkt_time, pkts = ip100_packets.IP100Packets._get_packets()
-        day_accum = ProcessPacketTests._get_day_accum(config_dict, first_pkt_time)
+        (rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
+            week_start, day_accum) = ProcessPacketTests._get_accums(
+            config_dict, first_pkt_time)
 
         converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
-        fields_to_include, current_obstypes, trend_obstypes, day_obstypes, ten_min_obstypes = \
-            user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
+        (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
+            year_obstypes, month_obstypes, week_obstypes, day_obstypes,
+            ten_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
         trend_packets = []
         ten_min_packets = []
@@ -739,9 +750,13 @@ class ProcessPacketTests(unittest.TestCase):
 
         for pkt in pkts:
             pkt_time = to_int(pkt['dateTime'])
-            loopdata_pkt, day_accum =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+            (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+                day_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, converter, formatter,
-                fields_to_include, current_obstypes, day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
+                fields_to_include, current_obstypes, rainyear_accum,
+                rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
+                month_accum, month_obstypes, week_accum, week_start, week_obstypes,
+                day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
                 baro_trend_descs, ten_min_packets, ten_min_obstypes)
 
         # {'dateTime': 1593883054, 'usUnits': 1, 'outTemp': 71.6, 'barometer': 30.060048358389471, 'dewpoint': 60.48739574937819
@@ -843,14 +858,17 @@ class ProcessPacketTests(unittest.TestCase):
         unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
 
         first_pkt_time, pkts = cc3000_packets.CC3000Packets._get_packets()
-        day_accum = ProcessPacketTests._get_day_accum(config_dict, first_pkt_time)
+        (rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
+            week_start, day_accum) = ProcessPacketTests._get_accums(
+            config_dict, first_pkt_time)
 
         converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
-        fields_to_include, current_obstypes, trend_obstypes, day_obstypes, ten_min_obstypes = \
-            user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
+        (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
+            year_obstypes, month_obstypes, week_obstypes, day_obstypes,
+            ten_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
         trend_packets = []
         ten_min_packets = []
@@ -859,9 +877,13 @@ class ProcessPacketTests(unittest.TestCase):
 
         for pkt in pkts:
             pkt_time = to_int(pkt['dateTime'])
-            loopdata_pkt, day_accum =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+            (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+                day_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, converter, formatter,
-                fields_to_include, current_obstypes, day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
+                fields_to_include, current_obstypes, rainyear_accum,
+                rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
+                month_accum, month_obstypes, week_accum, week_start, week_obstypes,
+                day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
                 baro_trend_descs, ten_min_packets, ten_min_obstypes)
 
         # {'dateTime': 1593975030, 'outTemp': 76.1, 'barometer': 30.014857385736513, 'dewpoint': 54.73645937493746
@@ -963,14 +985,17 @@ class ProcessPacketTests(unittest.TestCase):
         unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
 
         first_pkt_time, pkts = cc3000_packets.CC3000Packets._get_packets()
-        day_accum = ProcessPacketTests._get_day_accum(config_dict, first_pkt_time)
+        (rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
+            week_start, day_accum) = ProcessPacketTests._get_accums(
+            config_dict, first_pkt_time)
 
         converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
-        fields_to_include, current_obstypes, trend_obstypes, day_obstypes, ten_min_obstypes = \
-            user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
+        (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
+            year_obstypes, month_obstypes, week_obstypes, day_obstypes,
+            ten_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
         trend_packets = []
         ten_min_packets = []
@@ -979,9 +1004,13 @@ class ProcessPacketTests(unittest.TestCase):
 
         for pkt in pkts:
             pkt_time = to_int(pkt['dateTime'])
-            loopdata_pkt, day_accum =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+            (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+                day_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, converter, formatter,
-                fields_to_include, current_obstypes, day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
+                fields_to_include, current_obstypes, rainyear_accum,
+                rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
+                month_accum, month_obstypes, week_accum, week_start, week_obstypes,
+                day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
                 baro_trend_descs, ten_min_packets, ten_min_obstypes)
 
         # {'dateTime': 1593975030, 'outTemp': 76.1, 'barometer': 30.014857385736513, 'dewpoint': 54.73645937493746
@@ -1083,14 +1112,17 @@ class ProcessPacketTests(unittest.TestCase):
         unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
 
         first_pkt_time, pkts = cc3000_cross_midnight_packets.CC3000CrossMidnightPackets._get_pre_midnight_packets()
-        day_accum = ProcessPacketTests._get_day_accum(config_dict, first_pkt_time)
+        (rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
+            week_start, day_accum) = ProcessPacketTests._get_accums(
+            config_dict, first_pkt_time)
 
         converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
-        fields_to_include, current_obstypes, trend_obstypes, day_obstypes, ten_min_obstypes = \
-            user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
+        (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
+            year_obstypes, month_obstypes, week_obstypes, day_obstypes,
+            ten_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
         trend_packets = []
         ten_min_packets = []
@@ -1101,9 +1133,13 @@ class ProcessPacketTests(unittest.TestCase):
 
         for pkt in pkts:
             pkt_time = to_int(pkt['dateTime'])
-            loopdata_pkt, day_accum =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+            (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+                day_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, converter, formatter,
-                fields_to_include, current_obstypes, day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
+                fields_to_include, current_obstypes, rainyear_accum,
+                rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
+                month_accum, month_obstypes, week_accum, week_start, week_obstypes,
+                day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
                 baro_trend_descs, ten_min_packets, ten_min_obstypes)
 
         # {'dateTime': 1595487600, 'outTemp': 57.3, 'outHumidity': 89.0, 'pressure': 29.85,
@@ -1118,8 +1154,8 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['10m.windGust.max'], '0 mph')
         self.assertEqual(loopdata_pkt['10m.windGust.max.formatted'], '0')
         self.assertEqual(loopdata_pkt['10m.windGust.max.raw'], 0.0)
-        self.assertEqual(loopdata_pkt['10m.windGust.maxtime'], '07/22/20 23:50:00')
-        self.assertEqual(loopdata_pkt['10m.windGust.maxtime.raw'], 1595487000)
+        self.assertEqual(loopdata_pkt['10m.windGust.maxtime'], '07/22/20 23:50:02')
+        self.assertEqual(loopdata_pkt['10m.windGust.maxtime.raw'], 1595487002)
 
         self.assertEqual(loopdata_pkt['10m.outTemp.max'], '57.3°F')
         self.assertEqual(loopdata_pkt['10m.outTemp.max.formatted'], '57.3')
@@ -1203,9 +1239,13 @@ class ProcessPacketTests(unittest.TestCase):
 
         for pkt in pkts:
             pkt_time = to_int(pkt['dateTime'])
-            loopdata_pkt, day_accum =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+            (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+                day_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, converter, formatter,
-                fields_to_include, current_obstypes, day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
+                fields_to_include, current_obstypes, rainyear_accum,
+                rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
+                month_accum, month_obstypes, week_accum, week_start, week_obstypes,
+                day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
                 baro_trend_descs, ten_min_packets, ten_min_obstypes)
 
         # {'dateTime': 1595488500, 'outTemp': 58.2, 'outHumidity': 90.0, 'pressure': 29.85,
@@ -1306,14 +1346,17 @@ class ProcessPacketTests(unittest.TestCase):
         unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
 
         first_pkt_time, pkts = simulator_packets.SimulatorPackets._get_packets()
-        day_accum = ProcessPacketTests._get_day_accum(config_dict, first_pkt_time)
+        (rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
+            week_start, day_accum) = ProcessPacketTests._get_accums(
+            config_dict, first_pkt_time)
 
         converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
-        fields_to_include, current_obstypes, trend_obstypes, day_obstypes, ten_min_obstypes = \
-            user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
+        (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
+            year_obstypes, month_obstypes, week_obstypes, day_obstypes,
+            ten_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
         trend_packets = []
         ten_min_packets = []
@@ -1322,9 +1365,13 @@ class ProcessPacketTests(unittest.TestCase):
 
         for pkt in pkts:
             pkt_time = to_int(pkt['dateTime'])
-            loopdata_pkt, day_accum =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+            (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+                day_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, converter, formatter,
-                fields_to_include, current_obstypes, day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
+                fields_to_include, current_obstypes, rainyear_accum,
+                rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
+                month_accum, month_obstypes, week_accum, week_start, week_obstypes,
+                day_accum, day_obstypes, trend_packets, time_delta, trend_obstypes,
                 baro_trend_descs, ten_min_packets, ten_min_obstypes)
 
         # {'dateTime': 1593976709, 'outTemp': 0.3770915275499615,  'barometer': 1053.1667173695532, 'dewpoint': -2.6645899102645934
@@ -1421,13 +1468,31 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.wind.vecdir'], '360°')
 
     @staticmethod
-    def _get_day_accum(config_dict, dateTime):
+    def _get_accums(config_dict, pkt_time):
+        """
+        Returns rainyear_accum, rainyear_start, year_accum, month_accum, week_accum, week_start, day_accum.
+        """
 
-        timespan = weeutil.weeutil.archiveDaySpan(dateTime)
         unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
+        rainyear_start: int = to_int(config_dict['Station']['rain_year_start'])
+        week_start: int = to_int(config_dict['Station']['week_start'])
+
+        span = weeutil.weeutil.archiveRainYearSpan(pkt_time, rainyear_start)
+        rainyear_accum = weewx.accum.Accum(span, unit_system)
+
+        span = weeutil.weeutil.archiveYearSpan(pkt_time)
+        year_accum = weewx.accum.Accum(span, unit_system)
+
+        span = weeutil.weeutil.archiveMonthSpan(pkt_time)
+        month_accum = weewx.accum.Accum(span, unit_system)
+
+        span = weeutil.weeutil.archiveWeekSpan(pkt_time, week_start)
+        week_accum = weewx.accum.Accum(span, unit_system)
+
+        timespan = weeutil.weeutil.archiveDaySpan(pkt_time)
         day_accum = weewx.accum.Accum(timespan, unit_system=unit_system)
 
-        return day_accum
+        return rainyear_accum, rainyear_start, year_accum, month_accum, week_accum, week_start, day_accum
 
     @staticmethod
     def _get_config_dict(kind):
