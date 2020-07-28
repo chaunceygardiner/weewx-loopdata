@@ -603,15 +603,19 @@ class LoopProcessor:
 
                 if self.rainyear_accum is None:
                     self.rainyear_accum = LoopProcessor.create_rainyear_accum(self.cfg.unit_system, pkt_time, self.cfg.rainyear_start, self.rainyear_packets)
+                    self.rainyear_packets.clear()
 
                 if self.year_accum is None:
                     self.year_accum = LoopProcessor.create_year_accum(self.cfg.unit_system, pkt_time, self.year_packets)
+                    self.year_packets.clear()
 
                 if self.month_accum is None:
                     self.month_accum = LoopProcessor.create_month_accum(self.cfg.unit_system, pkt_time, self.month_packets)
+                    self.month_packets.clear()
 
                 if self.week_accum is None:
                     self.week_accum = LoopProcessor.create_week_accum(self.cfg.unit_system, pkt_time, self.cfg.week_start, self.week_packets)
+                    self.week_packets.clear()
 
                 # Process new packet.
                 (loopdata_pkt, self.rainyear_accum, self.year_accum,
