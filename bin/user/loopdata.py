@@ -52,7 +52,7 @@ if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] 
 
 if weewx.__version__ < "4":
     raise weewx.UnsupportedFeature(
-        "WeeWX 4 is required, found %s" % weewx.__version__)
+        "weewx-loopdata requires WeeWX, found %s" % weewx.__version__)
 
 @dataclass
 class CheetahName:
