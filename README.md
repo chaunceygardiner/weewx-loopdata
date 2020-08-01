@@ -14,16 +14,12 @@ on every loop (e.g., every 2s).  Contained in the json are values for:
 * rolling 10 min. aggregate values (e.g., `10m.outTemp.max`, `10m.wind.gustdir`)
 * trends (e.g., `trend.barometer`) -- see time_delta below
 * daily aggregate values (e.g., `day.rain.sum`)
-
-The following also work, but will extend weewx startup time, especially
-on underpowered computers.  See
-[Using week, month, year and rainyear fields](#using-week-month-year-and-rainyear-fields).
 * weekly aggregate values (e.g., `week.wind.avg`)
 * monthly aggregate values (e.g., `month.barometer.avg`)
 * yearly aggregate values (e.g., `year.wind.max`)
 * rainyear aggregate values (e.g., `rainyear.rain.sum`)
 
-The trend time_delta *cannot* be changed on a cast by case basis, but
+The trend time_delta *cannot* be changed on a case by case basis, but
 it can be changed for the entire target report (i.e., by using the standard
 WeeWX customization):
 ```
@@ -53,14 +49,36 @@ in the json file.  They are specified using WeeWX Cheetah syntax.
 For example, the current outside temperature can be included as:
 
 * `current.outTemp.formatted` which might yield `79.2`
-* `current.outTemp`          which might yeild `79.2°F`
-* `current.outTemp.raw`      which might yeild `79.175`
+* `current.outTemp`           which might yeild `79.2°F`
+* `current.outTemp.raw`       which might yeild `79.175`
 
 The day average of outside tempeture can be included as:
 
-* `day.outTemp.avg.formatted`which might yeild `64.7`
-* `day.outTemp.avg`          which might yeild `64.7°`
-* `day.outTemp.avg.raw`      which might yeild `64.711`
+* `day.outTemp.avg.formatted` which might yeild `64.7`
+* `day.outTemp.avg`           which might yeild `64.7°`
+* `day.outTemp.avg.raw`       which might yeild `64.711`
+
+The wind speed average for this week can be included as:
+
+* `week.windSpeed.avg.formatted` which might yeild `2.7`
+* `week.windSpeed.avg`           which might yeild `2.7 mph`
+* `week.windSpeed.raw`           which might yeild `2.74`
+
+The minimum dewpoint this month the time of that event can be included as:
+
+* `month.dewpoint.min`     which might yield `43.7°`
+* `month.dewpoint.mintime` which might yeild `08/01/2020 03:27:00 AM`
+
+The maximum wind speed this year and the time of that event can be included as:
+
+* `year.wind.max`     which might yield `29.6 mph`
+* `year.wind.maxtime` which might yeild `02/26/2020 07:40:00 PM`
+
+The total rain for this rain year can be included as:
+
+* `rainyear.rain.formatted` which might yeild `7.1`
+* `rainyear.rain`           which might yeild `7.1 in`
+* `rainyear.rain.raw`       which might yeild `7.13`
 
 If a field is requested, but the data is missing, it will not be present
 in loop-data.txt.  Your JavaScript should expect this and react
@@ -71,47 +89,17 @@ accordingly.
 LoopData gathers all of the necessary information at startup and then spawns a
 separate thread.  The information gathered is only that which is needed
 for LoopData to prime it's accumulators.  For example, if a week field is
-included in the weewx.conf fields line (week.rain.sum), archive recordds from
-the beginning of the week until present will be read to prime the week
-accumulator.  If no week field is include, this isn't necessary.  Ditto
-for rainyear, year, month and 10m accumulators.  They are populated only
-if they are used.  Lastly, only the necessary observation types are tracked
-in the accumulators.  For example, if no flavor of monthy.barometer is
-specified on the fields line, the monthly accumulator will not accumulate
-baromter readings.
+included in the weewx.conf fields line (week.rain.sum), daily summaries
+for the week will be read to prime the week accumulator.  If no week field
+is included, no work will be done.  Ditto for rainyear, year, month and 10m
+accumulators.  They are populated only if they are used.  Lastly, only the
+necessary observation types are tracked in the accumulators.  For example,
+if no form of monthy.barometer is specified on the fields line, the monthly
+accumulator will not accumulate baromter readings.
 
 Once LoopData's thread starts and the accumulators are built, LoopData is
-efficient and never touches any other part of WeeWX.  It's only connection
-to the WeeWX main thread is that NEW_LOOP_PACKET is bound to queue each
-loop packet.
-
-### Using week, month, year and rainyear fields
-
-Since LoopData primes its accumlators at startup with archive records, there
-
-fields. Please keep this in mind when deciding whether or not to use these
-fields.  This should be The aren't may applications where using these fields.
-
-Below are increases in startup time to use each type of field.  Of course, the
-times are not cumulative.  For example, if you are using one or more month
-fields, that might add 2.6s of start up time on a Raspbery Pi 4 (no matter how
-many month fields you are using).  Adding week fields would not add any
-more to the startup time since the needed records are already being read to
-accmodate the month field(s).
-
-#### Estimated Added Startup Time on a NUC 7i5
-
-* `rainyear` ~9s (365 days into rainyear)
-* `year`     ~9s (365 days into year)
-* `month`    ~1s (end of a 31 day month)
-* `week`     ~0s (end of a week)
-
-#### Estimated Added Startup Time on a Raspbery Pi 4
-
-* `rainyear` ~47s (365 days into rainyear)
-* `year`     ~47s (365 days into year)
-* `month`    ~5s (end of a 31 day month)
-* `week`     ~1s (end of a week)
+never touches touches the database.  It's only connection to the WeeWX
+main thread is that NEW_LOOP_PACKET is bound to queue each loop packet.
 
 ### Example of LoopData in Action
 
