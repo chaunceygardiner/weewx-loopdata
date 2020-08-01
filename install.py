@@ -24,7 +24,7 @@ def loader():
             sys.version_info[0], sys.version_info[1]))
 
     if weewx.__version__ < "4":
-        sys.exit("weewx-loopdata requires WeeWX, found %s" % weewx.__version__)
+        sys.exit("weewx-loopdata requires WeeWX 4, found %s" % weewx.__version__)
 
     return LoopDataInstaller()
 
