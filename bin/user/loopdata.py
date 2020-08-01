@@ -38,6 +38,7 @@ import weeutil.weeutil
 
 from weeutil.weeutil import timestamp_to_string
 from weeutil.weeutil import to_bool
+from weeutil.weeutil import to_float
 from weeutil.weeutil import to_int
 from weewx.engine import StdService
 
@@ -73,6 +74,7 @@ class Configuration:
     loop_data_dir      : str
     filename           : str
     target_report      : str
+    loop_frequency     : float
     specified_fields   : List[str]
     fields_to_include  : List[CheetahName]
     formatter          : weewx.units.Formatter
@@ -132,14 +134,15 @@ class LoopData(StdService):
 
         self.loop_proccessor_started = False
 
-        station_dict          = config_dict.get('Station', {})
-        std_archive_dict      = config_dict.get('StdArchive', {})
-        loop_config_dict      = config_dict.get('LoopData', {})
-        file_spec_dict        = loop_config_dict.get('FileSpec', {})
-        formatting_spec_dict  = loop_config_dict.get('Formatting', {})
-        rsync_spec_dict       = loop_config_dict.get('RsyncSpec', {})
-        include_spec_dict     = loop_config_dict.get('Include', {})
-        baro_trend_trans_dict = loop_config_dict.get('BarometerTrendDescriptions', {})
+        station_dict             = config_dict.get('Station', {})
+        std_archive_dict         = config_dict.get('StdArchive', {})
+        loop_config_dict         = config_dict.get('LoopData', {})
+        file_spec_dict           = loop_config_dict.get('FileSpec', {})
+        formatting_spec_dict     = loop_config_dict.get('Formatting', {})
+        loop_frequency_spec_dict = loop_config_dict.get('Formatting', {})
+        rsync_spec_dict          = loop_config_dict.get('RsyncSpec', {})
+        include_spec_dict        = loop_config_dict.get('Include', {})
+        baro_trend_trans_dict    = loop_config_dict.get('BarometerTrendDescriptions', {})
 
         # Get the unit_system as specified by StdConvert->target_unit.
         # Note: this value will be overwritten if the day accumulator has a a unit_system.
@@ -166,6 +169,9 @@ class LoopData(StdService):
             return
 
         loop_data_dir = LoopData.compose_loop_data_dir(config_dict, target_report_dict, file_spec_dict)
+
+        # Get the loop frequency seconds to be passed as the weight to accumulators.
+        loop_frequency = to_float(loop_frequency_spec_dict.get('seconds', '2.5'))
 
         # Get [possibly localized] strings for trend.barometer.desc
         baro_trend_descs = LoopData.construct_baro_trend_descs(baro_trend_trans_dict)
@@ -202,6 +208,7 @@ class LoopData(StdService):
             loop_data_dir       = loop_data_dir,
             filename            = file_spec_dict.get('filename', 'loop-data.txt'),
             target_report       = target_report,
+            loop_frequency      = loop_frequency,
             specified_fields    = specified_fields,
             fields_to_include   = fields_to_include,
             formatter           = weewx.units.Formatter.fromSkinDict(target_report_dict),
@@ -621,8 +628,8 @@ class LoopProcessor:
                 (loopdata_pkt, self.rainyear_accum, self.year_accum,
                     self.month_accum, self.week_accum, self.day_accum
                     ) = LoopProcessor.generate_loopdata_dictionary(
-                    pkt, pkt_time,
-                    self.cfg.unit_system, self.cfg.converter, self.cfg.formatter,
+                    pkt, pkt_time, self.cfg.unit_system,
+                    self.cfg.loop_frequency, self.cfg.converter, self.cfg.formatter,
                     self.cfg.fields_to_include, self.cfg.current_obstypes,
                     self.rainyear_accum, self.cfg.rainyear_start, self.cfg.rainyear_obstypes,
                     self.year_accum, self.cfg.year_obstypes,
@@ -659,7 +666,7 @@ class LoopProcessor:
         accum = weewx.accum.Accum(span, unit_system)
         for pkt in rainyear_packets:
             if pkt['dateTime'] > span.start:
-                accum.addRecord(pkt)
+                accum.addRecord(pkt, pkt['interval'] * 60)
         log.debug('Initial rainyear_accum created in %f seconds.' % (time.time() - start))
         return accum
 
@@ -671,7 +678,7 @@ class LoopProcessor:
         accum = weewx.accum.Accum(span, unit_system)
         for pkt in year_packets:
             if pkt['dateTime'] > span.start:
-                accum.addRecord(pkt)
+                accum.addRecord(pkt, pkt['interval'] * 60)
         log.debug('Initial year_accum created in %f seconds.' % (time.time() - start))
         return accum
 
@@ -683,7 +690,7 @@ class LoopProcessor:
         accum = weewx.accum.Accum(span, unit_system)
         for pkt in month_packets:
             if pkt['dateTime'] > span.start:
-                accum.addRecord(pkt)
+                accum.addRecord(pkt, pkt['interval'] * 60)
         log.debug('Initial month_accum created in %f seconds.' % (time.time() - start))
         return accum
 
@@ -695,14 +702,15 @@ class LoopProcessor:
         accum = weewx.accum.Accum(span, unit_system)
         for pkt in week_packets:
             if pkt['dateTime'] > span.start:
-                accum.addRecord(pkt)
+                accum.addRecord(pkt, pkt['interval'] * 60)
         log.debug('Initial week_accum created in %f seconds.' % (time.time() - start))
         return accum
 
     @staticmethod
     def generate_loopdata_dictionary(
-            in_pkt: Dict[str, Any], pkt_time: int,
-            unit_system: int, converter: weewx.units.Converter, formatter: weewx.units.Formatter,
+            in_pkt: Dict[str, Any], pkt_time: int, unit_system: int,
+            loop_frequency: float,
+            converter: weewx.units.Converter, formatter: weewx.units.Formatter,
             fields_to_include: List[CheetahName], current_obstypes: List[str],
             rainyear_accum: weewx.accum.Accum, rainyear_start: int, rainyear_obstypes: List[str],
             year_accum: weewx.accum.Accum, year_obstypes: List[str],
@@ -729,60 +737,60 @@ class LoopProcessor:
         try:
           if len(rainyear_obstypes) > 0:
               pruned_pkt = LoopProcessor.prune_period_packet(pkt_time, pkt, rainyear_obstypes)
-              rainyear_accum.addRecord(pruned_pkt)
+              rainyear_accum.addRecord(pruned_pkt, loop_frequency)
         except weewx.accum.OutOfSpan:
             timespan = weeutil.weeutil.archiveRainYearSpan(pkt['dateTime'], rainyear_start)
             rainyear_accum = weewx.accum.Accum(timespan, unit_system=unit_system)
             # Try again:
-            rainyear_accum.addRecord(pkt)
+            rainyear_accum.addRecord(pkt, loop_frequency)
 
         # Add packet to year accumulator.
         try:
           if len(year_obstypes) > 0:
               pruned_pkt = LoopProcessor.prune_period_packet(pkt_time, pkt, year_obstypes)
-              year_accum.addRecord(pruned_pkt)
+              year_accum.addRecord(pruned_pkt, loop_frequency)
         except weewx.accum.OutOfSpan:
             timespan = weeutil.weeutil.archiveYearSpan(pkt['dateTime'])
             year_accum = weewx.accum.Accum(timespan, unit_system=unit_system)
             # Try again:
-            year_accum.addRecord(pkt)
+            year_accum.addRecord(pkt, loop_frequency)
 
         # Add packet to month accumulator.
         try:
           if len(month_obstypes) > 0:
               pruned_pkt = LoopProcessor.prune_period_packet(pkt_time, pkt, month_obstypes)
-              month_accum.addRecord(pruned_pkt)
+              month_accum.addRecord(pruned_pkt, loop_frequency)
         except weewx.accum.OutOfSpan:
             timespan = weeutil.weeutil.archiveMonthSpan(pkt['dateTime'])
             month_accum = weewx.accum.Accum(timespan, unit_system=unit_system)
             # Try again:
-            month_accum.addRecord(pkt)
+            month_accum.addRecord(pkt, loop_frequency)
 
         # Add packet to week accumulator.
         try:
           if len(week_obstypes) > 0:
               pruned_pkt = LoopProcessor.prune_period_packet(pkt_time, pkt, week_obstypes)
-              week_accum.addRecord(pruned_pkt)
+              week_accum.addRecord(pruned_pkt, loop_frequency)
         except weewx.accum.OutOfSpan:
             timespan = weeutil.weeutil.archiveWeekSpan(pkt['dateTime'], week_start)
             week_accum = weewx.accum.Accum(timespan, unit_system=unit_system)
             # Try again:
-            week_accum.addRecord(pkt)
+            week_accum.addRecord(pkt, loop_frequency)
 
         # Add packet to day accumulator.
         try:
           if len(day_obstypes) > 0:
               pruned_pkt = LoopProcessor.prune_period_packet(pkt_time, pkt, day_obstypes)
-              day_accum.addRecord(pruned_pkt)
+              day_accum.addRecord(pruned_pkt, loop_frequency)
         except weewx.accum.OutOfSpan:
             timespan = weeutil.weeutil.archiveDaySpan(pkt['dateTime'])
             day_accum = weewx.accum.Accum(timespan, unit_system=unit_system)
             # Try again:
-            day_accum.addRecord(pkt)
+            day_accum.addRecord(pkt, loop_frequency)
 
         # Create a 10m accumulator.
         ten_min_accum = LoopProcessor.create_ten_min_accum(
-            ten_min_packets, ten_min_obstypes, unit_system)
+            ten_min_packets, ten_min_obstypes, unit_system, loop_frequency)
 
         # Create the loopdata dictionary.
         return (LoopProcessor.create_loopdata_packet(pkt,
@@ -793,7 +801,7 @@ class LoopProcessor:
 
     @staticmethod
     def create_ten_min_accum(ten_min_packets: List[PeriodPacket],
-            ten_min_obstypes: List[str], unit_system: int
+            ten_min_obstypes: List[str], unit_system: int, loop_frequency: float,
             ) -> Optional[weewx.accum.Accum]:
 
         if len(ten_min_obstypes) != 0 and len(ten_min_packets) > 0:
@@ -805,7 +813,11 @@ class LoopProcessor:
                 unit_system)
             for ten_min_packet in ten_min_packets:
                 if ten_min_accum is not None:
-                    ten_min_accum.addRecord(ten_min_packet.packet)
+                    if 'interval' in ten_min_packet.packet:
+                        weight = ten_min_packet.packet['interval'] * 60
+                    else:
+                        weight = loop_frequency
+                    ten_min_accum.addRecord(ten_min_packet.packet, weight)
         else:
             ten_min_accum = None
 
@@ -1061,6 +1073,7 @@ class LoopProcessor:
         log.info('loop_data_dir      : %s' % cfg.loop_data_dir)
         log.info('filename           : %s' % cfg.filename)
         log.info('target_report      : %s' % cfg.target_report)
+        log.info('loop_frequency     : %s' % cfg.loop_frequency)
         log.info('specified_fields   : %s' % cfg.specified_fields)
         # fields_to_include
         # formatter
@@ -1223,6 +1236,8 @@ class LoopProcessor:
         new_pkt: Dict[str, Any] = {}
         new_pkt['dateTime'] = pkt['dateTime']
         new_pkt['usUnits'] = pkt['usUnits']
+        if 'interval' in pkt:
+            new_pkt['interval'] = pkt['interval']
         for obstype in in_use_obstypes:
             if obstype in pkt:
                 new_pkt[obstype] = pkt[obstype]

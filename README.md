@@ -88,7 +88,7 @@ loop packet.
 ### Using week, month, year and rainyear fields
 
 Since LoopData primes its accumlators at startup with archive records, there
-can be a significant startup penalty to use week, month, year and rainyear
+
 fields. Please keep this in mind when deciding whether or not to use these
 fields.  This should be The aren't may applications where using these fields.
 
@@ -142,16 +142,19 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
    elsewhere, adjust the path of wee_extension accordingly.
 
 1. The install creates a LoopData section in weewx.conf as shown below.  Adjust
-   the values accordingly.  In particular, specify the `target_report` for the
-   report you wish to use for formatting and units and specify the `loop_data_dir`
-   where the loop-data.txt file should be writen.  If `loop_data_dir` is a relative
-   path, it will be interpreted as being relatgive to the target_report directory.
-   You will eventually need  to update the fields line with the fields you actually
-   need for the report you are targetting.  If you know them now, fill them in.
-   If not, you can change this line later after you are sure LoopData is running
-   correctly.  If you need the loop-data.txt file pushed to a remote webserver,
-   you will also need to fill in the `RsyncSpec` fields; but one can fill
-   that in later, after LoopData is up and running.
+   the values accordingly.  In particular:
+   * Specify `seconds` with how often your device writes loopdata records
+     (e.g., `2.5` for Davis Vantage Pro 2, `2.0` for RainWise CC3000).
+   * Specify the `target_report` for the report you wish to use for formatting and units
+   * Specify the `loop_data_dir` where the loop-data.txt file should be writen.
+     If `loop_data_dir` is a relative path, it will be interpreted as being relative to
+     the target_report directory.
+   * You will eventually need  to update the fields line with the fields you actually
+     need for the report you are targetting.  If you know them now, fill them in.
+     If not, you can change this line later after you are sure LoopData is running
+     correctly.  If you need the loop-data.txt file pushed to a remote webserver,
+     you will also need to fill in the `RsyncSpec` fields; but one can fill
+     that in later, after LoopData is up and running.
 
 ```
 [LoopData]
@@ -160,6 +163,8 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
         filename = loop-data.txt
     [[Formatting]]
         target_report = WeatherBoardReport
+    [[LoopFrequency]]
+        seconds = 2.5
     [[RsyncSpec]]
         enable = false
         remote_server = foo.bar.com
@@ -193,6 +198,10 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
                          determine the units to use and the formatting to apply.  Also,
                          if `loop_data_dir` is a relative path, it will be relative to
                          the directory of the directory of `target report `.
+ * `seconds`           : The frequency of loop packets emitted by your device.  This is
+                         needed to give the proper weight to accumulator entries.  For
+                         example, this value is `2.5` for Vantage Pro 2 devices and
+                         `2.0` for RainWise CC3000 devices.
  * `enable`            : Set to true to rsync the loop data file to `remote_server`.
  * `remote_server`     : The server to which gauge-data.txt will be copied.
                          To use rsync to sync loop-data.txt to a remote computer, passwordless ssh

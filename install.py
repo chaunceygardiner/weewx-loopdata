@@ -44,6 +44,8 @@ class LoopDataInstaller(ExtensionInstaller):
                         'filename':  'loop-data.txt'},
                     'Formatting': {
                         'target_report': 'WeatherBoardReport'},
+                    'LoopFrequency': {
+                        'seconds': '2.5'},
                     'RsyncSpec': {
                         'enable':'false',
                         'remote_server': 'www.foobar.com',
