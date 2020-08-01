@@ -526,6 +526,9 @@ class LoopData(StdService):
         # for each obstype, create the appropriate stats.
         for obstype in obstypes:
             stats: Optional[Any] = None
+            if obstype not in day_summary:
+                # Misspelling in weewx.conf LoopData fields clause.
+                continue
             if type(day_summary[obstype]) == weewx.accum.ScalarStats:
                 stats = weewx.accum.ScalarStats()
             elif type(day_summary[obstype]) == weewx.accum.VecStats:
