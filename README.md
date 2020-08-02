@@ -5,19 +5,21 @@ Copyright (C)2020 by John A Kline (john@johnkline.com)
 
 **This extension requires Python 3.7 or later and WeeWX 4.**
 
-**LoopData 2.x is a breaking change from 1.x.  See "How to Upgrade from LoopData 1.x." below.**
-
 ## Description
 
 LoopData is a WeeWX service that generates a json file (loop-data.txt)
 on every loop (e.g., every 2s).  Contained in the json are values for:
 
 * observations in the loop packet (e.g., `current.outTemp`)
+* rolling 10 min. aggregate values (e.g., `10m.outTemp.max`, `10m.wind.gustdir`)
 * trends (e.g., `trend.barometer`) -- see time_delta below
 * daily aggregate values (e.g., `day.rain.sum`)
-* rolling 10 min. aggregate values (e.g., `10m.outTemp.max`, `10m.wind.gustdir`)
+* weekly aggregate values (e.g., `week.wind.avg`)
+* monthly aggregate values (e.g., `month.barometer.avg`)
+* yearly aggregate values (e.g., `year.wind.max`)
+* rainyear aggregate values (e.g., `rainyear.rain.sum`)
 
-The trend time_delta *cannot* be changed on a cast by case basis, but
+The trend time_delta *cannot* be changed on a case by case basis, but
 it can be changed for the entire target report (i.e., by using the standard
 WeeWX customization):
 ```
@@ -47,20 +49,57 @@ in the json file.  They are specified using WeeWX Cheetah syntax.
 For example, the current outside temperature can be included as:
 
 * `current.outTemp.formatted` which might yield `79.2`
-* `current.outTemp`          which might yeild `79.2°F`
-* `current.outTemp.raw`      which might yeild `79.175`
+* `current.outTemp`           which might yeild `79.2°F`
+* `current.outTemp.raw`       which might yeild `79.175`
 
 The day average of outside tempeture can be included as:
 
-* `day.outTemp.avg.formatted`which might yeild `64.7`
-* `day.outTemp.avg`          which might yeild `64.7°`
-* `day.outTemp.avg.raw`      which might yeild `64.711`
+* `day.outTemp.avg.formatted` which might yeild `64.7`
+* `day.outTemp.avg`           which might yeild `64.7°`
+* `day.outTemp.avg.raw`       which might yeild `64.711`
 
-Note: week, month, year and rainYear periods are under consideration.
+The wind speed average for this week can be included as:
+
+* `week.windSpeed.avg.formatted` which might yeild `2.7`
+* `week.windSpeed.avg`           which might yeild `2.7 mph`
+* `week.windSpeed.raw`           which might yeild `2.74`
+
+The minimum dewpoint this month the time of that event can be included as:
+
+* `month.dewpoint.min`     which might yield `43.7°`
+* `month.dewpoint.mintime` which might yeild `08/01/2020 03:27:00 AM`
+
+The maximum wind speed this year and the time of that event can be included as:
+
+* `year.wind.max`     which might yield `29.6 mph`
+* `year.wind.maxtime` which might yeild `02/26/2020 07:40:00 PM`
+
+The total rain for this rain year can be included as:
+
+* `rainyear.rain.formatted` which might yeild `7.1`
+* `rainyear.rain`           which might yeild `7.1 in`
+* `rainyear.rain.raw`       which might yeild `7.13`
 
 If a field is requested, but the data is missing, it will not be present
 in loop-data.txt.  Your JavaScript should expect this and react
 accordingly.
+
+### How LoopData Works
+
+LoopData gathers all of the necessary information at startup and then spawns a
+separate thread.  The information gathered is only that which is needed
+for LoopData to prime it's accumulators.  For example, if a week field is
+included in the weewx.conf fields line (week.rain.sum), daily summaries
+for the week will be read to prime the week accumulator.  If no week field
+is included, no work will be done.  Ditto for rainyear, year, month and 10m
+accumulators.  They are populated only if they are used.  Lastly, only the
+necessary observation types are tracked in the accumulators.  For example,
+if no form of monthy.barometer is specified on the fields line, the monthly
+accumulator will not accumulate baromter readings.
+
+Once LoopData's thread starts and the accumulators are built, LoopData is
+never touches touches the database.  It's only connection to the WeeWX
+main thread is that NEW_LOOP_PACKET is bound to queue each loop packet.
 
 ### Example of LoopData in Action
 
@@ -91,16 +130,19 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
    elsewhere, adjust the path of wee_extension accordingly.
 
 1. The install creates a LoopData section in weewx.conf as shown below.  Adjust
-   the values accordingly.  In particular, specify the `target_report` for the
-   report you wish to use for formatting and units and specify the `loop_data_dir`
-   where the loop-data.txt file should be writen.  If `loop_data_dir` is a relative
-   path, it will be interpreted as being relatgive to the target_report directory.
-   You will eventually need  to update the fields line with the fields you actually
-   need for the report you are targetting.  If you know them now, fill them in.
-   If not, you can change this line later after you are sure LoopData is running
-   correctly.  If you need the loop-data.txt file pushed to a remote webserver,
-   you will also need to fill in the `RsyncSpec` fields; but one can fill
-   that in later, after LoopData is up and running.
+   the values accordingly.  In particular:
+   * Specify `seconds` with how often your device writes loopdata records
+     (e.g., `2.5` for Davis Vantage Pro 2, `2.0` for RainWise CC3000).
+   * Specify the `target_report` for the report you wish to use for formatting and units
+   * Specify the `loop_data_dir` where the loop-data.txt file should be writen.
+     If `loop_data_dir` is a relative path, it will be interpreted as being relative to
+     the target_report directory.
+   * You will eventually need  to update the fields line with the fields you actually
+     need for the report you are targetting.  If you know them now, fill them in.
+     If not, you can change this line later after you are sure LoopData is running
+     correctly.  If you need the loop-data.txt file pushed to a remote webserver,
+     you will also need to fill in the `RsyncSpec` fields; but one can fill
+     that in later, after LoopData is up and running.
 
 ```
 [LoopData]
@@ -109,6 +151,8 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
         filename = loop-data.txt
     [[Formatting]]
         target_report = WeatherBoardReport
+    [[LoopFrequency]]
+        seconds = 2.5
     [[RsyncSpec]]
         enable = false
         remote_server = foo.bar.com
@@ -142,6 +186,10 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
                          determine the units to use and the formatting to apply.  Also,
                          if `loop_data_dir` is a relative path, it will be relative to
                          the directory of the directory of `target report `.
+ * `seconds`           : The frequency of loop packets emitted by your device.  This is
+                         needed to give the proper weight to accumulator entries.  For
+                         example, this value is `2.5` for Vantage Pro 2 devices and
+                         `2.0` for RainWise CC3000 devices.
  * `enable`            : Set to true to rsync the loop data file to `remote_server`.
  * `remote_server`     : The server to which gauge-data.txt will be copied.
                          To use rsync to sync loop-data.txt to a remote computer, passwordless ssh
@@ -164,14 +212,14 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
 ## What fields are available.
 
 Generally, if you can specify a field in a Cheetah template, and that field begins with $current,
-`$day` or `$trend`, you can specify it here (don't include the dollar sign).  Also, anything you
-can specify with `day.`, you can also specify with `10m.` and the aggregate will apply to a
-rolling 10 minute window.
+`$trend`, `$day`, `$week`, `$month`, `$year`, or `$rainyear`, you can specify it here (but don't
+include the dollar sign).  Also, anything you can use the `10m` prefix to get aggregate values
+for a rolling ten minutes.  `10m` acts just like `day`, `week`, `month`, `year` and `rainyear`.
 
 For example, just like in a report, one can add the following extenstions to specialize the fields:
-* No extension specified`: Field is converted and formatted per the report.  A label is added.
+* `No extension`: Field is converted and formatted per the report and a label is added.
 * `.raw`: field is converted per the report, but not formatted.
-* `.formatted`: Field is converted and formatted per the report.  NO label is added.
+* `.formatted`: Field is converted and formatted per the report and no label is added.
 * `.ordinal_compass`: for directional observations, the value is converted to text.
 
 Note: `unit.label.<obs>` is also supported (e.g., `unit.label.<obs>`).
@@ -193,23 +241,23 @@ the `LoopData` section of weewx.conf
         FALLING_VERY_RAPIDLY = Falling Very Rapidly
 ```
 
-## Rsync isn't Working for Me, Help!
+## Rsync isn't Working for me, help!
 LoopData's uses WeeWX's `weeutil.rsyncupload.RsyncUpload` utility.  If you have rsync working
 for WeeWX to push your web pages to a remote server, loopdata's rsync is likely to work too.
 First get WeeWX working with rsync before you try to get loopdata working with rsync.
 
-By the way, it's best to put loop-data.txt outside of WeeWX's html tree so that WeeWX's rsync
-and loopdata's rsync don't both write the loop-data.txt file.  If you're up for configuring
-your websever to move it elsewhere (e.g., /home/weewx/loopdata/loop-data.txt), you should
-do so.  If not, it's probably OK.  There just *might* be the rare complaint in the log
-because the WeeWX main thread and the LoopData thread both tried to sync the same file at
+By the way, it's probably better  to put loop-data.txt outside of WeeWX's html tree so that
+WeeWX's rsync and loopdata's rsync don't both write the loop-data.txt file.  If you're up
+for configuring your websever to move it elsewhere (e.g., /home/weewx/loopdata/loop-data.txt),
+you should do so.  If not, it's probably OK.  There just *might* be the rare complaint in the
+log because the WeeWX main thread and the LoopData thread both tried to sync the same file at
 the same time.
 
 ## Do I have to use rsync to sync loop-data.txt to a remote server?
-You don't have to sync to a remote server; but if you do want to sync to a remote server,
-rsync is the only mechanism provided.
+You don't *have* to sync to a remote server; but if you want to sync to a remote server,
+rsync is the *only* mechanism provided.
 
-## About those Rsync Errors in the Log
+## What about those rsync errors in the log?
 If one is using rsync, especially if the loop interval is short (e.g., 2s), it is expected that
 there will be log entries for connection timeouts, transmit timeouts, write errors and skipped
 packets.  By default only one second is allowed to connect or transmit the data.  Also, by
@@ -231,54 +279,6 @@ Jun 27 23:15:53 charlemagne weewx[10156] INFO user.loopdata: skipping packet (20
 
 LoopData code includes type annotation which do not work with Python 2, nor in
 earlier versions of Python 3.
-
-# How to Upgrade from LoopData 1.x.
-
-[PLEASE NOTE: IF YOU ARE NOT UPGRADING FROM LoopData 1.x, no good will come from reading
-this section.  Furthermore, it may confuse you.  If you are looking for what fields
-can be in `loop-data.txt`, look for fields in your reports.  It is those you can add
-in `loop-data.txt`.]
-
-LoopData 2.x is a breaking change to 1.x installations. The following steps will help guide 
-you through the process:
-
-1. Install 2.x as per above instructions, but DO NOT restart WeeWX.
-
-1. Edit the LoopData->Include->fields line in weewx.conf.  Every field listed needs to be
-   translated into the new (Cheetah) style of specifying fields.
-
- * `dateTime`           -> `current.dateTime.raw`
- * `<obs>`              -> `current.<obs>.formatted`
- * `10mMaxGust`         -> `10m.windGust.max.formatted`
- * `AVG_<obs>`          -> `day.<obs>.avg`
- * `barometerRate`      -> `trend.barometer.formatted`
- * `COMPASS_<obs>`      -> `current.<obs>.ordinal_compass`
- * `DESC_barometerRate` -> `trend.barometer.desc`
- * `FMT_<obs>`          -> `current.<obs>`
- * `FMT_10mMaxGust`     -> `10m.windGust.max`
- * `FMT_AVG_<obs>`      -> `day.<obs>.avg.formatted`
- * `FMT_barometerRate`  -> `trend.barometer`
- * `FMT_HI_<obs>`       -> `day.<obs>.max`
- * `FMT_LO_<obs>`       -> `day.<obs>.min`
- * `FMT_T_HI_<obs>`     -> `day.<obs>.maxtime`
- * `FMT_T_LO_<obs>`     -> `day.<obs>.mintime`
- * `HI_<obs>`           -> `day.<obs>.max.formatted`
- * `LABEL_<obs>`        -> `unit.label.<obs>`
- * `LO_<obs>`           -> `day.<obs>.min.formatted`
- * `RMS_<obs>`          -> `day.<obs>.rms`
- * `SUM_<obs>`          -> `day.<obs>.sum`
- * `T_10mMaxGust`       -> `10m.windGust.maxtime`
- * `T_HI_<obs>`         -> `day.<obs>.maxtime.formatted`
- * `T_LO_<obs>`         -> `day.<obs>.mintime.formatted`
- * `VEC_AVG_<obs>`      -> `day.<obs>.vecavg`
- * `VEC_DIR_<obs`       -> `day.<obs>.vecdir`
-
-1. Make the same changes as above to your .tmpl and JavaScript files for the skins
-   that are using LoopData.  Note: A 2.x version of WeatherBoard has been released.  It uses
-   the new naming scheme.
-
-The followiung have been removed from LoopData: `windRose` observations,
-`UNITS_<obs>` fields and the capability to `rename` the keys in loop-data.txt.
 
 ## Licensing
 
