@@ -575,7 +575,7 @@ class LoopData(StdService):
             stats.mergeHiLo(day_summary[obstype])
             stats.mergeSum(day_summary[obstype])
             accum[obstype] = stats
-        log.info('Created %s accum in %f seconds (read %d records).' % (name, time.time() - start, record_count))
+        log.debug('Created %s accum in %f seconds (read %d records).' % (name, time.time() - start, record_count))
         return accum
 
     @staticmethod
