@@ -28,6 +28,8 @@ WeeWX customization):
             time_delta = 86400    # for a 24 hour trend.
 ```
 The default trend is 10800 (3 hours).  This is a WeeWX default.
+Note: If time_delta > 259200 (3 days), LoopData will use a time_delta
+of 259200 (3 days).
 
 The json file will only include observations that are specified on the
 `fields` line in the `LoopData` section of the weewx.conf file.

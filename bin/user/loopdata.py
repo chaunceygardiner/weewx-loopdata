@@ -45,7 +45,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '2.5.b2'
+LOOP_DATA_VERSION = '2.5'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -193,6 +193,9 @@ class LoopData(StdService):
         # Get the time span (number of seconds) to use for trend.
         try:
             time_delta: int = to_int(target_report_dict['Units']['Trend']['time_delta'])
+            if time_delta > 259200:
+                log.info('time_delta of %d specified, LoopData will use max value of 259200.' % time_delta)
+                time_delta = 259200
         except KeyError:
             time_delta = 10800
 

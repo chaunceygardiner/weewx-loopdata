@@ -1,6 +1,17 @@
 loopdata change history
 -----------------------
 
+2.5 Release
+-----------
+1. Add support for week, month, year and rainyear.
+2. Add LoopData>LoopFrequency>seconds setting in weewx.conf.
+   This should be set to the number of seconds between
+   loop packets.  This is needed to pass the proper
+   weights to the accumulator.  This setting defaults
+   to 2.5 (2.5 seconds is the frequency of loop packets
+   for the Davis Vantage Pro 2).
+3. Limit time_delta used for trends to 259200 (3 days).
+
 2.5.b2
 ------
 Fix for LoopFrequency being ignored (was always using default).
