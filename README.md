@@ -55,6 +55,9 @@ LoopDataReport is a sample report included with this extension.
 After installing and restarting, and after waiting for a report cycle,
 the loopdata report can be found at `<weewx-url>/loopdata/`:
 
+**Every field in this report is updated on every loop packet.  That includes
+the 10 minute, day, week, month, year, rain year and trend fields.**
+
 ![LoopDataReport](LoopDataReport.png)
 
 
