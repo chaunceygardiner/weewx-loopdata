@@ -137,7 +137,7 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
 
 # Installation Instructions
 
-1. Download the lastest release, weewx-loopdata-2.0.1.zip, from the
+1. Download the lastest release, weewx-loopdata-2.6.zip, from the
    [GitHub Repository](https://github.com/chaunceygardiner/weewx-loopdata).
 
 1. Run the following command.
