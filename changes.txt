@@ -1,8 +1,13 @@
 loopdata change history
 -----------------------
 
-2.5 Release
------------
+2.6 Release 9 Aug 2020
+----------------------
+1. Include sample report LoopDataReport to demonstrate
+   capabilities of the loopdata extension.
+
+2.5 Release 2 Aug 2020
+----------------------
 1. Add support for week, month, year and rainyear.
 2. Add LoopData>LoopFrequency>seconds setting in weewx.conf.
    This should be set to the number of seconds between

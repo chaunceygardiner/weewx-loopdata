@@ -8,8 +8,12 @@ Copyright (C)2020 by John A Kline (john@johnkline.com)
 ## Description
 
 LoopData is a WeeWX service that generates a json file (loop-data.txt)
-on every loop (e.g., every 2s).  Contained in the json are values for:
+on every loop (e.g., every 2s).
 
+A sample skin that uses the loopdata extension is also included.  After installation,
+it can be found at `<weewx-url>/loopdata/`.
+
+The json file will contain any specified values for:
 * observations in the loop packet (e.g., `current.outTemp`)
 * rolling 10 min. aggregate values (e.g., `10m.outTemp.max`, `10m.wind.gustdir`)
 * trends (e.g., `trend.barometer`) -- see time_delta below
@@ -35,7 +39,8 @@ The json file will only include observations that are specified on the
 `fields` line in the `LoopData` section of the weewx.conf file.
 
 Typically, the loop-data.txt file is read by JavaScript on an HTML page
-to update the values on the page on every loop packet.
+to update the values on the page on every loop packet.  This is demostrated
+by the skin/report included with this extension.
 
 A WeeWX report is specified in the LoopData configuration (e.g.,
 `WeatherBoardReport`).  With this information, LoopData automatically converts
@@ -44,6 +49,9 @@ readings according to the report specification (unless `.raw` is specified,
 e.g., `day.barometer.max.raw`).  Thus, it is simple to replace the reports
 observations with updated values in JavaScript as they will already be in the
 correct units and in the correct format.
+
+LoopData is initially configured with a target report of LoopDataReport.
+LoopDataReport is a sample report included with this extension.
 
 The fields specified in weewx.conf on the fields line will be the keys
 in the json file.  They are specified using WeeWX Cheetah syntax.
@@ -152,7 +160,7 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
         loop_data_dir = .
         filename = loop-data.txt
     [[Formatting]]
-        target_report = WeatherBoardReport
+        target_report = LoopDataReport
     [[LoopFrequency]]
         seconds = 2.5
     [[RsyncSpec]]
@@ -187,7 +195,9 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
  * `target_report`     : The WeeWX report to target.  LoopData will use this report to
                          determine the units to use and the formatting to apply.  Also,
                          if `loop_data_dir` is a relative path, it will be relative to
-                         the directory of the directory of `target report `.
+                         the directory of the directory of `target report `.  When
+                         LoopData is first installed, target_report is set to
+                         the sample report included with this skin: `LoopDataReport`.
  * `seconds`           : The frequency of loop packets emitted by your device.  This is
                          needed to give the proper weight to accumulator entries.  For
                          example, this value is `2.5` for Vantage Pro 2 devices and

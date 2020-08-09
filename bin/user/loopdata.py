@@ -45,7 +45,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '2.5'
+LOOP_DATA_VERSION = '2.6'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -168,7 +168,7 @@ class LoopData(StdService):
         tmp.close()
 
         # Get a target report dictionary we can use for converting units and formatting.
-        target_report = formatting_spec_dict.get('target_report', 'SeasonsReport')
+        target_report = formatting_spec_dict.get('target_report', 'LoopDataReport')
         try:
             target_report_dict = LoopData.get_target_report_dict(
                 config_dict, target_report)

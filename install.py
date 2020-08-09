@@ -31,7 +31,7 @@ def loader():
 class LoopDataInstaller(ExtensionInstaller):
     def __init__(self):
         super(LoopDataInstaller, self).__init__(
-            version = "2.5",
+            version = "2.6",
             name = 'loopdata',
             description = 'Loop statistics for real time reporting.',
             author = "John A Kline",
@@ -43,7 +43,7 @@ class LoopDataInstaller(ExtensionInstaller):
                         'loop_data_dir': '.',
                         'filename':  'loop-data.txt'},
                     'Formatting': {
-                        'target_report': 'WeatherBoardReport'},
+                        'target_report': 'LoopDataReport'},
                     'LoopFrequency': {
                         'seconds': '2.5'},
                     'RsyncSpec': {
@@ -57,12 +57,67 @@ class LoopDataInstaller(ExtensionInstaller):
                         'timeout': '1',
                         'skip_if_older_than': '3'},
                     'Include': {
-                        'fields': ['current.dateTime.raw','current.windSpeed.raw','current.windDir.ordinal_compass',
-                            'trend.barometerRate.desc','current.barometer',
-                            'day.rain.sum','current.dewpoint','current.heatindex',
-                            'current.outHumidity','current.outTemp','current.rain',
-                            'current.rainRate','current.windchill','current.windSpeed',
-                            'day.windGust.max','10m.windGust.max']},
+                        'fields': [
+                            'trend.outTemp',
+                            'trend.barometer.desc',
+
+                            'current.barometer',
+                            'current.dateTime.raw',
+                            'current.dewpoint',
+                            'current.dewpoint.formatted',
+                            'current.heatindex',
+                            'current.outHumidity',
+                            'current.outTemp',
+                            'current.outTemp.formatted',
+                            'current.rain',
+                            'current.rainRate',
+                            'current.rainRate.formatted',
+                            'current.windchill',
+                            'current.windDir.ordinal_compass',
+                            'current.windSpeed',
+                            'current.windSpeed.formatted',
+                            'current.windSpeed.raw',
+
+                            '10m.outTemp.max.formatted',
+                            '10m.outTemp.min.formatted',
+                            '10m.rain.sum.formatted',
+                            '10m.wind.rms.formatted',
+                            '10m.windGust.max',
+                            '10m.windGust.max.formatted',
+
+                            'day.outTemp.max.formatted',
+                            'day.outTemp.min.formatted',
+                            'day.rain.sum',
+                            'day.rain.sum.formatted',
+                            'day.wind.rms.formatted',
+                            'day.windGust.max',
+                            'day.windGust.max.formatted',
+
+                            'week.outTemp.max.formatted',
+                            'week.outTemp.min.formatted',
+                            'week.rain.sum.formatted',
+                            'week.wind.rms.formatted',
+                            'week.windGust.max.formatted',
+
+                            'month.outTemp.max.formatted',
+                            'month.outTemp.min.formatted',
+                            'month.rain.sum.formatted',
+                            'month.wind.rms.formatted',
+                            'month.windGust.max.formatted',
+
+                            'year.outTemp.max.formatted',
+                            'year.outTemp.min.formatted',
+                            'year.rain.sum.formatted',
+                            'year.wind.rms.formatted',
+                            'year.windGust.max.formatted',
+
+                            'rainyear.outTemp.max.formatted',
+                            'rainyear.outTemp.min.formatted',
+                            'rainyear.rain.sum.formatted',
+                            'rainyear.wind.rms.formatted',
+                            'rainyear.windGust.max.formatted',
+                            ]},
+
                     'BarometerTrendDescriptions': {
                         'RISING_VERY_RAPIDLY' : 'Rising Very Rapidly',
                         'RISING_QUICKLY'      : 'Rising Quickly',
@@ -74,6 +129,39 @@ class LoopDataInstaller(ExtensionInstaller):
                         'FALLING_QUICKLY'     : 'Falling Quickly',
                         'FALLING_VERY_RAPIDLY': 'Falling Very Rapidly',
                     },
-                }
+                },
+                'StdReport': {
+                    'LoopDataReport': {
+                        'HTML_ROOT':'loopdata',
+                        'enable': 'true',
+                        'skin':'LoopData',
+                        'Extras': {
+                            'loop_data_file'   : 'loop-data.txt',
+                            'expiration_time'  : 4,
+                            'page_update_pwd'  : 'foobar',
+                            'googleAnalyticsId': '',
+                            'analytics_host'   : '',
+                        },
+                        'Units' : {
+                            'StringFormats': {
+                                'mile_per_hour': '%.1f',
+                                'degree_C': '%.1f',
+                                'km_per_hour': '%.1f',
+                                'degree_F': '%.1f',
+                            },
+                        },
+                    },
+                },
             },
-            files = [('bin/user', ['bin/user/loopdata.py'])])
+            files = [
+                ('bin/user', [
+                    'bin/user/loopdata.py',
+                    ]),
+                ('skins/LoopData', [
+                    'skins/LoopData/analytics.inc',
+                    'skins/LoopData/favicon.ico',
+                    'skins/LoopData/index.html.tmpl',
+                    'skins/LoopData/realtime_updater.inc',
+                    'skins/LoopData/skin.conf',
+                    ]),
+            ])

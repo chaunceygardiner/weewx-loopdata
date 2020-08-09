@@ -1,0 +1,97 @@
+## Copyright (C)2020 by John A Kline (john@johnkline.com)
+## Distributed under the terms of the GNU Public License (GPLv3)
+## See LICENSE for your rights.
+#errorCatcher Echo
+#encoding UTF-8
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <link rel="icon" type="image/png" href="favicon.ico" />
+    #if $Extras.has_key('meta_title')
+      <title>$Extras.meta_title</title>
+    #else
+      <title>$station.location</title>
+    #end if
+    <meta name="description" content="Up to date weather readings for $station.location.">
+    <style>
+      #centered {
+        width:100%;
+        margin: auto;
+      }
+    </style>
+  </head>
+  <body style="background-color:black;font-family:monospace;color:#00FFFF;">
+    #include "analytics.inc"
+    #include "realtime_updater.inc"
+    <div>
+      <div>
+        <table id="centered" style="font-size:32px;">
+          <tr>
+            <td style="text-align:left;width:220px;">
+              <span id="last-update"></span>
+            </td>
+            <td style="text-align:center;">
+              <h1 style="font-size:32px;text-decoration:underline;">
+                #if $Extras.has_key('title')
+                  $Extras.title
+                #else
+                  $station.location
+                #end if
+              </h1>
+            </td>
+            <td style="text-align:right;width:220px;">
+              <span id="live-label"></span>
+            </td>
+          </tr>
+        </table>
+      </div>
+    </div>
+    <div style="font-size:60px;text-align:center;">
+      <span style="font-size:32px;">Current</span>
+      <div style="font-size:20px;">
+        Temperature Trend: <span id="trend.outTemp"></span>
+        &mdash;
+        Barometer Trend: <span id="trend.barometer.desc"></span>
+      </div>
+      <table id="centered">
+        <tr>
+          <td style="font-size:20px;">Out Temp</td>
+          <td style="font-size:20px;">Dew Pt</td>
+          <td style="font-size:20px;">Wind Sp</td>
+          <td style="font-size:20px;">Wind Dir</td>
+          <td style="font-size:20px;">Rain Rate</td>
+        </tr>
+        <tr>
+          <td id="current.outTemp.formatted" style='white-space:pre;'></td>
+          <td id="current.dewpoint.formatted" style='white-space:pre;'></td>
+          <td id="current.windSpeed.formatted" style='white-space:pre;'></td>
+          <td id="current.windDir.ordinal_compass" style='white-space:pre;'></td>
+          <td id="current.rainRate.formatted" style='white-space:pre;'></td>
+          </td>
+        </tr>
+      </table>
+      #set $archive_data = [('Last 10 Minutes', '10m'), ('Today', 'day'), ('Week', 'week'), ('Month', 'month'), ('Year', 'year'), ('Rain Year', 'rainyear')]
+      #for $archive in $archive_data
+      <span style="font-size:32px;">$archive[0]</span>
+      <table id="centered">
+        <tr>
+          <td style="font-size:20px;">Hi Out Temp</td>
+          <td style="font-size:20px;">Lo Out Temp</td>
+          <td style="font-size:20px;">Wind RMS</td>
+          <td style="font-size:20px;">Hi Gust</td>
+          <td style="font-size:20px;">Rain</td>
+        </tr>
+        <tr>
+          <td id='$(archive[1]).outTemp.max.formatted' style='white-space:pre;'></td>
+          <td id='$(archive[1]).outTemp.min.formatted' style='white-space:pre;'></td>
+          <td id='$(archive[1]).wind.rms.formatted' style='white-space:pre;'></td>
+          <td id='$(archive[1]).windGust.max.formatted' style='white-space:pre;'></td>
+          <td id='$(archive[1]).rain.sum.formatted' style='white-space:pre;'></td>
+          </td>
+        </tr>
+      </table>
+      #end for
+    </div>
+  </body>
+</html>
