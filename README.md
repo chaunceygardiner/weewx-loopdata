@@ -52,6 +52,11 @@ correct units and in the correct format.
 
 LoopData is initially configured with a target report of LoopDataReport.
 LoopDataReport is a sample report included with this extension.
+After installing and restarting, and after waiting for a report cycle,
+the loopdata report can be found at `<weewx-url>/loopdata/`:
+
+![LoopDataReport](LoopDataReport.png)
+
 
 The fields specified in weewx.conf on the fields line will be the keys
 in the json file.  They are specified using WeeWX Cheetah syntax.
@@ -148,11 +153,16 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
      If `loop_data_dir` is a relative path, it will be interpreted as being relative to
      the target_report directory.
    * You will eventually need  to update the fields line with the fields you actually
-     need for the report you are targetting.  If you know them now, fill them in.
-     If not, you can change this line later after you are sure LoopData is running
-     correctly.  If you need the loop-data.txt file pushed to a remote webserver,
+     need for the report you are targetting.  Change this line later after you are sure
+     LoopData is running correctly.
+   * If you need the loop-data.txt file pushed to a remote webserver,
      you will also need to fill in the `RsyncSpec` fields; but one can fill
      that in later, after LoopData is up and running.
+
+1. Restart WeeWX.
+
+1. After a reporting cycle runs, check navigate to `<weewx-url>/loopdata/ in your browser
+   to see the default loopdata report. (Reports typcially run every 5 minutes.)
 
 ```
 [LoopData]
