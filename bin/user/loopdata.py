@@ -1125,6 +1125,8 @@ class LoopProcessor:
         log.info('timeout            : %d' % cfg.timeout)
         log.info('skip_if_older_than : %d' % cfg.skip_if_older_than)
         log.info('time_delta         : %d' % cfg.time_delta)
+        log.info('week_start         : %d' % cfg.week_start)
+        log.info('rainyear_start     : %d' % cfg.rainyear_start)
         log.info('trend_obstypes     : %s' % cfg.trend_obstypes)
         log.info('rainyear_obstypes  : %s' % cfg.rainyear_obstypes)
         log.info('year_obstypes      : %s' % cfg.year_obstypes)
