@@ -1,6 +1,13 @@
 loopdata change history
 -----------------------
 
+2.7 Release 11 Aug 2020
+-----------------------
+1. Bug fix for accumulators at startup from daily summaries.
+   The daily summary was not being selected in each accumulator
+   range.
+2. Include tests where week_start is 0 (rather than default 6).
+
 2.6 Release 9 Aug 2020
 ----------------------
 1. Include sample report LoopDataReport to demonstrate

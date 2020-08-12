@@ -45,7 +45,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '2.6'
+LOOP_DATA_VERSION = '2.7'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -453,7 +453,7 @@ class LoopData(StdService):
         table_name = 'archive_day_%s' % obstype
         cols: List[str] = dbm.connection.columnsOf(table_name)
         for row in dbm.genSql('SELECT * FROM %s' \
-                ' WHERE dateTime > %d ORDER BY dateTime ASC' % (table_name, earliest_time)):
+                ' WHERE dateTime >= %d ORDER BY dateTime ASC' % (table_name, earliest_time)):
             record: Dict[str, Any] = {}
             for i in range(len(cols)):
                 record[cols[i]] = row[i]
@@ -1103,8 +1103,8 @@ class LoopProcessor:
     def log_configuration(cfg: Configuration):
         # queue
         # config_dict
-        log.info('archive_interval   : %d' % cfg.archive_interval)
         log.info('unit_system        : %d' % cfg.unit_system)
+        log.info('archive_interval   : %d' % cfg.archive_interval)
         log.info('loop_data_dir      : %s' % cfg.loop_data_dir)
         log.info('filename           : %s' % cfg.filename)
         log.info('target_report      : %s' % cfg.target_report)
