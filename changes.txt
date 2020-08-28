@@ -1,6 +1,12 @@
 loopdata change history
 -----------------------
 
+2.7.1 Release 28 Aug 2020
+-------------------------
+1. Ignore aggreagate fields base on xtypes as there are
+   no day accumulators from which to reconstruct inital
+   values at start up for these fields.
+
 2.7 Release 11 Aug 2020
 -----------------------
 1. Bug fix for accumulators at startup from daily summaries.

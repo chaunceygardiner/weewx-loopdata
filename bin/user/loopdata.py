@@ -45,7 +45,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '2.7'
+LOOP_DATA_VERSION = '2.7.1'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -496,10 +496,14 @@ class LoopData(StdService):
             for k in day_summary:
                 day_accum.set_stats(k, day_summary[k].getStatsTuple())
 
-            rainyear_accum = LoopData.create_rainyear_accum(self.cfg.unit_system, self.cfg.rainyear_obstypes, pkt_time, self.cfg.rainyear_start, day_accum, dbm)
-            year_accum = LoopData.create_year_accum(self.cfg.unit_system, self.cfg.year_obstypes, pkt_time, day_accum, dbm)
-            month_accum = LoopData.create_month_accum(self.cfg.unit_system, self.cfg.month_obstypes, pkt_time, day_accum, dbm)
-            week_accum = LoopData.create_week_accum(self.cfg.unit_system, self.cfg.week_obstypes, pkt_time, self.cfg.week_start, day_accum, dbm)
+            rainyear_accum, self.cfg.rainyear_obstypes = LoopData.create_rainyear_accum(
+                self.cfg.unit_system, self.cfg.rainyear_obstypes, pkt_time, self.cfg.rainyear_start, day_accum, dbm)
+            year_accum, self.cfg.year_obstypes = LoopData.create_year_accum(
+                self.cfg.unit_system, self.cfg.year_obstypes, pkt_time, day_accum, dbm)
+            month_accum, self.cfg.month_obstypes = LoopData.create_month_accum(
+                self.cfg.unit_system, self.cfg.month_obstypes, pkt_time, day_accum, dbm)
+            week_accum, self.cfg.week_obstypes = LoopData.create_week_accum(
+                self.cfg.unit_system, self.cfg.week_obstypes, pkt_time, self.cfg.week_start, day_accum, dbm)
             self.cfg.queue.put(AccumulatorPayload(
                 rainyear_accum = rainyear_accum,
                 year_accum     = year_accum,
@@ -510,48 +514,56 @@ class LoopData(StdService):
 
     @staticmethod
     def create_rainyear_accum(unit_system: int, obstypes: List[str], pkt_time: int,
-            rainyear_start: int, day_accum: weewx.accum.Accum, dbm) -> Optional[weewx.accum.Accum]:
+            rainyear_start: int, day_accum: weewx.accum.Accum, dbm) -> Tuple[Optional[weewx.accum.Accum], List[str]]:
         log.debug('Creating initial rainyear_accum')
         span = weeutil.weeutil.archiveRainYearSpan(pkt_time, rainyear_start)
         return LoopData.create_period_accum('rainyear', unit_system, obstypes, span, day_accum, dbm)
 
     @staticmethod
     def create_year_accum(unit_system: int, obstypes: List[str], pkt_time: int, day_accum: weewx.accum.Accum, dbm
-            ) -> Optional[weewx.accum.Accum]:
+            ) -> Tuple[Optional[weewx.accum.Accum], List[str]]:
         log.debug('Creating initial year_accum')
         span = weeutil.weeutil.archiveYearSpan(pkt_time)
         return LoopData.create_period_accum('year', unit_system, obstypes, span, day_accum, dbm)
 
     @staticmethod
     def create_month_accum(unit_system: int, obstypes: List[str], pkt_time: int, day_accum: weewx.accum.Accum, dbm
-            ) -> Optional[weewx.accum.Accum]:
+            ) -> Tuple[Optional[weewx.accum.Accum], List[str]]:
         log.debug('Creating initial month_accum')
         span = weeutil.weeutil.archiveMonthSpan(pkt_time)
         return LoopData.create_period_accum('month', unit_system, obstypes, span, day_accum, dbm)
 
     @staticmethod
     def create_week_accum(unit_system: int, obstypes: List[str], pkt_time: int,
-            week_start: int, day_accum: weewx.accum.Accum, dbm) -> Optional[weewx.accum.Accum]:
+            week_start: int, day_accum: weewx.accum.Accum, dbm) -> Tuple[Optional[weewx.accum.Accum], List[str]]:
         log.debug('Creating initial week_accum')
         span = weeutil.weeutil.archiveWeekSpan(pkt_time, week_start)
         return LoopData.create_period_accum('week', unit_system, obstypes, span, day_accum, dbm)
 
     @staticmethod
     def create_period_accum(name: str, unit_system: int, obstypes: List[str],
-            span: weeutil.weeutil.TimeSpan, day_accum: weewx.accum.Accum, dbm) -> Optional[weewx.accum.Accum]:
+            span: weeutil.weeutil.TimeSpan, day_accum: weewx.accum.Accum, dbm) -> Tuple[Optional[weewx.accum.Accum], List[str]]:
+        """return period accumulator and (possibly trimmed) obstypes"""
 
         if len(obstypes) == 0:
-            return None
+            return None, None
 
         start = time.time()
         accum = weewx.accum.Accum(span, unit_system)
+
+        # valud observation types will be returned
+        valid_obstypes: List[str] = []
 
         # for each obstype, create the appropriate stats.
         for obstype in obstypes:
             stats: Optional[Any] = None
             if obstype not in day_accum:
-                # Misspelling in weewx.conf LoopData fields clause.
+                # Obstyypes implemented with xtypes will fall out here.
+                # As well as typos or any obstype that is not in day_accum.
+                log.info('Ignoring %s for %s time period as this observation has no day accumulator.'
+                    % (obstype, name))
                 continue
+            valid_obstypes.append(obstype)
             if type(day_accum[obstype]) == weewx.accum.ScalarStats:
                 stats = weewx.accum.ScalarStats()
             elif type(day_accum[obstype]) == weewx.accum.VecStats:
@@ -559,7 +571,7 @@ class LoopData(StdService):
             elif type(day_accum[obstype]) == weewx.accum.FirstLastAccum:
                 stats = weewx.accum.FirstLastAccum()
             else:
-                return None
+                return None, None
             record_count = 0
             for record in LoopData.day_summary_records_generator(dbm, obstype, span.start):
                 record_count += 1
@@ -572,7 +584,7 @@ class LoopData(StdService):
                     elif 'last' in record:
                         stats = weewx.accum.FirstLastAccum()
                     else:
-                        return None
+                        return None, None
                 if type(stats) == weewx.accum.ScalarStats:
                     sstat = weewx.accum.ScalarStats((record['min'], record['mintime'],
                         record['max'], record['maxtime'],
@@ -594,12 +606,12 @@ class LoopData(StdService):
                         record['last'], record['lasttime']))
                     stats.mergeHiLo(fstat)
                     stats.mergeSum(fstat)
-                # Add in today's stats
+            # Add in today's stats
             stats.mergeHiLo(day_accum[obstype])
             stats.mergeSum(day_accum[obstype])
             accum[obstype] = stats
         log.debug('Created %s accum in %f seconds (read %d records).' % (name, time.time() - start, record_count))
-        return accum
+        return accum, valid_obstypes
 
     @staticmethod
     def parse_cname(field: str) -> Optional[CheetahName]:
@@ -683,7 +695,6 @@ class LoopProcessor:
         self.archive_start: float = time.time()
         self.trend_packets: List[PeriodPacket] = trend_packets
         self.ten_min_packets: List[PeriodPacket] = ten_min_packets
-        LoopProcessor.log_configuration(cfg)
 
     def process_queue(self) -> None:
         try:
@@ -691,6 +702,7 @@ class LoopProcessor:
                 event               = self.cfg.queue.get()
 
                 if type(event) == AccumulatorPayload:
+                    LoopProcessor.log_configuration(self.cfg)
                     self.rainyear_accum = event.rainyear_accum
                     self.year_accum = event.year_accum
                     self.month_accum = event.month_accum

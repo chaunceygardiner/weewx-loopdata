@@ -119,6 +119,15 @@ Once LoopData's thread starts and the accumulators are built, LoopData is
 never touches touches the database.  It's only connection to the WeeWX
 main thread is that NEW_LOOP_PACKET is bound to queue each loop packet.
 
+### Period Aggregates implemented via xtypes are not currently supported by loopdata
+
+Currently, if an aggregate is impemented via xtypes, it will be ignored by loopdata.
+For example, the weewx-purple extension implements `pm2_5_aqi` via xtypes.  If,
+say, `week.pm2_5_aqi.max` was specified as one of the fields on the fields line, it
+would be ignored.  This is because there is not database from which to look up
+the weekly high for `pm2_5_aqi`.
+
+
 ### Example of LoopData in Action
 
 See weewx-loopdata in action with a WeatherBoard&trade; skin at
@@ -137,7 +146,7 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
 
 # Installation Instructions
 
-1. Download the lastest release, weewx-loopdata-2.7.zip, from the
+1. Download the lastest release, weewx-loopdata-2.7.1.zip, from the
    [GitHub Repository](https://github.com/chaunceygardiner/weewx-loopdata).
 
 1. Run the following command.
