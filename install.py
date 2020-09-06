@@ -144,9 +144,9 @@ class LoopDataInstaller(ExtensionInstaller):
                         },
                         'Units' : {
                             'StringFormats': {
-                                'mile_per_hour': '%.1f',
+                                'mile_per_hour': '%.0f',
                                 'degree_C': '%.1f',
-                                'km_per_hour': '%.1f',
+                                'km_per_hour': '%.0f',
                                 'degree_F': '%.1f',
                             },
                         },
