@@ -546,7 +546,7 @@ class LoopData(StdService):
         """return period accumulator and (possibly trimmed) obstypes"""
 
         if len(obstypes) == 0:
-            return None, None
+            return None, []
 
         start = time.time()
         accum = weewx.accum.Accum(span, unit_system)
@@ -571,7 +571,7 @@ class LoopData(StdService):
             elif type(day_accum[obstype]) == weewx.accum.FirstLastAccum:
                 stats = weewx.accum.FirstLastAccum()
             else:
-                return None, None
+                return None, []
             record_count = 0
             for record in LoopData.day_summary_records_generator(dbm, obstype, span.start):
                 record_count += 1
@@ -584,7 +584,7 @@ class LoopData(StdService):
                     elif 'last' in record:
                         stats = weewx.accum.FirstLastAccum()
                     else:
-                        return None, None
+                        return None, []
                 if type(stats) == weewx.accum.ScalarStats:
                     sstat = weewx.accum.ScalarStats((record['min'], record['mintime'],
                         record['max'], record['maxtime'],
