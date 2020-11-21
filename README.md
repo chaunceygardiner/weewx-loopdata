@@ -241,7 +241,7 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
  * `skip_if_older_than`: Don't bother to rsync if greater than this number of seconds.  Default is 4.
                          (Skip this and move on to the next if this data is older than 4 seconds.
  * `fields`            : Used to specify which fields to include in the file.
- * `BarometerTrendDescriptions` : The descriptions associated with trand.barometer.desc.  Localize as necessary.
+ * `BarometerTrendDescriptions` : The descriptions associated with trend.barometer.desc.  Localize as necessary.
 
 ## What fields are available.
 
@@ -259,7 +259,7 @@ For example, just like in a report, one can add the following extenstions to spe
 Note: `unit.label.<obs>` is also supported (e.g., `unit.label.<obs>`).
 
 Lastly, `trend.barometer.desc` is also supported and provides a text version of the
-baromter rate (e.g., `Falling Slowly`).  Baromter trend descriptions can be localize in
+baromter rate (e.g., `Falling Slowly`).  Barometer trend descriptions can be localized in
 the `LoopData` section of weewx.conf
 ```
 [LoopData]
