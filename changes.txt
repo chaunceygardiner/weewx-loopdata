@@ -1,6 +1,12 @@
 loopdata change history
 -----------------------
 
+2.7.2 Release 16 Nov 2020
+-------------------------
+1. Fix for customer reported problem.  Exception in
+   code when no rainyear fields are included in
+   fields list.
+
 2.7.1 Release 28 Aug 2020
 -------------------------
 1. Ignore aggreagate fields base on xtypes as there are
