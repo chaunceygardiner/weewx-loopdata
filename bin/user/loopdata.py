@@ -1200,7 +1200,7 @@ class LoopProcessor:
         log.info('month_obstypes     : %s' % cfg.month_obstypes)
         log.info('week_obstypes      : %s' % cfg.week_obstypes)
         log.info('day_obstypes       : %s' % cfg.day_obstypes)
-        log.info('hour_obstypes       : %s' % cfg.hour_obstypes)
+        log.info('hour_obstypes      : %s' % cfg.hour_obstypes)
         log.info('ten_min_obstypes   : %s' % cfg.ten_min_obstypes)
         log.info('baro_trend_descs   : %s' % cfg.baro_trend_descs)
 
