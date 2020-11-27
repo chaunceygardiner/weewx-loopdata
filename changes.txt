@@ -1,6 +1,21 @@
 loopdata change history
 -----------------------
 
+2.8 Release ?? ??? 2020
+-----------------------
+1. Add support hour tag.
+Note: The sample skin is updated to use the hour tags.
+      For existing installations that actually use the
+      sample skin, you need to add the following fields
+      to the fields clause in the LoopData section in
+      weewx.conf:
+          'hour.outTemp.max.formatted'
+          'hour.outTemp.min.formatted'
+          'hour.rain.sum.formatted'
+          'hour.wind.rms.formatted'
+          'hour.windGust.max'
+          'hour.windGust.max.formatted'
+
 2.7.2 Release 16 Nov 2020
 -------------------------
 1. Fix for customer reported problem.  Exception in

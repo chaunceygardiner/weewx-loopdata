@@ -85,6 +85,13 @@ class LoopDataInstaller(ExtensionInstaller):
                             '10m.windGust.max',
                             '10m.windGust.max.formatted',
 
+                            'hour.outTemp.max.formatted',
+                            'hour.outTemp.min.formatted',
+                            'hour.rain.sum.formatted',
+                            'hour.wind.rms.formatted',
+                            'hour.windGust.max',
+                            'hour.windGust.max.formatted',
+
                             'day.outTemp.max.formatted',
                             'day.outTemp.min.formatted',
                             'day.rain.sum',

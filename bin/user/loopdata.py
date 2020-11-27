@@ -100,6 +100,7 @@ class Configuration:
     month_obstypes     : List[str]
     week_obstypes      : List[str]
     day_obstypes       : List[str]
+    hour_obstypes      : List[str]
     ten_min_obstypes   : List[str]
     baro_trend_descs   : Any # Dict[BarometerTrend, str]
 
@@ -110,6 +111,7 @@ class AccumulatorPayload:
     month_accum: Optional[weewx.accum.Accum]
     week_accum : Optional[weewx.accum.Accum]
     day_accum  : Optional[weewx.accum.Accum]
+    hour_accum : Optional[weewx.accum.Accum]
 
 class BarometerTrend(Enum):
     RISING_VERY_RAPIDLY  = 1
@@ -187,7 +189,7 @@ class LoopData(StdService):
         # Process fields line of LoopData section.
         specified_fields = include_spec_dict.get('fields', [])
         (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
-            year_obstypes, month_obstypes, week_obstypes, day_obstypes,
+            year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
             ten_min_obstypes) = LoopData.get_fields_to_include(specified_fields)
 
         # Get the time span (number of seconds) to use for trend.
@@ -246,6 +248,7 @@ class LoopData(StdService):
             month_obstypes      = month_obstypes,
             week_obstypes       = week_obstypes,
             day_obstypes        = day_obstypes,
+            hour_obstypes       = hour_obstypes,
             ten_min_obstypes    = ten_min_obstypes,
             baro_trend_descs    = baro_trend_descs)
 
@@ -285,11 +288,11 @@ class LoopData(StdService):
     @staticmethod
     def get_fields_to_include(specified_fields: List[str]
             ) -> Tuple[List[CheetahName], List[str], List[str], List[str],
-            List[str], List[str], List[str], List[str], List[str]]:
+            List[str], List[str], List[str], List[str], List[str], List[str]]:
         """
         Return fields_to_include, current_obstypes, trend_obstypes,
                rainyear_obstypes, year_obstypes, month_obstypes, week_obstypes,
-               day_obstypes, ten_min_obstypes
+               day_obstypes, hour_obstypes, ten_min_obstypes
         """
         specified_fields = list(dict.fromkeys(specified_fields))
         fields_to_include: List[CheetahName] = []
@@ -311,6 +314,8 @@ class LoopData(StdService):
             fields_to_include, 'week')
         day_obstypes    : List[str] = LoopData.compute_period_obstypes(
             fields_to_include, 'day')
+        hour_obstypes    : List[str] = LoopData.compute_period_obstypes(
+            fields_to_include, 'hour')
         ten_min_obstypes: List[str] = LoopData.compute_period_obstypes(
             fields_to_include, '10m')
 
@@ -318,12 +323,12 @@ class LoopData(StdService):
         # needed to feed all the others.  As such, take the union of all.
         current_obstypes = current_obstypes + trend_obstypes + \
             rainyear_obstypes + year_obstypes + month_obstypes + \
-            week_obstypes + day_obstypes + ten_min_obstypes
+            week_obstypes + day_obstypes + hour_obstypes + ten_min_obstypes
         current_obstypes = list(dict.fromkeys(current_obstypes))
 
         return (fields_to_include, current_obstypes, trend_obstypes,
             rainyear_obstypes, year_obstypes, month_obstypes, week_obstypes,
-            day_obstypes, ten_min_obstypes)
+            day_obstypes, hour_obstypes, ten_min_obstypes)
 
     @staticmethod
     def compute_period_obstypes(fields_to_include: List[CheetahName], period: str) -> List[str]:
@@ -436,8 +441,7 @@ class LoopData(StdService):
 
             # accumulator_payload_sent is used to only create accumulators on first new_loop packet
             self.accumulator_payload_sent = False
-            lp: LoopProcessor = LoopProcessor(self.cfg,
-                trend_packets, ten_min_packets)
+            lp: LoopProcessor = LoopProcessor(self.cfg, trend_packets, ten_min_packets)
             t: threading.Thread = threading.Thread(target=lp.process_queue)
             t.setName('LoopData')
             t.setDaemon(True)
@@ -466,7 +470,7 @@ class LoopData(StdService):
             earliest_time: int) -> List[Dict[str, Any]]:
         packets = []
         for cols in dbm.genSql('SELECT * FROM archive' \
-                ' WHERE dateTime >= %d ORDER BY dateTime ASC' % earliest_time):
+                ' WHERE dateTime > %d ORDER BY dateTime ASC' % earliest_time):
             pkt: Dict[str, Any] = {}
             for i in range(len(cols)):
                 pkt[archive_columns[i]] = cols[i]
@@ -497,51 +501,61 @@ class LoopData(StdService):
                 day_accum.set_stats(k, day_summary[k].getStatsTuple())
 
             rainyear_accum, self.cfg.rainyear_obstypes = LoopData.create_rainyear_accum(
-                self.cfg.unit_system, self.cfg.rainyear_obstypes, pkt_time, self.cfg.rainyear_start, day_accum, dbm)
+                self.cfg.unit_system, self.cfg.archive_interval, self.cfg.rainyear_obstypes, pkt_time, self.cfg.rainyear_start, day_accum, dbm)
             year_accum, self.cfg.year_obstypes = LoopData.create_year_accum(
-                self.cfg.unit_system, self.cfg.year_obstypes, pkt_time, day_accum, dbm)
+                self.cfg.unit_system, self.cfg.archive_interval, self.cfg.year_obstypes, pkt_time, day_accum, dbm)
             month_accum, self.cfg.month_obstypes = LoopData.create_month_accum(
-                self.cfg.unit_system, self.cfg.month_obstypes, pkt_time, day_accum, dbm)
+                self.cfg.unit_system, self.cfg.archive_interval, self.cfg.month_obstypes, pkt_time, day_accum, dbm)
             week_accum, self.cfg.week_obstypes = LoopData.create_week_accum(
-                self.cfg.unit_system, self.cfg.week_obstypes, pkt_time, self.cfg.week_start, day_accum, dbm)
+                self.cfg.unit_system, self.cfg.archive_interval, self.cfg.week_obstypes, pkt_time, self.cfg.week_start, day_accum, dbm)
+            hour_accum, self.cfg.hour_obstypes = LoopData.create_hour_accum(
+                self.cfg.unit_system, self.cfg.archive_interval, self.cfg.hour_obstypes, pkt_time, day_accum, dbm)
             self.cfg.queue.put(AccumulatorPayload(
                 rainyear_accum = rainyear_accum,
                 year_accum     = year_accum,
                 month_accum    = month_accum,
                 week_accum     = week_accum,
-                day_accum      = day_accum))
+                day_accum      = day_accum,
+                hour_accum     = hour_accum))
         self.cfg.queue.put(event)
 
     @staticmethod
-    def create_rainyear_accum(unit_system: int, obstypes: List[str], pkt_time: int,
+    def create_rainyear_accum(unit_system: int, archive_interval: int, obstypes: List[str], pkt_time: int,
             rainyear_start: int, day_accum: weewx.accum.Accum, dbm) -> Tuple[Optional[weewx.accum.Accum], List[str]]:
         log.debug('Creating initial rainyear_accum')
         span = weeutil.weeutil.archiveRainYearSpan(pkt_time, rainyear_start)
-        return LoopData.create_period_accum('rainyear', unit_system, obstypes, span, day_accum, dbm)
+        return LoopData.create_period_accum('rainyear', unit_system, archive_interval, obstypes, span, day_accum, dbm)
 
     @staticmethod
-    def create_year_accum(unit_system: int, obstypes: List[str], pkt_time: int, day_accum: weewx.accum.Accum, dbm
+    def create_year_accum(unit_system: int, archive_interval: int, obstypes: List[str], pkt_time: int, day_accum: weewx.accum.Accum, dbm
             ) -> Tuple[Optional[weewx.accum.Accum], List[str]]:
         log.debug('Creating initial year_accum')
         span = weeutil.weeutil.archiveYearSpan(pkt_time)
-        return LoopData.create_period_accum('year', unit_system, obstypes, span, day_accum, dbm)
+        return LoopData.create_period_accum('year', unit_system, archive_interval, obstypes, span, day_accum, dbm)
 
     @staticmethod
-    def create_month_accum(unit_system: int, obstypes: List[str], pkt_time: int, day_accum: weewx.accum.Accum, dbm
+    def create_month_accum(unit_system: int, archive_interval: int, obstypes: List[str], pkt_time: int, day_accum: weewx.accum.Accum, dbm
             ) -> Tuple[Optional[weewx.accum.Accum], List[str]]:
         log.debug('Creating initial month_accum')
         span = weeutil.weeutil.archiveMonthSpan(pkt_time)
-        return LoopData.create_period_accum('month', unit_system, obstypes, span, day_accum, dbm)
+        return LoopData.create_period_accum('month', unit_system, archive_interval, obstypes, span, day_accum, dbm)
 
     @staticmethod
-    def create_week_accum(unit_system: int, obstypes: List[str], pkt_time: int,
+    def create_week_accum(unit_system: int, archive_interval: int, obstypes: List[str], pkt_time: int,
             week_start: int, day_accum: weewx.accum.Accum, dbm) -> Tuple[Optional[weewx.accum.Accum], List[str]]:
         log.debug('Creating initial week_accum')
         span = weeutil.weeutil.archiveWeekSpan(pkt_time, week_start)
-        return LoopData.create_period_accum('week', unit_system, obstypes, span, day_accum, dbm)
+        return LoopData.create_period_accum('week', unit_system, archive_interval, obstypes, span, day_accum, dbm)
 
     @staticmethod
-    def create_period_accum(name: str, unit_system: int, obstypes: List[str],
+    def create_hour_accum(unit_system: int, archive_interval: int, obstypes: List[str], pkt_time: int, day_accum: weewx.accum.Accum, dbm
+            ) -> Tuple[Optional[weewx.accum.Accum], List[str]]:
+        log.debug('Creating initial hour_accum')
+        span = weeutil.weeutil.archiveHoursAgoSpan(pkt_time)
+        return LoopData.create_period_accum('hour', unit_system, archive_interval, obstypes, span, day_accum, dbm)
+
+    @staticmethod
+    def create_period_accum(name: str, unit_system: int, archive_interval: int, obstypes: List[str],
             span: weeutil.weeutil.TimeSpan, day_accum: weewx.accum.Accum, dbm) -> Tuple[Optional[weewx.accum.Accum], List[str]]:
         """return period accumulator and (possibly trimmed) obstypes"""
 
@@ -551,14 +565,14 @@ class LoopData(StdService):
         start = time.time()
         accum = weewx.accum.Accum(span, unit_system)
 
-        # valud observation types will be returned
+        # valid observation types will be returned
         valid_obstypes: List[str] = []
 
         # for each obstype, create the appropriate stats.
         for obstype in obstypes:
             stats: Optional[Any] = None
             if obstype not in day_accum:
-                # Obstyypes implemented with xtypes will fall out here.
+                # Obstypes implemented with xtypes will fall out here.
                 # As well as typos or any obstype that is not in day_accum.
                 log.info('Ignoring %s for %s time period as this observation has no day accumulator.'
                     % (obstype, name))
@@ -573,43 +587,64 @@ class LoopData(StdService):
             else:
                 return None, []
             record_count = 0
-            for record in LoopData.day_summary_records_generator(dbm, obstype, span.start):
-                record_count += 1
-                if stats is None:
-                    # Figure out the stats type
-                    if 'squaresum' in record:
-                        stats = weewx.accum.VecStats()
-                    elif 'wsum' in record:
-                        stats = weewx.accum.ScalarStats()
-                    elif 'last' in record:
-                        stats = weewx.accum.FirstLastAccum()
-                    else:
-                        return None, []
-                if type(stats) == weewx.accum.ScalarStats:
-                    sstat = weewx.accum.ScalarStats((record['min'], record['mintime'],
-                        record['max'], record['maxtime'],
-                        record['sum'], record['count'],
-                        record['wsum'], record['sumtime']))
-                    stats.mergeHiLo(sstat)
-                    stats.mergeSum(sstat)
-                elif type(stats) == weewx.accum.VecStats:
-                    vstat = weewx.accum.VecStats((record['min'], record['mintime'],
-                        record['max'], record['maxtime'],
-                        record['sum'], record['count'],
-                        record['wsum'], record['sumtime'],
-                        record['max_dir'], record['xsum'], record['ysum'],
-                        record['dirsumtime'], record['squaresum'], record['wsquaresum']))
-                    stats.mergeHiLo(vstat)
-                    stats.mergeSum(vstat)
-                else:  # FirstLastAccum():
-                    fstat = weewx.accum.FirstLastAccum((record['first'], record['firsttime'],
-                        record['last'], record['lasttime']))
-                    stats.mergeHiLo(fstat)
-                    stats.mergeSum(fstat)
-            # Add in today's stats
-            stats.mergeHiLo(day_accum[obstype])
-            stats.mergeSum(day_accum[obstype])
+            # For periods > day, accumulate from day summary records.
+            # hour accumulator is handled by reading archive records (see below).
+            if  name != 'hour':
+                for record in LoopData.day_summary_records_generator(dbm, obstype, span.start):
+                    record_count += 1
+                    # TODO(jkline): From above, it appears that stats cannot be None.
+                    if stats is None:
+                        # Figure out the stats type
+                        if 'squaresum' in record:
+                            stats = weewx.accum.VecStats()
+                        elif 'wsum' in record:
+                            stats = weewx.accum.ScalarStats()
+                        elif 'last' in record:
+                            stats = weewx.accum.FirstLastAccum()
+                        else:
+                            return None, []
+                    if type(stats) == weewx.accum.ScalarStats:
+                        sstat = weewx.accum.ScalarStats((record['min'], record['mintime'],
+                            record['max'], record['maxtime'],
+                            record['sum'], record['count'],
+                            record['wsum'], record['sumtime']))
+                        stats.mergeHiLo(sstat)
+                        stats.mergeSum(sstat)
+                    elif type(stats) == weewx.accum.VecStats:
+                        vstat = weewx.accum.VecStats((record['min'], record['mintime'],
+                            record['max'], record['maxtime'],
+                            record['sum'], record['count'],
+                            record['wsum'], record['sumtime'],
+                            record['max_dir'], record['xsum'], record['ysum'],
+                            record['dirsumtime'], record['squaresum'], record['wsquaresum']))
+                        stats.mergeHiLo(vstat)
+                        stats.mergeSum(vstat)
+                    else:  # FirstLastAccum():
+                        fstat = weewx.accum.FirstLastAccum((record['first'], record['firsttime'],
+                            record['last'], record['lasttime']))
+                        stats.mergeHiLo(fstat)
+                        stats.mergeSum(fstat)
+                # Add in today's stats
+                stats.mergeHiLo(day_accum[obstype])
+                stats.mergeSum(day_accum[obstype])
             accum[obstype] = stats
+
+        if  name == 'hour':
+            # Fetch archive records to prime the hour accumulator.
+            earliest_time = span[0]
+            start = time.time()
+            pkt_count: int = 0
+            archive_columns: List[str] = dbm.connection.columnsOf('archive')
+            archive_pkts: List[Dict[str, Any]] = LoopData.get_archive_packets(
+                dbm, archive_columns, earliest_time)
+            for pkt in archive_pkts:
+                pkt_time = pkt['dateTime']
+                pkt['usUnits'] = unit_system
+                pruned_pkt = LoopProcessor.prune_period_packet(pkt_time, pkt, obstypes)
+                accum.addRecord(pruned_pkt, archive_interval * 60)
+                pkt_count += 1
+            log.debug('Primed hour_accum with %d archive packets in %f seconds.' % (pkt_count, time.time() - start))
+
         log.debug('Created %s accum in %f seconds (read %d records).' % (name, time.time() - start, record_count))
         return accum, valid_obstypes
 
@@ -618,7 +653,8 @@ class LoopData(StdService):
         valid_prefixes    : List[str] = [ 'unit' ]
         valid_prefixes2   : List[str] = [ 'label' ]
         valid_periods     : List[str] = [ 'rainyear', 'year', 'month', 'week',
-                                          'current', '10m', 'day', 'trend' ]
+                                          'current', 'hour', '10m', 'day',
+                                          'trend' ]
         valid_agg_types   : List[str] = [ 'max', 'min', 'maxtime', 'mintime',
                                           'gustdir', 'avg', 'sum', 'vecavg',
                                           'vecdir', 'rms' ]
@@ -659,8 +695,8 @@ class LoopData(StdService):
         next_seg += 1
 
         agg_type = None
-        # 10m/day/week/month/year/rainyear must have an agg_type
-        if period in [ '10m', 'day', 'week','month', 'year', 'rainyear' ]:
+        # 10m/hour/day/week/month/year/rainyear must have an agg_type
+        if period in [ '10m', 'hour', 'day', 'week','month', 'year', 'rainyear' ]:
             if len(segment) <= next_seg:
                 return None
             if segment[next_seg] not in valid_agg_types:
@@ -708,6 +744,7 @@ class LoopProcessor:
                     self.month_accum = event.month_accum
                     self.week_accum = event.week_accum
                     self.day_accum = event.day_accum
+                    self.hour_accum = event.hour_accum
                     continue
 
                 pkt: Dict[str, Any] = event.packet
@@ -720,8 +757,8 @@ class LoopProcessor:
 
                 # Process new packet.
                 (loopdata_pkt, self.rainyear_accum, self.year_accum,
-                    self.month_accum, self.week_accum, self.day_accum
-                    ) = LoopProcessor.generate_loopdata_dictionary(
+                    self.month_accum, self.week_accum, self.day_accum,
+                    self.hour_accum) = LoopProcessor.generate_loopdata_dictionary(
                     pkt, pkt_time, self.cfg.unit_system,
                     self.cfg.loop_frequency, self.cfg.converter, self.cfg.formatter,
                     self.cfg.fields_to_include, self.cfg.current_obstypes,
@@ -730,6 +767,7 @@ class LoopProcessor:
                     self.month_accum, self.cfg.month_obstypes,
                     self.week_accum, self.cfg.week_start, self.cfg.week_obstypes,
                     self.day_accum, self.cfg.day_obstypes,
+                    self.hour_accum, self.cfg.hour_obstypes,
                     self.trend_packets, self.cfg.time_delta, self.cfg.trend_obstypes,
                     self.cfg.baro_trend_descs,
                     self.ten_min_packets, self.cfg.ten_min_obstypes)
@@ -763,11 +801,13 @@ class LoopProcessor:
             month_accum: Optional[weewx.accum.Accum], month_obstypes: List[str],
             week_accum: Optional[weewx.accum.Accum], week_start: int, week_obstypes: List[str],
             day_accum: weewx.accum.Accum, day_obstypes: List[str],
+            hour_accum: weewx.accum.Accum, hour_obstypes: List[str],
             trend_packets: List[PeriodPacket], time_delta: int, trend_obstypes: List[str],
             baro_trend_descs: Dict[BarometerTrend, str],
             ten_min_packets: List[PeriodPacket], ten_min_obstypes: List[str]
             ) -> Tuple[Dict[str, Any], Optional[weewx.accum.Accum], Optional[weewx.accum.Accum],
-            Optional[weewx.accum.Accum], Optional[weewx.accum.Accum], Optional[weewx.accum.Accum]]:
+            Optional[weewx.accum.Accum], Optional[weewx.accum.Accum], Optional[weewx.accum.Accum],
+            Optional[weewx.accum.Accum]]:
 
         # pkt needs to be in the units that the accumulators are expecting.
         pruned_pkt = LoopProcessor.prune_period_packet(pkt_time, in_pkt, current_obstypes)
@@ -835,6 +875,17 @@ class LoopProcessor:
             # Try again:
             day_accum.addRecord(pkt, loop_frequency)
 
+        # Add packet to hour accumulator.
+        try:
+          if len(hour_obstypes) > 0:
+              pruned_pkt = LoopProcessor.prune_period_packet(pkt_time, pkt, hour_obstypes)
+              hour_accum.addRecord(pruned_pkt, loop_frequency)
+        except weewx.accum.OutOfSpan:
+            timespan = weeutil.weeutil.archiveHoursAgoSpan(pkt['dateTime'])
+            hour_accum = weewx.accum.Accum(timespan, unit_system=unit_system)
+            # Try again:
+            hour_accum.addRecord(pkt, loop_frequency)
+
         # Create a 10m accumulator.
         ten_min_accum = LoopProcessor.create_ten_min_accum(
             ten_min_packets, ten_min_obstypes, unit_system, loop_frequency)
@@ -842,9 +893,9 @@ class LoopProcessor:
         # Create the loopdata dictionary.
         return (LoopProcessor.create_loopdata_packet(pkt,
             fields_to_include, trend_packets, rainyear_accum,
-            year_accum, month_accum, week_accum, day_accum,
+            year_accum, month_accum, week_accum, day_accum, hour_accum,
             ten_min_accum, time_delta, baro_trend_descs, converter, formatter),
-            rainyear_accum, year_accum, month_accum, week_accum, day_accum)
+            rainyear_accum, year_accum, month_accum, week_accum, day_accum, hour_accum)
 
     @staticmethod
     def create_ten_min_accum(ten_min_packets: List[PeriodPacket],
@@ -1057,6 +1108,7 @@ class LoopProcessor:
             rainyear_accum: Optional[weewx.accum.Accum], year_accum: Optional[weewx.accum.Accum],
             month_accum: Optional[weewx.accum.Accum], week_accum: Optional[weewx.accum.Accum],
             day_accum: weewx.accum.Accum,
+            hour_accum: weewx.accum.Accum,
             ten_min_accum: Optional[weewx.accum.Accum],
             time_delta: int, baro_trend_descs: Dict[BarometerTrend, str],
             converter: weewx.units.Converter, formatter: weewx.units.Formatter) -> Dict[str, Any]:
@@ -1091,6 +1143,9 @@ class LoopProcessor:
                 continue
             if cname.period == 'day':
                 LoopProcessor.add_period_obstype(cname, day_accum, loopdata_pkt, converter, formatter)
+                continue
+            if cname.period == 'hour':
+                LoopProcessor.add_period_obstype(cname, hour_accum, loopdata_pkt, converter, formatter)
                 continue
             if cname.period == '10m' and ten_min_accum is not None:
                 LoopProcessor.add_period_obstype(cname, ten_min_accum, loopdata_pkt, converter, formatter)
@@ -1145,6 +1200,7 @@ class LoopProcessor:
         log.info('month_obstypes     : %s' % cfg.month_obstypes)
         log.info('week_obstypes      : %s' % cfg.week_obstypes)
         log.info('day_obstypes       : %s' % cfg.day_obstypes)
+        log.info('hour_obstypes       : %s' % cfg.hour_obstypes)
         log.info('ten_min_obstypes   : %s' % cfg.ten_min_obstypes)
         log.info('baro_trend_descs   : %s' % cfg.baro_trend_descs)
 
