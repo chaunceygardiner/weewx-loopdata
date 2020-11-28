@@ -17,6 +17,7 @@ The json file will contain any specified values for:
 * observations in the loop packet (e.g., `current.outTemp`)
 * rolling 10 min. aggregate values (e.g., `10m.outTemp.max`, `10m.wind.gustdir`)
 * trends (e.g., `trend.barometer`) -- see time_delta below
+* hourly aggregate values (e.g., `hour.outTemp.max`)
 * daily aggregate values (e.g., `day.rain.sum`)
 * weekly aggregate values (e.g., `week.wind.avg`)
 * monthly aggregate values (e.g., `month.barometer.avg`)
@@ -70,7 +71,13 @@ For example, the current outside temperature can be included as:
 * `current.outTemp`           which might yeild `79.2°F`
 * `current.outTemp.raw`       which might yeild `79.175`
 
-The day average of outside tempeture can be included as:
+The inTemp average inside temperature this hour can be included as:
+
+* `hour.inTemp.avg.formatted` which might yeild `68.1`
+* `hour.inTemp.avg`           which might yeild `68.1°`
+* `hour.inTemp.avg.raw`       which might yeild `68.12`
+
+The day average of outside temperature can be included as:
 
 * `day.outTemp.avg.formatted` which might yeild `64.7`
 * `day.outTemp.avg`           which might yeild `64.7°`
@@ -258,9 +265,12 @@ For example, just like in a report, one can add the following extenstions to spe
 
 Note: `unit.label.<obs>` is also supported (e.g., `unit.label.<obs>`).
 
-Lastly, `trend.barometer.desc` is also supported and provides a text version of the
-baromter rate (e.g., `Falling Slowly`).  Barometer trend descriptions can be localized in
-the `LoopData` section of weewx.conf
+Lastly, `trend.barometer.desc` and `trend.barometer.code` are also supported.  `trend.barometer.desc`
+provides a text version of the baromter rate (e.g., `Falling Slowly`).  Barometer trend descriptions
+can be localized in the `LoopData` section of weewx.conf.  `trend.barometer.code` provides a integer
+of value `-4`, `-3`, `-2`, `-1`, `0`, `1`, `2`, `3` or `4`.  These values correspond to `Falling Rapidly`, `
+`Falling Quickly`, `Falling`, `Falling Slowly`, `Steady`, `Rising Slowly`, `Rising`, `Rising Quickly`
+and `Rising Rapidly`, respectively.
 ```
 [LoopData]
     [[BarometerTrendDescriptions]]

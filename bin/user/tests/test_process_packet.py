@@ -251,6 +251,15 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, None)
         self.assertEqual(cname.format_spec, 'formatted')
 
+        cname = user.loopdata.LoopData.parse_cname('trend.barometer.code')
+        self.assertEqual(cname.field, 'trend.barometer.code')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'trend')
+        self.assertEqual(cname.obstype, 'barometer')
+        self.assertEqual(cname.agg_type, None)
+        self.assertEqual(cname.format_spec, 'code')
+
         cname = user.loopdata.LoopData.parse_cname('trend.barometer.desc')
         self.assertEqual(cname.field, 'trend.barometer.desc')
         self.assertEqual(cname.prefix, None)
@@ -481,7 +490,7 @@ class ProcessPacketTests(unittest.TestCase):
 
     def test_get_fields_to_include(self):
 
-        specified_fields = [ 'current.dateTime.raw', 'current.outTemp',
+        specified_fields = [ 'current.dateTime.raw', 'current.outTemp', 'trend.barometer.code',
             'trend.barometer.desc', '10m.wind.max', '10m.wind.gustdir', 'hour.inTemp.min', 'hour.inTemp.mintime',
             'day.barometer.min', 'day.barometer.max', 'day.wind.max', 'day.wind.gustdir', 'day.wind.maxtime' ]
 
@@ -489,11 +498,13 @@ class ProcessPacketTests(unittest.TestCase):
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
             ten_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(specified_fields)
 
-        self.assertEqual(len(fields_to_include), 12)
+        self.assertEqual(len(fields_to_include), 13)
         self.assertTrue(user.loopdata.CheetahName(
             'current.dateTime.raw', None, None, 'current', 'dateTime', None, 'raw') in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
             'current.outTemp', None, None, 'current', 'outTemp', None, None) in fields_to_include)
+        self.assertTrue(user.loopdata.CheetahName(
+            'trend.barometer.code', None, None, 'trend', 'barometer', None, 'code') in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
             'trend.barometer.desc', None, None, 'trend', 'barometer', None, 'desc') in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
@@ -1608,6 +1619,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['trend.barometer'], '-0.005 inHg')
         self.assertTrue(loopdata_pkt['trend.barometer.raw'] < -0.0046224926 and loopdata_pkt['trend.barometer.raw'] > -0.0046224927)
         self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '-0.005')
+        self.assertEqual(loopdata_pkt['trend.barometer.code'], -1)
         self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Falling Slowly')
 
         # 72.0 - 71.6
@@ -1736,6 +1748,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['trend.barometer'], '-0.005 inHg')
         self.assertTrue(loopdata_pkt['trend.barometer.raw'] < -0.0046224926 and loopdata_pkt['trend.barometer.raw'] > -0.0046224927)
         self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '-0.005')
+        self.assertEqual(loopdata_pkt['trend.barometer.code'], -1)
         self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Falling Slowly')
 
         # 72.0 - 71.6
@@ -1876,6 +1889,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['trend.barometer'], '-0.010 inHg')
         self.assertTrue(loopdata_pkt['trend.barometer.raw'] > -0.0096352168 and loopdata_pkt['trend.barometer.raw'] < -0.0096352167)
         self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '-0.010')
+        self.assertEqual(loopdata_pkt['trend.barometer.code'], -1)
         self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Falling Slowly')
 
         # 75.4 - 76.1
@@ -2004,6 +2018,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['trend.barometer'], '-0.3 mbar')
         self.assertTrue(loopdata_pkt['trend.barometer.raw'] > -0.3262858387019 and loopdata_pkt['trend.barometer.raw'] < -0.3262858387018)
         self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '-0.3')
+        self.assertEqual(loopdata_pkt['trend.barometer.code'], -1)
         self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Falling Slowly')
 
         # 75.4 - 76.1
@@ -2144,6 +2159,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['trend.barometer'], '0.000 inHg')
         self.assertTrue(loopdata_pkt['trend.barometer.raw'] > .00000502 and loopdata_pkt['trend.barometer.raw'] < .00000503)
         self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '0.000')
+        self.assertEqual(loopdata_pkt['trend.barometer.code'], 0)
         self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Steady')
 
         self.assertEqual(loopdata_pkt['trend.outTemp'], '-0.1°F')
@@ -2263,6 +2279,7 @@ class ProcessPacketTests(unittest.TestCase):
         # -4.016249190996746e-05
         self.assertTrue(loopdata_pkt['trend.barometer.raw'] > -0.000040162492 and loopdata_pkt['trend.barometer.raw'] < -0.000040162491)
         self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '-0.000')
+        self.assertEqual(loopdata_pkt['trend.barometer.code'], 0)
         self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Steady')
 
         self.assertEqual(loopdata_pkt['trend.outTemp'], '0.8°F')
@@ -2391,6 +2408,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['trend.barometer'], '-0.0 mbar')
         self.assertTrue(loopdata_pkt['trend.barometer.raw'] < -0.0184142351 and loopdata_pkt['trend.barometer.raw'] > -0.0184142352)
         self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '-0.0')
+        self.assertEqual(loopdata_pkt['trend.barometer.code'], 0)
         self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Steady')
 
         # 0.032246952164187964 - 0.3770915275499615
@@ -2560,6 +2578,7 @@ def _get_specified_fields():
         'trend.barometer',
         'trend.barometer.raw',
         'trend.barometer.formatted',
+        'trend.barometer.code',
         'trend.barometer.desc',
         'trend.outTemp',
         'trend.outTemp.raw',

@@ -15,6 +15,19 @@ Note: The sample skin is updated to use the hour tags.
           'hour.wind.rms.formatted'
           'hour.windGust.max'
           'hour.windGust.max.formatted'
+2. In addition to the already supported trend.barometer.desc,
+   trend.barometer.code is also supported.  The code can
+   be an integer between -4 and 4, where the value
+   correspsonds to:
+   -4 Falling Rapidly
+   -3 Falling Quickly
+   -2 Falling
+   -1 Falling Slowly
+    0 Steady
+    1 Rising Slowly
+    2 Rising
+    3 Rising Quickly
+    4 Rising Rapidly
 
 2.7.2 Release 16 Nov 2020
 -------------------------

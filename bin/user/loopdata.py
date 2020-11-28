@@ -114,15 +114,15 @@ class AccumulatorPayload:
     hour_accum : Optional[weewx.accum.Accum]
 
 class BarometerTrend(Enum):
-    RISING_VERY_RAPIDLY  = 1
-    RISING_QUICKLY       = 2
-    RISING               = 3
-    RISING_SLOWLY        = 4
-    STEADY               = 5
-    FALLING_SLOWLY       = 6
-    FALLING              = 7
-    FALLING_QUICKLY      = 8
-    FALLING_VERY_RAPIDLY = 9
+    RISING_VERY_RAPIDLY  =  4
+    RISING_QUICKLY       =  3
+    RISING               =  2
+    RISING_SLOWLY        =  1
+    STEADY               =  0
+    FALLING_SLOWLY       = -1
+    FALLING              = -2
+    FALLING_QUICKLY      = -3
+    FALLING_VERY_RAPIDLY = -4
 
 @dataclass
 class Reading:
@@ -659,7 +659,7 @@ class LoopData(StdService):
                                           'gustdir', 'avg', 'sum', 'vecavg',
                                           'vecdir', 'rms' ]
         valid_format_specs: List[str] = [ 'formatted', 'raw', 'ordinal_compass',
-                                          'desc' ]
+                                          'desc', 'code' ]
 
         segment: List[str] = field.split('.')
         if len(segment) < 2:
@@ -1067,12 +1067,15 @@ class LoopProcessor:
             log.debug('add_trend_obstype: %s: get_trend returned None.' % cname.field)
             return
 
-        if cname.obstype == 'barometer' and cname.format_spec == 'desc':
+        if cname.obstype == 'barometer' and (cname.format_spec == 'code' or cname.format_spec == 'desc'):
             baroTrend: BarometerTrend = LoopProcessor.get_barometer_trend(value, unit_type, group_type, time_delta)
-            loopdata_pkt[cname.field] = baro_trend_descs[baroTrend]
+            if cname.format_spec == 'code':
+                loopdata_pkt[cname.field] = baroTrend.value
+            else: # cname.format_spec == 'desc':
+                loopdata_pkt[cname.field] = baro_trend_descs[baroTrend]
             return
-        elif cname.format_spec == 'desc':
-            # desc is only supported for trend.barometer
+        elif cname.format_spec == 'code' or cname.format_spec == 'desc':
+            # code and desc are only supported for trend.barometer
             return
 
         if cname.format_spec == 'formatted':
