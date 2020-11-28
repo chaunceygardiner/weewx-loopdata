@@ -59,9 +59,11 @@ class LoopDataInstaller(ExtensionInstaller):
                     'Include': {
                         'fields': [
                             'trend.outTemp',
+                            'trend.barometer.code',
                             'trend.barometer.desc',
 
                             'current.barometer',
+                            'current.barometer.formatted',
                             'current.dateTime.raw',
                             'current.dewpoint',
                             'current.dewpoint.formatted',
@@ -72,6 +74,7 @@ class LoopDataInstaller(ExtensionInstaller):
                             'current.rain',
                             'current.rainRate',
                             'current.rainRate.formatted',
+                            'current.UV.formatted',
                             'current.windchill',
                             'current.windDir.ordinal_compass',
                             'current.windSpeed',
