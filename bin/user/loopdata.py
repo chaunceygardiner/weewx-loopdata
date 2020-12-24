@@ -181,7 +181,7 @@ class LoopData(StdService):
         loop_data_dir = LoopData.compose_loop_data_dir(config_dict, target_report_dict, file_spec_dict)
 
         # Get the loop frequency seconds to be passed as the weight to accumulators.
-        loop_frequency = to_float(loop_frequency_spec_dict.get('seconds', '2.5'))
+        loop_frequency = to_float(loop_frequency_spec_dict.get('seconds', '2.0'))
 
         # Get [possibly localized] strings for trend.barometer.desc
         baro_trend_descs = LoopData.construct_baro_trend_descs(baro_trend_trans_dict)
@@ -341,6 +341,14 @@ class LoopData(StdService):
                     period_obstypes.append('windDir')
                     period_obstypes.append('windGust')
                     period_obstypes.append('windGustDir')
+                if cname.obstype == 'appTemp':
+                    period_obstypes.append('outTemp')
+                    period_obstypes.append('outHumidity')
+                    period_obstypes.append('windSpeed')
+                if cname.obstype == 'windrun':
+                    period_obstypes.append('windSpeed')
+                if cname.obstype == 'beaufort':
+                    period_obstypes.append('windSpeed')
         return list(dict.fromkeys(period_obstypes))
 
     @staticmethod
@@ -1345,6 +1353,7 @@ class LoopProcessor:
         new_pkt['dateTime'] = pkt['dateTime']
         new_pkt['usUnits'] = pkt['usUnits']
         if 'interval' in pkt:
+            # Probably not needed.
             new_pkt['interval'] = pkt['interval']
         for obstype in in_use_obstypes:
             if obstype in pkt:

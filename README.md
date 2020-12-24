@@ -191,7 +191,7 @@ If you want to power Steel Series gauges from WeeWX, you definitely want to use 
     [[Formatting]]
         target_report = LoopDataReport
     [[LoopFrequency]]
-        seconds = 2.5
+        seconds = 2.0
     [[RsyncSpec]]
         enable = false
         remote_server = foo.bar.com

@@ -45,7 +45,7 @@ class LoopDataInstaller(ExtensionInstaller):
                     'Formatting': {
                         'target_report': 'LoopDataReport'},
                     'LoopFrequency': {
-                        'seconds': '2.5'},
+                        'seconds': '2.0'},
                     'RsyncSpec': {
                         'enable':'false',
                         'remote_server': 'www.foobar.com',
