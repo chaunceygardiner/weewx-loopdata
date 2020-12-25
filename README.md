@@ -171,9 +171,6 @@ A WeatherBoard&trade; screenshot is below.
 ![Weatherbaord&trade; Report](WeatherBoard.png)
 
 This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gjr80/weewx-realtime_gauge-data).
-This does not attempt to duplicate Gary's fantastic realtime gauge data plugin
-for SteelSeries gauges.  In fact, I use that great extension [here](https://www.paloaltoweather.com/LiveSeasonsGauges/).
-If you want to power Steel Series gauges from WeeWX, you definitely want to use Gary's extension.
 
 # Installation Instructions
 
