@@ -24,6 +24,30 @@ The json file will contain any specified values for:
 * yearly aggregate values (e.g., `year.wind.max`)
 * rainyear aggregate values (e.g., `rainyear.rain.sum`)
 
+
+In addition to the usual observation types (which includes `windrun`), there
+are special `windrun_<direction>` observation types that can be used with `current`,
+`10m`, `trend`, `hour` and `day` periods.  These report the distance for each of sixteen
+directions; and can be used to make a windrose.  Note: `windrun_<dirction>` observations
+are NOT supported for `week`, `month`, `year` and `rainyear` periods.
+
+* `windrun_N`
+* `windrun_NNE`
+* `windrun_NE`
+* `windrun_ENE`
+* `windrun_E`
+* `windrun_ESE`
+* `windrun_SE`
+* `windrun_SSE`
+* `windrun_S`
+* `windrun_SSW`
+* `windrun_SW`
+* `windrun_WSW`
+* `windrun_W``
+* `windrun_WNW`
+* `windrun_NW`
+* `windrun_NNW`
+
 The trend time_delta *cannot* be changed on a case by case basis, but
 it can be changed for the entire target report (i.e., by using the standard
 WeeWX customization):

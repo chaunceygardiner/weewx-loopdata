@@ -30,6 +30,7 @@ import weewx
 import weewx.defaults
 import weewx.manager
 import weewx.units
+import weewx.wxxtypes
 import weeutil.config
 import weeutil.logger
 import weeutil.rsyncupload
@@ -45,7 +46,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '2.7.2'
+LOOP_DATA_VERSION = '2.8b'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -55,14 +56,21 @@ if weewx.__version__ < "4":
     raise weewx.UnsupportedFeature(
         "weewx-loopdata requires WeeWX, found %s" % weewx.__version__)
 
+windrun_bucket_suffixes: List[str] = [ 'N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
+                                       'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW' ]
+
+# Set up windrun_<dir> observation types.
+for suffix in windrun_bucket_suffixes:
+    weewx.units.obs_group_dict['windrun_%s' % suffix] = 'group_distance'
+
 @dataclass
 class CheetahName:
     field      : str           # $day.outTemp.avg.formatted
     prefix     : Optional[str] # unit or None
     prefix2    : Optional[str] # label or None
-    period     : Optional[str] # obs, 10m, day, current, trend
-    obstype    : str           # outTemp
-    agg_type   : Optional[str] # avg, sum, etc. (required for day, else None)
+    period     : Optional[str] # 10m, hour, day, week, month, year, rainyear, current, trend
+    obstype    : str           # e.g,. outTemp
+    agg_type   : Optional[str] # avg, sum, etc. (required if period, other than current, is specified, else None)
     format_spec: Optional[str] # formatted (formatted value sans label), raw or ordinal_compass (could be on direction), or None
 
 @dataclass
@@ -143,6 +151,7 @@ class LoopData(StdService):
             raise Exception("Python 3 is required for the loopdata plugin.")
 
         self.loop_proccessor_started = False
+        self.day_packets: List[Dict[str, Any]] = []
 
         station_dict             = config_dict.get('Station', {})
         std_archive_dict         = config_dict.get('StdArchive', {})
@@ -345,8 +354,9 @@ class LoopData(StdService):
                     period_obstypes.append('outTemp')
                     period_obstypes.append('outHumidity')
                     period_obstypes.append('windSpeed')
-                if cname.obstype == 'windrun':
+                if cname.obstype.startswith('windrun'):
                     period_obstypes.append('windSpeed')
+                    period_obstypes.append('windDir')
                 if cname.obstype == 'beaufort':
                     period_obstypes.append('windSpeed')
         return list(dict.fromkeys(period_obstypes))
@@ -419,14 +429,19 @@ class LoopData(StdService):
             # Fetch them just once with the greatest time period.
             now = time.time()
 
-            # ten_min and trend are fixed at now - 600, and now - time_delta
+            # ten_min fixed at now - 600
             earliest_ten_min = now - 600 if len(self.cfg.ten_min_obstypes) > 0 else now
             log.debug('Earliest time for 10m is %s' % timestamp_to_string(earliest_ten_min))
+
+            # trend fixed at now - time_delta
             earliest_trend = now - self.cfg.time_delta if len(self.cfg.trend_obstypes) > 0 else now
             log.debug('Earliest time for trend is %s' % timestamp_to_string(earliest_trend))
 
+            # day fixed at the start of current day
+            earliest_day = weeutil.weeutil.startOfDay(now)
+
             # We want the earliest time needed.
-            earliest_time: int = to_int(min(earliest_ten_min, earliest_trend))
+            earliest_time: int = to_int(min(earliest_ten_min, earliest_trend, earliest_day))
             log.debug('Earliest time selected is %s' % timestamp_to_string(earliest_time))
 
             # Fetch the records.
@@ -440,10 +455,15 @@ class LoopData(StdService):
             pkt_count: int = 0
             for pkt in archive_pkts:
                 pkt_time = pkt['dateTime']
+                if 'windrun' in pkt and 'windDir' in pkt and pkt['windDir'] is not None:
+                    bkt = LoopProcessor.get_windrun_bucket(pkt['windDir'])
+                    pkt['windrun_%s' % windrun_bucket_suffixes[bkt]] = pkt['windrun']
                 if len(self.cfg.trend_obstypes) > 0 and pkt_time >= earliest_trend:
                     LoopProcessor.save_period_packet(pkt['dateTime'], pkt, trend_packets, self.cfg.time_delta, self.cfg.trend_obstypes)
                 if len(self.cfg.ten_min_obstypes) > 0 and pkt_time >= earliest_ten_min:
                     LoopProcessor.save_period_packet(pkt['dateTime'], pkt, ten_min_packets, 600, self.cfg.ten_min_obstypes)
+                if len(self.cfg.day_obstypes) > 0 and pkt_time >= earliest_day:
+                    self.day_packets.append(pkt)
                 pkt_count += 1
             log.debug('Collected %d archive packets in %f seconds.' % (pkt_count, time.time() - start))
 
@@ -507,6 +527,15 @@ class LoopData(StdService):
             day_accum = weewx.accum.Accum(timespan, unit_system=self.cfg.unit_system)
             for k in day_summary:
                 day_accum.set_stats(k, day_summary[k].getStatsTuple())
+            # Need to add the windrun_<bucket> accumulators.
+            for pkt in self.day_packets:
+                if day_accum.timespan.includesArchiveTime(pkt['dateTime']):
+                    for suffix in windrun_bucket_suffixes:
+                        obs = 'windrun_%s' % suffix
+                        if obs in pkt:
+                            day_accum.add_value(pkt, obs, True, pkt['interval'] * 60)
+                            continue
+            self.day_packets = []
 
             rainyear_accum, self.cfg.rainyear_obstypes = LoopData.create_rainyear_accum(
                 self.cfg.unit_system, self.cfg.archive_interval, self.cfg.rainyear_obstypes, pkt_time, self.cfg.rainyear_start, day_accum, dbm)
@@ -719,6 +748,11 @@ class LoopData(StdService):
                 format_spec = segment[next_seg]
                 next_seg += 1
 
+        # windrun_<dir> is not supported for week, month, year and rainyear
+        if obstype.startswith('windrun_') and (
+                period == 'week' or period == 'month' or period == 'year' or period == 'rainyear'):
+            return None
+
         if len(segment) > next_seg:
             # There is more.  This is unexpected.
             return None
@@ -757,6 +791,16 @@ class LoopProcessor:
 
                 pkt: Dict[str, Any] = event.packet
                 pkt_time: int       = to_int(pkt['dateTime'])
+                pkt['interval']     = self.cfg.loop_frequency / 60.0
+
+                windrun_val = weewx.wxxtypes.WXXTypes.calc_windrun('windrun', pkt)
+                pkt['windrun'] = windrun_val[0]
+                if windrun_val[0] > 0.00 and 'windDir' in pkt and pkt['windDir'] is not None:
+                    bkt = LoopProcessor.get_windrun_bucket(pkt['windDir'])
+                    pkt['windrun_%s' % windrun_bucket_suffixes[bkt]] = windrun_val[0]
+
+                beaufort_val = weewx.wxxtypes.WXXTypes.calc_beaufort('beaufort', pkt)
+                pkt['beaufort'] = beaufort_val[0]
 
                 # This is a loop packet.
                 assert event.event_type == weewx.NEW_LOOP_PACKET
@@ -1373,3 +1417,13 @@ class LoopProcessor:
             log.debug('trim_old_periodpackets: Deleting expired packet(%s)' % timestamp_to_string(
                 period_packets[0].timestamp))
             del period_packets[0]
+
+    @staticmethod
+    def get_windrun_bucket(wind_dir: float) -> int:
+        bucket_count = len(windrun_bucket_suffixes)
+        slice_size: float = 360.0 / bucket_count
+        bucket: int = to_int((wind_dir + slice_size / 2.0) / slice_size)
+        if bucket >= bucket_count:
+            bucket = 0
+        log.debug('get_windrun_bucket: wind_dir: %d, bucket: %d' % (wind_dir, bucket))
+        return bucket

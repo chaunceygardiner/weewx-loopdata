@@ -107,6 +107,18 @@ class ProcessPacketTests(unittest.TestCase):
         cname = user.loopdata.LoopData.parse_cname('week.outTemp')
         self.assertEqual(cname, None)
 
+        cname = user.loopdata.LoopData.parse_cname('week.windrun_ENE.sum.formatted')
+        self.assertEqual(cname, None)
+
+        cname = user.loopdata.LoopData.parse_cname('month.windrun_ENE.sum.formatted')
+        self.assertEqual(cname, None)
+
+        cname = user.loopdata.LoopData.parse_cname('year.windrun_ENE.sum.formatted')
+        self.assertEqual(cname, None)
+
+        cname = user.loopdata.LoopData.parse_cname('rainyear.windrun_ENE.sum.formatted')
+        self.assertEqual(cname, None)
+
         cname = user.loopdata.LoopData.parse_cname('week.outTemp.avg')
         self.assertEqual(cname.field, 'week.outTemp.avg')
         self.assertEqual(cname.prefix, None)
@@ -469,6 +481,33 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.period, 'day')
         self.assertEqual(cname.obstype, 'wind')
         self.assertEqual(cname.agg_type, 'avg')
+        self.assertEqual(cname.format_spec, None)
+
+        cname = user.loopdata.LoopData.parse_cname('year.windrun.sum.formatted')
+        self.assertEqual(cname.field, 'year.windrun.sum.formatted')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'year')
+        self.assertEqual(cname.obstype, 'windrun')
+        self.assertEqual(cname.agg_type, 'sum')
+        self.assertEqual(cname.format_spec, 'formatted')
+
+        cname = user.loopdata.LoopData.parse_cname('hour.windrun_ENE.sum.formatted')
+        self.assertEqual(cname.field, 'hour.windrun_ENE.sum.formatted')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'hour')
+        self.assertEqual(cname.obstype, 'windrun_ENE')
+        self.assertEqual(cname.agg_type, 'sum')
+        self.assertEqual(cname.format_spec, 'formatted')
+
+        cname = user.loopdata.LoopData.parse_cname('day.windrun_W.sum')
+        self.assertEqual(cname.field, 'day.windrun_W.sum')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'day')
+        self.assertEqual(cname.obstype, 'windrun_W')
+        self.assertEqual(cname.agg_type, 'sum')
         self.assertEqual(cname.format_spec, None)
 
     def test_compose_loop_data_dir(self):

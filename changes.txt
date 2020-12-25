@@ -29,6 +29,27 @@ Note: The sample skin is updated to use the hour tags.
     3 Rising Quickly
     4 Rising Rapidly
 
+3. windrun and beaufort (the deprecated syntax for beaufort) now work correctly.
+
+4. current, 10m, trend, hour and day periods now support windrun_<dir>.  That is,
+   the following (which can be used to make a windrose):
+   windrun_N
+   windrun_NNE
+   windrun_NE
+   windrun_ENE
+   windrun_E
+   windrun_ESE
+   windrun_SE
+   windrun_SSE
+   windrun_S
+   windrun_SSW
+   windrun_SW
+   windrun_WSW
+   windrun_W
+   windrun_WNW
+   windrun_NW
+   windrun_NNW
+
 2.7.2 Release 16 Nov 2020
 -------------------------
 1. Fix for customer reported problem.  Exception in
