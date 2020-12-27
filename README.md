@@ -28,10 +28,11 @@ The json file will contain any specified values for:
 In addition to the usual observation types (which includes `windrun`), there
 are special `windrun_<direction>` observation types that can be used with `current`,
 `10m`, `trend`, `hour` and `day` periods.  These report the distance for each of sixteen
-directions; and can be used to make a windrose.  Note: `windrun_<dirction>` observations
+directions; and can be used to make a windrose.  Note: `windrun_<direction>` observations
 are NOT supported for `week`, `month`, `year` and `rainyear` periods.
-Note: windrun_<direction> is likely to be moved to a separate plugin (and available to
-loopdata).
+
+Note: `windrun_<direction>` observations are experimental and are likely to be moved to a
+separate plugin (and available to loopdata).
 
 * `windrun_N`
 * `windrun_NNE`
