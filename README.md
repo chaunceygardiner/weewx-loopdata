@@ -30,6 +30,8 @@ are special `windrun_<direction>` observation types that can be used with `curre
 `10m`, `trend`, `hour` and `day` periods.  These report the distance for each of sixteen
 directions; and can be used to make a windrose.  Note: `windrun_<dirction>` observations
 are NOT supported for `week`, `month`, `year` and `rainyear` periods.
+Note: windrun_<direction> is likely to be moved to a separate plugin (and available to
+loopdata).
 
 * `windrun_N`
 * `windrun_NNE`
