@@ -15,7 +15,10 @@ Note: The sample skin is updated to use the hour tags.
           'hour.wind.rms.formatted'
           'hour.windGust.max'
           'hour.windGust.max.formatted'
-2. In addition to the already supported trend.barometer.desc,
+2. Add support for 2m tag.
+   e.g.,
+          '2m.windGust.max'
+3. In addition to the already supported trend.barometer.desc,
    trend.barometer.code is also supported.  The code can
    be an integer between -4 and 4, where the value
    correspsonds to:
@@ -29,9 +32,9 @@ Note: The sample skin is updated to use the hour tags.
     3 Rising Quickly
     4 Rising Rapidly
 
-3. windrun and beaufort (the deprecated syntax for beaufort) now work correctly.
+4. windrun and beaufort (the deprecated syntax for beaufort) now work correctly.
 
-4. Experimental feature -- It is likely these observations will be moved to a
+5. Experimental feature -- It is likely these observations will be moved to a
                            separate plugin (and available to loopdata).
    current, 10m, trend, hour and day periods now support windrun_<dir>.  That is,
    the following (which can be used to make a windrose):

@@ -15,6 +15,7 @@ it can be found at `<weewx-url>/loopdata/`.
 
 The json file will contain any specified values for:
 * observations in the loop packet (e.g., `current.outTemp`)
+* rolling 2 min. aggregate values (e.g., `2m.outTemp.max`, `2m.wind.gustdir`)
 * rolling 10 min. aggregate values (e.g., `10m.outTemp.max`, `10m.wind.gustdir`)
 * trends (e.g., `trend.barometer`) -- see time_delta below
 * hourly aggregate values (e.g., `hour.outTemp.max`)
@@ -27,7 +28,7 @@ The json file will contain any specified values for:
 
 In addition to the usual observation types (which includes `windrun`), there
 are special `windrun_<direction>` observation types that can be used with `current`,
-`10m`, `trend`, `hour` and `day` periods.  These report the distance for each of sixteen
+`2m`, `10m`, `trend`, `hour` and `day` periods.  These report the distance for each of sixteen
 directions; and can be used to make a windrose.  Note: `windrun_<direction>` observations
 are NOT supported for `week`, `month`, `year` and `rainyear` periods.
 
@@ -143,8 +144,8 @@ separate thread.  The information gathered is only that which is needed
 for LoopData to prime it's accumulators.  For example, if a week field is
 included in the weewx.conf fields line (week.rain.sum), daily summaries
 for the week will be read to prime the week accumulator.  If no week field
-is included, no work will be done.  Ditto for rainyear, year, month and 10m
-accumulators.  They are populated only if they are used.  Lastly, only the
+is included, no work will be done.  Ditto for rainyear, year, month, 10m
+and 2m accumulators.  They are populated only if they are used.  Lastly, only the
 necessary observation types are tracked in the accumulators.  For example,
 if no form of monthy.barometer is specified on the fields line, the monthly
 accumulator will not accumulate baromter readings.
@@ -278,8 +279,8 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
 
 Generally, if you can specify a field in a Cheetah template, and that field begins with $current,
 `$trend`, `$day`, `$week`, `$month`, `$year`, or `$rainyear`, you can specify it here (but don't
-include the dollar sign).  Also, anything you can use the `10m` prefix to get aggregate values
-for a rolling ten minutes.  `10m` acts just like `day`, `week`, `month`, `year` and `rainyear`.
+include the dollar sign).  Also, anything you can use the `2m` or `10m` prefix to get aggregate values
+for a rolling two or ten minutes, respectively.  `2m` and `10m` act just like `day`, `week`, `month`, `year` and `rainyear`.
 
 For example, just like in a report, one can add the following extenstions to specialize the fields:
 * `No extension`: Field is converted and formatted per the report and a label is added.
