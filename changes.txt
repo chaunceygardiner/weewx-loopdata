@@ -4,7 +4,7 @@ loopdata change history
 2.8 Release ?? ??? 2020
 -----------------------
 1. Add support hour tag.
-Note: The sample skin is updated to use the hour tags.
+   Note: The sample skin is updated to use the hour tags.
       For existing installations that actually use the
       sample skin, you need to add the following fields
       to the fields clause in the LoopData section in
@@ -16,8 +16,17 @@ Note: The sample skin is updated to use the hour tags.
           'hour.windGust.max'
           'hour.windGust.max.formatted'
 2. Add support for 2m tag.
-   e.g.,
+   Note: The sample skin is updated to use the hour tags.
+      For existing installations that actually use the
+      sample skin, you need to add the following fields
+      to the fields clause in the LoopData section in
+      weewx.conf:
+          '2m.outTemp.max.formatted'
+          '2m.outTemp.min.formatted'
+          '2m.rain.sum.formatted'
+          '2m.wind.rms.formatted'
           '2m.windGust.max'
+          '2m.windGust.max.formatted'
 3. In addition to the already supported trend.barometer.desc,
    trend.barometer.code is also supported.  The code can
    be an integer between -4 and 4, where the value
