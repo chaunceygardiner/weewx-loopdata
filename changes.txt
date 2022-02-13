@@ -1,6 +1,9 @@
 loopdata change history
 -----------------------
 
+2.9 Release 13 February 2022
+1. Fix to work with WeeWX 4.6
+
 2.8 Release ?? ??? 2020
 -----------------------
 1. Add support hour tag.

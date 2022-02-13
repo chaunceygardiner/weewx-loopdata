@@ -29,6 +29,7 @@ from enum import Enum
 import weewx
 import weewx.defaults
 import weewx.manager
+import weewx.reportengine
 import weewx.units
 import weewx.wxxtypes
 import weeutil.config
@@ -46,7 +47,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '2.8b'
+LOOP_DATA_VERSION = '2.9'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -367,9 +368,10 @@ class LoopData(StdService):
 
     @staticmethod
     def get_target_report_dict(config_dict, report) -> Dict[str, Any]:
-        # This code is from WeeWX's ReportEngine. Copyright Tom Keffer
-        # TODO: See if Tom will take a PR to make this available to extensions.
-        # In the meaintime, it's probably safe to copy as the cofiguration files are public API.
+        try:
+            return weewx.reportengine._build_skin_dict(config_dict, report)
+        except AttributeError as e:
+            pass # Load the report dict the old fashioned way below
         try:
             skin_dict = weeutil.config.deep_copy(weewx.defaults.defaults)
         except Exception:
