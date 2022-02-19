@@ -370,7 +370,7 @@ class LoopData(StdService):
     def get_target_report_dict(config_dict, report) -> Dict[str, Any]:
         try:
             return weewx.reportengine._build_skin_dict(config_dict, report)
-        except AttributeError as e:
+        except AttributeError:
             pass # Load the report dict the old fashioned way below
         try:
             skin_dict = weeutil.config.deep_copy(weewx.defaults.defaults)
@@ -691,7 +691,7 @@ class LoopData(StdService):
                 pkt_time = pkt['dateTime']
                 pkt['usUnits'] = unit_system
                 pruned_pkt = LoopProcessor.prune_period_packet(pkt_time, pkt, obstypes)
-                accum.addRecord(pruned_pkt, archive_interval * 60)
+                accum.addRecord(pruned_pkt, weight=archive_interval * 60)
                 pkt_count += 1
             log.debug('Primed hour_accum with %d archive packets in %f seconds.' % (pkt_count, time.time() - start))
 
@@ -895,67 +895,67 @@ class LoopProcessor:
         try:
           if len(rainyear_obstypes) > 0 and rainyear_accum is not None:
               pruned_pkt = LoopProcessor.prune_period_packet(pkt_time, pkt, rainyear_obstypes)
-              rainyear_accum.addRecord(pruned_pkt, loop_frequency)
+              rainyear_accum.addRecord(pruned_pkt, weight=loop_frequency)
         except weewx.accum.OutOfSpan:
             timespan = weeutil.weeutil.archiveRainYearSpan(pkt['dateTime'], rainyear_start)
             rainyear_accum = weewx.accum.Accum(timespan, unit_system=unit_system)
             # Try again:
-            rainyear_accum.addRecord(pkt, loop_frequency)
+            rainyear_accum.addRecord(pkt, weight=loop_frequency)
 
         # Add packet to year accumulator.
         try:
           if len(year_obstypes) > 0 and year_accum is not None:
               pruned_pkt = LoopProcessor.prune_period_packet(pkt_time, pkt, year_obstypes)
-              year_accum.addRecord(pruned_pkt, loop_frequency)
+              year_accum.addRecord(pruned_pkt, weight=loop_frequency)
         except weewx.accum.OutOfSpan:
             timespan = weeutil.weeutil.archiveYearSpan(pkt['dateTime'])
             year_accum = weewx.accum.Accum(timespan, unit_system=unit_system)
             # Try again:
-            year_accum.addRecord(pkt, loop_frequency)
+            year_accum.addRecord(pkt, weight=loop_frequency)
 
         # Add packet to month accumulator.
         try:
           if len(month_obstypes) > 0 and month_accum is not None:
               pruned_pkt = LoopProcessor.prune_period_packet(pkt_time, pkt, month_obstypes)
-              month_accum.addRecord(pruned_pkt, loop_frequency)
+              month_accum.addRecord(pruned_pkt, weight=loop_frequency)
         except weewx.accum.OutOfSpan:
             timespan = weeutil.weeutil.archiveMonthSpan(pkt['dateTime'])
             month_accum = weewx.accum.Accum(timespan, unit_system=unit_system)
             # Try again:
-            month_accum.addRecord(pkt, loop_frequency)
+            month_accum.addRecord(pkt, weight=loop_frequency)
 
         # Add packet to week accumulator.
         try:
           if len(week_obstypes) > 0 and week_accum is not None:
               pruned_pkt = LoopProcessor.prune_period_packet(pkt_time, pkt, week_obstypes)
-              week_accum.addRecord(pruned_pkt, loop_frequency)
+              week_accum.addRecord(pruned_pkt, weight=loop_frequency)
         except weewx.accum.OutOfSpan:
             timespan = weeutil.weeutil.archiveWeekSpan(pkt['dateTime'], week_start)
             week_accum = weewx.accum.Accum(timespan, unit_system=unit_system)
             # Try again:
-            week_accum.addRecord(pkt, loop_frequency)
+            week_accum.addRecord(pkt, weight=loop_frequency)
 
         # Add packet to day accumulator.
         try:
           if len(day_obstypes) > 0:
               pruned_pkt = LoopProcessor.prune_period_packet(pkt_time, pkt, day_obstypes)
-              day_accum.addRecord(pruned_pkt, loop_frequency)
+              day_accum.addRecord(pruned_pkt, weight=loop_frequency)
         except weewx.accum.OutOfSpan:
             timespan = weeutil.weeutil.archiveDaySpan(pkt['dateTime'])
             day_accum = weewx.accum.Accum(timespan, unit_system=unit_system)
             # Try again:
-            day_accum.addRecord(pkt, loop_frequency)
+            day_accum.addRecord(pkt, weight=loop_frequency)
 
         # Add packet to hour accumulator.
         try:
           if len(hour_obstypes) > 0:
               pruned_pkt = LoopProcessor.prune_period_packet(pkt_time, pkt, hour_obstypes)
-              hour_accum.addRecord(pruned_pkt, loop_frequency)
+              hour_accum.addRecord(pruned_pkt, weight=loop_frequency)
         except weewx.accum.OutOfSpan:
             timespan = weeutil.weeutil.archiveHoursAgoSpan(pkt['dateTime'])
             hour_accum = weewx.accum.Accum(timespan, unit_system=unit_system)
             # Try again:
-            hour_accum.addRecord(pkt, loop_frequency)
+            hour_accum.addRecord(pkt, weight=loop_frequency)
 
         # Create a 2m accumulator.
         two_min_accum = LoopProcessor.create_two_min_accum(
@@ -990,7 +990,7 @@ class LoopProcessor:
                         weight = two_min_packet.packet['interval'] * 60
                     else:
                         weight = loop_frequency
-                    two_min_accum.addRecord(two_min_packet.packet, weight)
+                    two_min_accum.addRecord(two_min_packet.packet, weight=weight)
         else:
             two_min_accum = None
 
@@ -1014,7 +1014,7 @@ class LoopProcessor:
                         weight = ten_min_packet.packet['interval'] * 60
                     else:
                         weight = loop_frequency
-                    ten_min_accum.addRecord(ten_min_packet.packet, weight)
+                    ten_min_accum.addRecord(ten_min_packet.packet, weight=weight)
         else:
             ten_min_accum = None
 
