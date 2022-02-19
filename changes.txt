@@ -1,6 +1,10 @@
 loopdata change history
 -----------------------
 
+2.10 Release 2022/02/18
+1. Bugfix.  Use loop frequency as the weight when adding to the accumulators.
+
+
 2.9 Release 13 February 2022
 1. Fix to work with WeeWX 4.6
 
