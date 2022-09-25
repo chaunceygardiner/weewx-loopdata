@@ -10,7 +10,21 @@ Copyright (C)2020 by John A Kline (john@johnkline.com)
 LoopData is a WeeWX service that generates a json file (loop-data.txt)
 on every loop (e.g., every 2s).
 
-A sample skin that uses the loopdata extension is also included.  After installation,
+**IMPORTANT**: This extension has been tested with the WeeWX's vantage and cc3000 drivers.
+It will likely also work with other drivers that, like the two drivers tested, report
+loop packets on a regular basis and report all observations on every loop packet.
+Use loopdata with driver's that report loop packets on an irregular basis and/or report
+partial observations, at your own risk.
+
+**IMPORTANT**: It is crucial to specify the correct loop frequency in the LoopData section
+in the weewx.conf file.  For vantage and cc3000, this will be 2 seconds.
+```
+[LoopData]
+    [[LoopFrequency]]                                                                                                                                                     
+        seconds = 2.0
+```
+
+A sample skin, that uses the loopdata extension, is also included.  After installation,
 it can be found at `<weewx-url>/loopdata/`.
 
 The json file will contain any specified values for:

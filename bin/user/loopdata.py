@@ -47,7 +47,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '2.10'
+LOOP_DATA_VERSION = '2.11'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -807,14 +807,22 @@ class LoopProcessor:
                 pkt_time: int       = to_int(pkt['dateTime'])
                 pkt['interval']     = self.cfg.loop_frequency / 60.0
 
-                windrun_val = weewx.wxxtypes.WXXTypes.calc_windrun('windrun', pkt)
-                pkt['windrun'] = windrun_val[0]
-                if windrun_val[0] > 0.00 and 'windDir' in pkt and pkt['windDir'] is not None:
-                    bkt = LoopProcessor.get_windrun_bucket(pkt['windDir'])
-                    pkt['windrun_%s' % windrun_bucket_suffixes[bkt]] = windrun_val[0]
+                try:
+                    windrun_val = weewx.wxxtypes.WXXTypes.calc_windrun('windrun', pkt)
+                    pkt['windrun'] = windrun_val[0]
+                    if windrun_val[0] > 0.00 and 'windDir' in pkt and pkt['windDir'] is not None:
+                        bkt = LoopProcessor.get_windrun_bucket(pkt['windDir'])
+                        pkt['windrun_%s' % windrun_bucket_suffixes[bkt]] = windrun_val[0]
+                except weewx.CannotCalculate:
+                    log.info('Cannot calculate windrun.')
+                    pass
 
-                beaufort_val = weewx.wxxtypes.WXXTypes.calc_beaufort('beaufort', pkt)
-                pkt['beaufort'] = beaufort_val[0]
+                try:
+                    beaufort_val = weewx.wxxtypes.WXXTypes.calc_beaufort('beaufort', pkt)
+                    pkt['beaufort'] = beaufort_val[0]
+                except weewx.CannotCalculate:
+                    log.info('Cannot calculate beaufort.')
+                    pass
 
                 # This is a loop packet.
                 assert event.event_type == weewx.NEW_LOOP_PACKET

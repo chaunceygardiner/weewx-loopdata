@@ -31,7 +31,7 @@ def loader():
 class LoopDataInstaller(ExtensionInstaller):
     def __init__(self):
         super(LoopDataInstaller, self).__init__(
-            version = "2.10",
+            version = "2.11",
             name = 'loopdata',
             description = 'Loop statistics for real time reporting.',
             author = "John A Kline",

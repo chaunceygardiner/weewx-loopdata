@@ -1,6 +1,10 @@
 loopdata change history
 -----------------------
 
+2.11 Release 2022/09/25
+1. Specify what drivers this extension has been tested with.
+2. Continue if windrun and/or beaufort can't be calculated.
+
 2.10 Release 2022/02/18
 1. Bugfix.  Use loop frequency as the weight when adding to the accumulators.
 
