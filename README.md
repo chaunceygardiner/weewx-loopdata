@@ -192,12 +192,12 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
 
 # Installation Instructions
 
-1. Download the lastest release, weewx-loopdata-2.10.zip, from the
+1. Download the lastest release, weewx-loopdata-2.11.zip, from the
    [GitHub Repository](https://github.com/chaunceygardiner/weewx-loopdata).
 
 1. Run the following command.
 
-   `sudo /home/weewx/bin/wee_extension --install weewx-loopdata-2.10.zip`
+   `sudo /home/weewx/bin/wee_extension --install weewx-loopdata-2.11.zip`
 
    Note: this command assumes weewx is installed in /home/weewx.  If it's installed
    elsewhere, adjust the path of wee_extension accordingly.
