@@ -153,7 +153,7 @@
           } else {
             document.getElementById("current.rainRate.formatted").innerHTML = ''.padStart(5,' ');
           }
-          #set $archive_data = ['2m', '10m', '24h', 'hour', 'day', 'week', 'month', 'year', 'rainyear']
+          #set $archive_data = ['2m', '10m', 'hour', 'day', 'week', 'month', 'year', 'rainyear']
           #for $archive in $archive_data
           if (result.hasOwnProperty("$(archive).outTemp.max.formatted")) {
             document.getElementById("$(archive).outTemp.max.formatted").innerHTML = result["$(archive).outTemp.max.formatted"].padStart(5,' ');
