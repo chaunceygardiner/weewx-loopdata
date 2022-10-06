@@ -425,6 +425,15 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, 'sum')
         self.assertEqual(cname.format_spec, 'raw')
 
+        cname = user.loopdata.LoopData.parse_cname('24h.rain.sum.raw')
+        self.assertEqual(cname.field, '24h.rain.sum.raw')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, '24h')
+        self.assertEqual(cname.obstype, 'rain')
+        self.assertEqual(cname.agg_type, 'sum')
+        self.assertEqual(cname.format_spec, 'raw')
+
         cname = user.loopdata.LoopData.parse_cname('day.rain.formatted')
         self.assertEqual(cname, None)
 
@@ -557,14 +566,14 @@ class ProcessPacketTests(unittest.TestCase):
     def test_get_fields_to_include(self):
 
         specified_fields = [ 'current.dateTime.raw', 'current.outTemp', 'trend.barometer.code',
-            'trend.barometer.desc', '2m.wind.max', '2m.wind.gustdir', '10m.wind.max', '10m.wind.gustdir', 'hour.inTemp.min', 'hour.inTemp.mintime',
+            'trend.barometer.desc', '2m.wind.max', '2m.wind.gustdir', '10m.wind.max', '10m.wind.gustdir', '24h.rain.sum', 'hour.inTemp.min', 'hour.inTemp.mintime',
             'day.barometer.min', 'day.barometer.max', 'day.wind.max', 'day.wind.gustdir', 'day.wind.maxtime' ]
 
         (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(specified_fields)
+            ten_min_obstypes, two_min_obstypes, day_24h_obstypes) = user.loopdata.LoopData.get_fields_to_include(specified_fields)
 
-        self.assertEqual(len(fields_to_include), 15)
+        self.assertEqual(len(fields_to_include), 16)
         self.assertTrue(user.loopdata.CheetahName(
             'current.dateTime.raw', None, None, 'current', 'dateTime', None, 'raw') in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
@@ -579,6 +588,8 @@ class ProcessPacketTests(unittest.TestCase):
             '2m.wind.gustdir', None, None, '2m', 'wind', 'gustdir', None) in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
             '10m.wind.max', None, None, '10m', 'wind', 'max', None) in fields_to_include)
+        self.assertTrue(user.loopdata.CheetahName(
+            '24h.rain.sum', None, None, '24h', 'rain', 'sum', None) in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
             '10m.wind.gustdir', None, None, '10m', 'wind', 'gustdir', None) in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
@@ -596,11 +607,12 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertTrue(user.loopdata.CheetahName(
             'day.wind.maxtime', None, None, 'day', 'wind', 'maxtime', None) in fields_to_include)
 
-        self.assertEqual(len(current_obstypes), 9)
+        self.assertEqual(len(current_obstypes), 10)
         self.assertTrue('inTemp' in current_obstypes)
         self.assertTrue('outTemp' in current_obstypes)
         self.assertTrue('barometer' in current_obstypes)
         self.assertTrue('wind' in current_obstypes)
+        self.assertTrue('rain' in current_obstypes)
         self.assertTrue('windDir' in current_obstypes)
         self.assertTrue('windGust' in current_obstypes)
         self.assertTrue('windGustDir' in current_obstypes)
@@ -615,6 +627,9 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertTrue('windGust' in ten_min_obstypes)
         self.assertTrue('windGustDir' in ten_min_obstypes)
         self.assertTrue('windSpeed' in ten_min_obstypes)
+
+        self.assertEqual(len(day_24h_obstypes), 1)
+        self.assertTrue('rain' in day_24h_obstypes)
 
         self.assertEqual(len(hour_obstypes), 1)
         self.assertTrue('inTemp' in hour_obstypes)
@@ -760,7 +775,7 @@ class ProcessPacketTests(unittest.TestCase):
         config_dict = ProcessPacketTests._get_config_dict('us')
         (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
+            ten_min_obstypes, two_min_obstypes, day_24h_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
         unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
 
@@ -809,7 +824,7 @@ class ProcessPacketTests(unittest.TestCase):
         unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
 
         # July 1, 2020 Noon PDT
-        pkt = {'dateTime': 1593630000, 'usUnits': 1, 'outTemp': 77.4}
+        pkt = {'dateTime': 1593630000, 'usUnits': 1, 'outTemp': 77.4, 'rain': 0.01}
         pkt_time = pkt['dateTime']
 
         (rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
@@ -824,6 +839,7 @@ class ProcessPacketTests(unittest.TestCase):
         specified_fields = [ 'current.outTemp', 'trend.outTemp',
                              '2m.outTemp.max', '2m.outTemp.min', '2m.outTemp.avg',
                              '10m.outTemp.max', '10m.outTemp.min', '10m.outTemp.avg',
+                             '24h.rain.sum', '24h.outTemp.min', '24h.outTemp.avg',
                              'hour.outTemp.max', 'hour.outTemp.min', 'hour.outTemp.avg',
                              'day.outTemp.max', 'day.outTemp.min', 'day.outTemp.avg',
                              'week.outTemp.max', 'week.outTemp.min', 'week.outTemp.avg',
@@ -833,11 +849,12 @@ class ProcessPacketTests(unittest.TestCase):
 
         (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(specified_fields)
+            ten_min_obstypes, two_min_obstypes, day_24h_obstypes) = user.loopdata.LoopData.get_fields_to_include(specified_fields)
 
         trend_packets = []
         ten_min_packets = []
         two_min_packets = []
+        day_24h_packets = []
         time_delta = 10800
         loop_frequency = 2.0
         baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
@@ -850,7 +867,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         # Next packet 1 minute later
         pkt = {'dateTime': 1593630060, 'usUnits': 1, 'outTemp': 77.3}
@@ -862,7 +879,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'], '77.3°F')
@@ -870,13 +887,16 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['2m.outTemp.min'], '77.3°F')
         self.assertEqual(loopdata_pkt['10m.outTemp.max'], '77.4°F')
         self.assertEqual(loopdata_pkt['10m.outTemp.min'], '77.3°F')
+        self.assertEqual(loopdata_pkt['24h.rain.sum'], '0.01 in')
+        self.assertEqual(loopdata_pkt['24h.outTemp.min'], '77.3°F')
+        self.assertEqual(loopdata_pkt['24h.outTemp.avg'], '77.3°F')
         # New hour, since previous record (noon) was part of prev. hour.
         self.assertEqual(loopdata_pkt['hour.outTemp.max'], '77.3°F')
         self.assertEqual(loopdata_pkt['hour.outTemp.min'], '77.3°F')
         self.assertEqual(loopdata_pkt['trend.outTemp'], '-0.1°F')
 
         # Next packet 9 minute later
-        pkt = {'dateTime': 1593630600, 'usUnits': 1, 'outTemp': 77.2}
+        pkt = {'dateTime': 1593630600, 'usUnits': 1, 'outTemp': 77.2, 'rain': 0.01}
         pkt_time = pkt['dateTime']
         (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
@@ -885,7 +905,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'], '77.2°F')
@@ -896,9 +916,11 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['hour.outTemp.max'], '77.3°F')
         self.assertEqual(loopdata_pkt['hour.outTemp.min'], '77.2°F')
         self.assertEqual(loopdata_pkt['trend.outTemp'], '-0.2°F')
+        # 24h
+        self.assertEqual(loopdata_pkt['24h.rain.sum'], '0.02 in')
 
         # Next packet 2:51 later
-        pkt = {'dateTime': 1593640860, 'usUnits': 1, 'outTemp': 76.9}
+        pkt = {'dateTime': 1593640860, 'usUnits': 1, 'outTemp': 76.9, 'rain': 0.00}
         pkt_time = pkt['dateTime']
         (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
@@ -907,7 +929,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'], '76.9°F')
@@ -916,9 +938,11 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['hour.outTemp.max'], '76.9°F')
         self.assertEqual(loopdata_pkt['hour.outTemp.min'], '76.9°F')
         self.assertEqual(loopdata_pkt['trend.outTemp'], '-0.3°F')
+        # 24h
+        self.assertEqual(loopdata_pkt['24h.rain.sum'], '0.02 in')
 
         # Next packet 4:00 later
-        pkt = {'dateTime': 1593655260, 'usUnits': 1, 'outTemp': 75.0}
+        pkt = {'dateTime': 1593655260, 'usUnits': 1, 'outTemp': 75.0, 'rain': 0.01}
         pkt_time = pkt['dateTime']
         (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
@@ -927,7 +951,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'], '75.0°F')
@@ -938,9 +962,10 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.outTemp.min'], '75.0°F')
         self.assertEqual(loopdata_pkt['day.outTemp.max'], '77.4°F')
         self.assertEqual(loopdata_pkt.get('trend.outTemp'), None)
+        self.assertEqual(loopdata_pkt['24h.rain.sum'], '0.03 in')
 
         # Next packet 20:00 later
-        pkt = {'dateTime': 1593727260, 'usUnits': 1, 'outTemp': 70.0}
+        pkt = {'dateTime': 1593727260, 'usUnits': 1, 'outTemp': 70.0, 'rain': 0.00}
         pkt_time = pkt['dateTime']
         (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
@@ -949,7 +974,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'], '70.0°F')
@@ -960,9 +985,11 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.outTemp.min'], '70.0°F')
         self.assertEqual(loopdata_pkt['day.outTemp.max'], '70.0°F')
         self.assertEqual(loopdata_pkt.get('trend.outTemp'), None)
+        # 24h
+        self.assertEqual(loopdata_pkt['24h.rain.sum'], '0.01 in')
 
         # Add another temp a minute later so we get a trend
-        pkt = {'dateTime': 1593727320, 'usUnits': 1, 'outTemp': 70.0}
+        pkt = {'dateTime': 1593727320, 'usUnits': 1, 'outTemp': 70.0, 'rain': 0.04}
         pkt_time = pkt['dateTime']
         (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
@@ -971,7 +998,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],  '70.0°F')
@@ -986,9 +1013,11 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['week.outTemp.max'], '77.4°F')
         self.assertEqual(loopdata_pkt['month.outTemp.min'], '70.0°F')
         self.assertEqual(loopdata_pkt['month.outTemp.max'], '77.4°F')
+        # 24h
+        self.assertEqual(loopdata_pkt['24h.rain.sum'], '0.05 in')
 
         # Jump a week
-        pkt = {'dateTime': 1594332120, 'usUnits': 1, 'outTemp': 66.0}
+        pkt = {'dateTime': 1594332120, 'usUnits': 1, 'outTemp': 66.0, 'rain': 0.00}
         pkt_time = pkt['dateTime']
         (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
@@ -997,7 +1026,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],  '66.0°F')
@@ -1012,9 +1041,11 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['month.outTemp.min'], '66.0°F')
         self.assertEqual(loopdata_pkt['month.outTemp.max'], '77.4°F')
         self.assertEqual(loopdata_pkt.get('trend.outTemp'), None)
+        # 24h
+        self.assertEqual(loopdata_pkt['24h.rain.sum'], '0.00 in')
 
         # Jump a month
-        pkt = {'dateTime': 1597010520, 'usUnits': 1, 'outTemp': 88.0}
+        pkt = {'dateTime': 1597010520, 'usUnits': 1, 'outTemp': 88.0, 'rain': 0.01}
         pkt_time = pkt['dateTime']
         (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
@@ -1023,7 +1054,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],   '88.0°F')
@@ -1040,9 +1071,11 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['year.outTemp.min'],  '66.0°F')
         self.assertEqual(loopdata_pkt['year.outTemp.max'],  '88.0°F')
         self.assertEqual(loopdata_pkt.get('trend.outTemp'), None)
+        # 24h
+        self.assertEqual(loopdata_pkt['24h.rain.sum'], '0.01 in')
 
         # Jump a year
-        pkt = {'dateTime': 1628546520, 'usUnits': 1, 'outTemp': 99.0}
+        pkt = {'dateTime': 1628546520, 'usUnits': 1, 'outTemp': 99.0, 'rain': 0.02}
         pkt_time = pkt['dateTime']
         (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
@@ -1051,7 +1084,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],   '99.0°F')
@@ -1068,9 +1101,11 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['year.outTemp.min'],  '99.0°F')
         self.assertEqual(loopdata_pkt['year.outTemp.max'],  '99.0°F')
         self.assertEqual(loopdata_pkt.get('trend.outTemp'), None)
+        # 24h
+        self.assertEqual(loopdata_pkt['24h.rain.sum'], '0.02 in')
 
         # Jump a minute
-        pkt = {'dateTime': 1628546580, 'usUnits': 1, 'outTemp': 97.0}
+        pkt = {'dateTime': 1628546580, 'usUnits': 1, 'outTemp': 97.0, 'rain': 0.01}
         pkt_time = pkt['dateTime']
         (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
@@ -1079,7 +1114,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],       '97.0°F')
@@ -1098,10 +1133,12 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['rainyear.outTemp.min'],  '97.0°F')
         self.assertEqual(loopdata_pkt['rainyear.outTemp.max'],  '99.0°F')
         self.assertEqual(loopdata_pkt['trend.outTemp'],         '-2.0°F')
+        # 24h
+        self.assertEqual(loopdata_pkt['24h.rain.sum'], '0.03 in')
 
         # Jump to October 15 (new rain year)
         # Friday, October 15, 2021 12:00:00 PM GMT-07:00 DST
-        pkt = {'dateTime': 1634324400, 'usUnits': 1, 'outTemp': 41.0}
+        pkt = {'dateTime': 1634324400, 'usUnits': 1, 'outTemp': 41.0, 'rain': 0.00}
         pkt_time = pkt['dateTime']
         (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
@@ -1110,7 +1147,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],       '41.0°F')
@@ -1129,9 +1166,11 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['rainyear.outTemp.min'],  '41.0°F')
         self.assertEqual(loopdata_pkt['rainyear.outTemp.max'],  '41.0°F')
         self.assertEqual(loopdata_pkt.get('trend.outTemp'), None)
+        # 24h
+        self.assertEqual(loopdata_pkt['24h.rain.sum'], '0.00 in')
 
         # 1s later
-        pkt = {'dateTime': 1634324401, 'usUnits': 1, 'outTemp': 42.0}
+        pkt = {'dateTime': 1634324401, 'usUnits': 1, 'outTemp': 42.0, 'rain': 0.01}
         pkt_time = pkt['dateTime']
         (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
@@ -1140,7 +1179,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],       '42.0°F')
@@ -1167,9 +1206,11 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['rainyear.outTemp.max'],  '42.0°F')
         self.assertEqual(loopdata_pkt['rainyear.outTemp.avg'],  '41.5°F')
         self.assertEqual(loopdata_pkt['trend.outTemp'],         '1.0°F')
+        # 24h
+        self.assertEqual(loopdata_pkt['24h.rain.sum'], '0.01 in')
 
         # About 2 days later, Sunday, October 17, 2021 04:24:27 PM PDT
-        pkt = {'dateTime': 1634513067, 'usUnits': 1, 'outTemp': 88.0}
+        pkt = {'dateTime': 1634513067, 'usUnits': 1, 'outTemp': 88.0, 'rain': 0.00}
         pkt_time = pkt['dateTime']
         (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
@@ -1178,10 +1219,10 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         # Next day, Monday, October 18, 2021 04:24:27 PM PDT
-        pkt = {'dateTime': 1634599467, 'usUnits': 1, 'outTemp': 87.5}
+        pkt = {'dateTime': 1634599467, 'usUnits': 1, 'outTemp': 87.5, 'rain': 0.01}
         pkt_time = pkt['dateTime']
         (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
@@ -1190,10 +1231,10 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         # 6 days later, Saturday, October 23, 2021 04:24:27 PM PDT
-        pkt = {'dateTime': 1635031467, 'usUnits': 1, 'outTemp': 87.0}
+        pkt = {'dateTime': 1635031467, 'usUnits': 1, 'outTemp': 87.0, 'rain': 0.04}
         pkt_time = pkt['dateTime']
         (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
@@ -1202,11 +1243,11 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         # Next day, starts a new week, the high should be 85 (from today)
         # Sunday, October 24, 2021 04:24:27 PM PDT
-        pkt = {'dateTime': 1635117867, 'usUnits': 1, 'outTemp': 85.0}
+        pkt = {'dateTime': 1635117867, 'usUnits': 1, 'outTemp': 85.0, 'rain': 0.01}
         pkt_time = pkt['dateTime']
         (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
@@ -1215,12 +1256,13 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         # Make sure we have a new week accumulator that starts this Sunday 2021-10-24.
         self.assertEqual(timestamp_to_string(week_accum.timespan.start), '2021-10-24 00:00:00 PDT (1635058800)')
         self.assertEqual(week_accum['outTemp'].max, 85.0)
         self.assertEqual(loopdata_pkt['week.outTemp.max'], '85.0°F')
+        self.assertEqual(loopdata_pkt['24h.rain.sum'], '0.01 in')
 
     def test_changing_periods_week_start_0(self):
 
@@ -1251,11 +1293,12 @@ class ProcessPacketTests(unittest.TestCase):
 
         (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(specified_fields)
+            ten_min_obstypes, two_min_obstypes, day_24h_obstypes) = user.loopdata.LoopData.get_fields_to_include(specified_fields)
 
         trend_packets = []
         ten_min_packets = []
         two_min_packets = []
+        day_24h_packets = []
         time_delta = 10800
         loop_frequency = 2.0
         baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
@@ -1268,7 +1311,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         # Next packet 1 minute later
         pkt = {'dateTime': 1593630060, 'usUnits': 1, 'outTemp': 77.3}
@@ -1280,7 +1323,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'], '77.3°F')
@@ -1298,7 +1341,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'], '77.2°F')
@@ -1317,7 +1360,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'], '76.9°F')
@@ -1335,7 +1378,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'], '75.0°F')
@@ -1355,7 +1398,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'], '70.0°F')
@@ -1375,7 +1418,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],  '70.0°F')
@@ -1399,7 +1442,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],  '66.0°F')
@@ -1423,7 +1466,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],   '88.0°F')
@@ -1449,7 +1492,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],   '99.0°F')
@@ -1475,7 +1518,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],       '97.0°F')
@@ -1503,7 +1546,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],       '41.0°F')
@@ -1531,7 +1574,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],       '42.0°F')
@@ -1565,7 +1608,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         # Make sure we still have the old accumulator that started Monday 2021-10-11.
         self.assertEqual(timestamp_to_string(week_accum.timespan.start), '2021-10-11 00:00:00 PDT (1633935600)')
@@ -1580,7 +1623,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         # Make sure we still have a new accumulator that started Monday 2021-10-18.
         self.assertEqual(timestamp_to_string(week_accum.timespan.start), '2021-10-18 00:00:00 PDT (1634540400)')
@@ -1595,7 +1638,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         # Next day DOES NOT START a new week since week_start is 0, high should be 87.5 (last Monday)
         # Sunday, October 24, 2021 04:24:27 PM PDT
@@ -1608,7 +1651,7 @@ class ProcessPacketTests(unittest.TestCase):
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+            baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         # Make sure we still have the accumulator that started Monday 2021-10-18.
         self.assertEqual(timestamp_to_string(week_accum.timespan.start), '2021-10-18 00:00:00 PDT (1634540400)')
@@ -1631,11 +1674,12 @@ class ProcessPacketTests(unittest.TestCase):
 
         (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
+            ten_min_obstypes, two_min_obstypes, day_24h_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
         trend_packets = []
         ten_min_packets = []
         two_min_packets = []
+        day_24h_packets = []
         loop_frequency = 2.0
         time_delta = 10800
         baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
@@ -1649,7 +1693,7 @@ class ProcessPacketTests(unittest.TestCase):
                 rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
                 month_accum, month_obstypes, week_accum, week_start, week_obstypes,
                 day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-                baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+                baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         # {'dateTime': 1593883054, 'usUnits': 1, 'outTemp': 71.6, 'barometer': 30.060048358389471, 'dewpoint': 60.48739574937819
         # {'dateTime': 1593883332, 'usUnits': 1, 'outTemp': 72.0, 'barometer': 30.055425865734495, 'dewpoint': 59.57749595318801
@@ -1773,11 +1817,12 @@ class ProcessPacketTests(unittest.TestCase):
 
         (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
+            ten_min_obstypes, two_min_obstypes, day_24h_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
         trend_packets = []
         ten_min_packets = []
         two_min_packets = []
+        day_24h_packets = []
         loop_frequency = 2.0
         time_delta = 10800
         baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
@@ -1791,7 +1836,7 @@ class ProcessPacketTests(unittest.TestCase):
                 rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
                 month_accum, month_obstypes, week_accum, week_start, week_obstypes,
                 day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-                baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+                baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         # {'dateTime': 1593883054, 'usUnits': 1, 'outTemp': 71.6, 'barometer': 30.060048358389471, 'dewpoint': 60.48739574937819
         # {'dateTime': 1593883332, 'usUnits': 1, 'outTemp': 72.0, 'barometer': 30.055425865734495, 'dewpoint': 59.57749595318801
@@ -1903,11 +1948,12 @@ class ProcessPacketTests(unittest.TestCase):
 
         (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
+            ten_min_obstypes, two_min_obstypes, day_24h_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
         trend_packets = []
         ten_min_packets = []
         two_min_packets = []
+        day_24h_packets = []
         loop_frequency = 2.0
         time_delta = 10800
         baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
@@ -1921,7 +1967,7 @@ class ProcessPacketTests(unittest.TestCase):
                 rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
                 month_accum, month_obstypes, week_accum, week_start, week_obstypes,
                 day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-                baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+                baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         # {'dateTime': 1593975030, 'outTemp': 76.1, 'barometer': 30.014857385736513, 'dewpoint': 54.73645937493746
         # {'dateTime': 1593975366, 'outTemp': 75.4, 'barometer': 30.005222168998216, 'dewpoint': 56.53264564000546
@@ -2045,11 +2091,12 @@ class ProcessPacketTests(unittest.TestCase):
 
         (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
+            ten_min_obstypes, two_min_obstypes, day_24h_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
         trend_packets = []
         ten_min_packets = []
         two_min_packets = []
+        day_24h_packets = []
         loop_frequency = 2.0
         time_delta = 10800
         baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
@@ -2063,7 +2110,7 @@ class ProcessPacketTests(unittest.TestCase):
                 rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
                 month_accum, month_obstypes, week_accum, week_start, week_obstypes,
                 day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-                baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+                baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         # {'dateTime': 1593975030, 'outTemp': 76.1, 'barometer': 30.014857385736513, 'dewpoint': 54.73645937493746
         # {'dateTime': 1593975366, 'outTemp': 75.4, 'barometer': 30.005222168998216, 'dewpoint': 56.53264564000546
@@ -2175,11 +2222,12 @@ class ProcessPacketTests(unittest.TestCase):
 
         (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
+            ten_min_obstypes, two_min_obstypes, day_24h_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
         trend_packets = []
         ten_min_packets = []
         two_min_packets = []
+        day_24h_packets = []
         loop_frequency = 2.0
         time_delta = 10800
         baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
@@ -2195,7 +2243,7 @@ class ProcessPacketTests(unittest.TestCase):
                 rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
                 month_accum, month_obstypes, week_accum, week_start, week_obstypes,
                 day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-                baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+                baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         # {'dateTime': 1595487600, 'outTemp': 57.3, 'outHumidity': 89.0, 'pressure': 29.85,
 
@@ -2326,7 +2374,7 @@ class ProcessPacketTests(unittest.TestCase):
                 rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
                 month_accum, month_obstypes, week_accum, week_start, week_obstypes,
                 day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-                baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+                baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         # {'dateTime': 1595488500, 'outTemp': 58.2, 'outHumidity': 90.0, 'pressure': 29.85,
 
@@ -2449,11 +2497,12 @@ class ProcessPacketTests(unittest.TestCase):
 
         (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
+            ten_min_obstypes, two_min_obstypes, day_24h_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
         trend_packets = []
         ten_min_packets = []
         two_min_packets = []
+        day_24h_packets = []
         loop_frequency = 2.0
         time_delta = 10800
         baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
@@ -2467,7 +2516,7 @@ class ProcessPacketTests(unittest.TestCase):
                 rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
                 month_accum, month_obstypes, week_accum, week_start, week_obstypes,
                 day_accum, day_obstypes, hour_accum, hour_obstypes, trend_packets, time_delta, trend_obstypes,
-                baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes)
+                baro_trend_descs, ten_min_packets, ten_min_obstypes, two_min_packets, two_min_obstypes, day_24h_packets, day_24h_obstypes)
 
         # {'dateTime': 1593976709, 'outTemp': 0.3770915275499615,  'barometer': 1053.1667173695532, 'dewpoint': -2.6645899102645934
         # {'dateTime': 1593977615, 'outTemp': 0.032246952164187964,'barometer': 1053.1483031344253, 'dewpoint': -3.003421962855377

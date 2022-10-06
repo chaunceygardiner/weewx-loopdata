@@ -1,6 +1,22 @@
 loopdata change history
 -----------------------
 
+2.12 Release 2022/??/??
+1. Add support 24h tag.  Examples: '24h.rain.sum', '24h.windrun.sum'
+   Unlike the day tag (which covers midnight to midnight,
+   The 24h tag covers a rolling 24 hours.
+   Note: The sample skin is updated to use the 24h tags.
+      For existing installations that actually use the
+      sample skin, you need to add the following fields
+      to the fields clause in the LoopData section in
+      weewx.conf:
+          '24h.outTemp.max.formatted'
+          '24h.outTemp.min.formatted'
+          '24h.rain.sum.formatted'
+          '24h.wind.rms.formatted'
+          '24h.windGust.max'
+          '24h.windGust.max.formatted'
+
 2.11 Release 2022/09/25
 1. Specify what drivers this extension has been tested with.
 2. Continue if windrun and/or beaufort can't be calculated.
