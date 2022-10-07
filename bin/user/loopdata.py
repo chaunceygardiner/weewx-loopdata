@@ -152,7 +152,7 @@ class LoopData(StdService):
         if sys.version_info[0] < 3:
             raise Exception("Python 3 is required for the loopdata plugin.")
 
-        self.loop_proccessor_started = False
+        self.loop_processor_started = False
         self.day_packets: List[Dict[str, Any]] = []
 
         station_dict             = config_dict.get('Station', {})
@@ -419,10 +419,10 @@ class LoopData(StdService):
         return skin_dict
 
     def pre_loop(self, event):
-        if self.loop_proccessor_started:
+        if self.loop_processor_started:
             return
         # Start the loop processor thread.
-        self.loop_proccessor_started = True
+        self.loop_processor_started = True
 
         try:
             binder = weewx.manager.DBBinder(self.config_dict)
