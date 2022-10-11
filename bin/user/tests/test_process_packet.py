@@ -557,14 +557,14 @@ class ProcessPacketTests(unittest.TestCase):
     def test_get_fields_to_include(self):
 
         specified_fields = [ 'current.dateTime.raw', 'current.outTemp', 'trend.barometer.code',
-            'trend.barometer.desc', '2m.wind.max', '2m.wind.gustdir', '10m.wind.max', '10m.wind.gustdir', 'hour.inTemp.min', 'hour.inTemp.mintime',
+            'trend.barometer.desc', '2m.wind.max', '2m.wind.gustdir', '10m.wind.max', '10m.wind.gustdir', '10m.windSpeed.max', '10m.windDir.max', 'hour.inTemp.min', 'hour.inTemp.mintime',
             'day.barometer.min', 'day.barometer.max', 'day.wind.max', 'day.wind.gustdir', 'day.wind.maxtime' ]
 
         (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
             ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(specified_fields)
 
-        self.assertEqual(len(fields_to_include), 15)
+        self.assertEqual(len(fields_to_include), 17)
         self.assertTrue(user.loopdata.CheetahName(
             'current.dateTime.raw', None, None, 'current', 'dateTime', None, 'raw') in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
@@ -581,6 +581,10 @@ class ProcessPacketTests(unittest.TestCase):
             '10m.wind.max', None, None, '10m', 'wind', 'max', None) in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
             '10m.wind.gustdir', None, None, '10m', 'wind', 'gustdir', None) in fields_to_include)
+        self.assertTrue(user.loopdata.CheetahName(
+            '10m.windSpeed.max', None, None, '10m', 'windSpeed', 'max', None) in fields_to_include)
+        self.assertTrue(user.loopdata.CheetahName(
+            '10m.windDir.max', None, None, '10m', 'windDir', 'max', None) in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
             'hour.inTemp.min', None, None, 'hour', 'inTemp', 'min', None) in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(

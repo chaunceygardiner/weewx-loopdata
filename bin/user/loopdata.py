@@ -176,18 +176,17 @@ class ContinuousScalarStats(object):
             self.wsum += val * weight
             self.sumtime += weight
             # Add to values_dict
-            if val in self.values_dict:
-                timestamp_list: Optional[SortedList[int]] = self.values_dict[val]
-            else:
-                timestamp_list = SortedList()
+            if not val in self.values_dict:
+                self.values_dict[val] = SortedList()
+            timestamp_list: Optional[SortedList[int]] = self.values_dict[val]
             timestamp_list.add(ts)
-            self.values_dict[val] = timestamp_list
             # Add future debit
-            self.future_debits.append(ScalarDebit(
+            debit= ScalarDebit(
                 timestamp  = ts,
                 expiration = ts + self.timelength,
                 value    = val,
-                weight   = weight))
+                weight   = weight)
+            self.future_debits.append(debit)
 
     def trimExpiredEntries(self, ts):
         # Remove any debits that may have matured.
@@ -206,8 +205,6 @@ class ContinuousScalarStats(object):
                 timestamp_list.remove(debit.timestamp)
                 if len(timestamp_list) == 0:
                     del self.values_dict[debit.value]
-                else:
-                    self.values_dict[debit.value] = timestamp_list
         for i in range(del_count):
             del self.future_debits[0]
 
@@ -300,6 +297,7 @@ class ContinuousVecStats(object):
         """
         speed, dirN = val
 
+
         # If necessary, convert to float. Be prepared to catch an exception if not possible.
         try:
             speed = to_float(speed)
@@ -325,19 +323,18 @@ class ContinuousVecStats(object):
             if dirN is not None or speed == 0:
                 self.dirsumtime += weight
             # Add to speed_dict
-            if speed in self.speed_dict:
-                timestamp_dict: Optional[SortedDict[int, float]] = self.speed_dict[speed]
-            else:
-                timestamp_dict = SortedDict()
+            if not speed in self.speed_dict:
+                self.speed_dict[speed] = SortedDict()
+            timestamp_dict: Optional[SortedDict[int, float]] = self.speed_dict[speed]
             timestamp_dict[ts] = dirN
-            self.speed_dict[speed] = timestamp_dict
             # Add future debit
-            self.future_debits.append(VecDebit(
+            debit = VecDebit(
                 timestamp  = ts,
                 expiration = ts + self.timelength,
                 speed      = speed,
                 dirN       = dirN,
-                weight     = weight))
+                weight     = weight)
+            self.future_debits.append(debit)
 
     def trimExpiredEntries(self, ts):
         # Remove any debits that may have matured.
@@ -361,8 +358,6 @@ class ContinuousVecStats(object):
                 del timestamp_dict[debit.timestamp]
                 if len(timestamp_dict) == 0:
                     del self.speed_dict[debit.speed]
-                else:
-                    self.speed_dict[debit.speed] = timestamp_dict
             else:
                 break
         for i in range(del_count):
@@ -392,9 +387,23 @@ class ContinuousVecStats(object):
         return self.last[1]
 
     @property
+    def first(self):
+        if len(self.future_debits) != 0:
+            return self.future_debits[0].speed, self.future_debits[-1].dirN
+        else:
+            return None
+
+    @property
+    def firsttime(self):
+        if len(self.future_debits) != 0:
+            return self.future_debits[0].timestamp
+        else:
+            return None
+
+    @property
     def last(self):
         if len(self.future_debits) != 0:
-            return self.future_debits[-1].value
+            return self.future_debits[-1].speed, self.future_debits[-1].dirN
         else:
             return None
 
@@ -439,7 +448,7 @@ class ContinuousFirstLastAccum(object):
     def trimExpiredEntries(self, ts):
         # Remove any expired entries
         entry = self.values_list[-1]
-        while entry is not None and to_float(entry.dateTime) + self.timelength <= ts:
+        while entry is not None and entry.dateTime + self.timelength <= ts:
             del self.values_list[-1]
             entry = self.values_list[-1]
 
@@ -473,6 +482,7 @@ class ContinuousAccum(dict):
             func = get_add_function(obs_type)
             # ... then call it.
             func(self, record, obs_type, weight)
+
         # Trim the expired entries.
         for stats in self.keys():
             self[stats].trimExpiredEntries(record['dateTime'])
@@ -1342,6 +1352,7 @@ class LoopProcessor:
     def __init__(self, cfg: Configuration):
         self.cfg = cfg
         self.archive_start: float = time.time()
+        self.last_processed_pkt_time = 0 # To weed out duplicate packets.
 
     def process_queue(self) -> None:
         try:
@@ -1361,9 +1372,20 @@ class LoopProcessor:
                     self.trend_accum = event.trend_accum
                     continue
 
+                # This is a loop packet.
+                assert event.event_type == weewx.NEW_LOOP_PACKET
+
                 pkt: Dict[str, Any] = event.packet
                 pkt_time: int       = to_int(pkt['dateTime'])
                 pkt['interval']     = self.cfg.loop_frequency / 60.0
+
+                if pkt_time == self.last_processed_pkt_time:
+                    log.info('LoopProcessor: process_queue: skipping duplicate loop packet: %s' % timestamp_to_string(pkt_time))
+                    continue
+                self.last_processed_pkt_time = pkt_time
+
+                log.debug('Dequeued loop event(%s): %s' % (event, timestamp_to_string(pkt_time)))
+                log.debug(pkt)
 
                 try:
                     windrun_val = weewx.wxxtypes.WXXTypes.calc_windrun('windrun', pkt)
@@ -1381,11 +1403,6 @@ class LoopProcessor:
                 except weewx.CannotCalculate:
                     log.info('Cannot calculate beaufort.')
                     pass
-
-                # This is a loop packet.
-                assert event.event_type == weewx.NEW_LOOP_PACKET
-                log.debug('Dequeued loop event(%s): %s' % (event, timestamp_to_string(pkt_time)))
-                log.debug(pkt)
 
                 # Process new packet.
                 (loopdata_pkt, self.rainyear_accum, self.year_accum,
@@ -1938,20 +1955,6 @@ class LoopProcessor:
             if obstype in pkt:
                 new_pkt[obstype] = pkt[obstype]
         return new_pkt
-
-    @staticmethod
-    def trim_old_period_packets(period_packets: List[PeriodPacket],
-            period_length: int, current_pkt_time) -> None:
-        # Trim readings older than time_delta
-        earliest: float = current_pkt_time - period_length
-        del_count: int = 0
-        for pkt in period_packets:
-            if pkt.timestamp <= earliest:
-                del_count += 1
-        for i in range(del_count):
-            log.debug('trim_old_periodpackets: Deleting expired packet(%s)' % timestamp_to_string(
-                period_packets[0].timestamp))
-            del period_packets[0]
 
     @staticmethod
     def get_windrun_bucket(wind_dir: float) -> int:
