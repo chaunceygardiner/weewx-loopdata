@@ -31,6 +31,7 @@ The json file will contain any specified values for:
 * observations in the loop packet (e.g., `current.outTemp`)
 * rolling 2 min. aggregate values (e.g., `2m.outTemp.max`, `2m.wind.gustdir`)
 * rolling 10 min. aggregate values (e.g., `10m.outTemp.max`, `10m.wind.gustdir`)
+* rolling 24 hour aggregate values (e.g., `24h.outTemp.max`, `24h.wind.gustdir`)
 * trends (e.g., `trend.barometer`) -- see time_delta below
 * hourly aggregate values (e.g., `hour.outTemp.max`)
 * daily aggregate values (e.g., `day.rain.sum`)
@@ -42,7 +43,7 @@ The json file will contain any specified values for:
 
 In addition to the usual observation types (which includes `windrun`), there
 are special `windrun_<direction>` observation types that can be used with `current`,
-`2m`, `10m`, `trend`, `hour` and `day` periods.  These report the distance for each of sixteen
+`2m`, `10m`, `24h`, `trend`, `hour` and `day` periods.  These report the distance for each of sixteen
 directions; and can be used to make a windrose.  Note: `windrun_<direction>` observations
 are NOT supported for `week`, `month`, `year` and `rainyear` periods.
 
@@ -158,7 +159,7 @@ separate thread.  The information gathered is only that which is needed
 for LoopData to prime it's accumulators.  For example, if a week field is
 included in the weewx.conf fields line (week.rain.sum), daily summaries
 for the week will be read to prime the week accumulator.  If no week field
-is included, no work will be done.  Ditto for rainyear, year, month, 10m
+is included, no work will be done.  Ditto for rainyear, year, month, 24h, 10m
 and 2m accumulators.  They are populated only if they are used.  Lastly, only the
 necessary observation types are tracked in the accumulators.  For example,
 if no form of monthy.barometer is specified on the fields line, the monthly
@@ -192,12 +193,12 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
 
 # Installation Instructions
 
-1. Download the lastest release, weewx-loopdata-2.11.zip, from the
+1. Download the lastest release, weewx-loopdata-3.0.zip, from the
    [GitHub Repository](https://github.com/chaunceygardiner/weewx-loopdata).
 
 1. Run the following command.
 
-   `sudo /home/weewx/bin/wee_extension --install weewx-loopdata-2.11.zip`
+   `sudo /home/weewx/bin/wee_extension --install weewx-loopdata-3.0.zip`
 
    Note: this command assumes weewx is installed in /home/weewx.  If it's installed
    elsewhere, adjust the path of wee_extension accordingly.
@@ -293,8 +294,8 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
 
 Generally, if you can specify a field in a Cheetah template, and that field begins with $current,
 `$trend`, `$day`, `$week`, `$month`, `$year`, or `$rainyear`, you can specify it here (but don't
-include the dollar sign).  Also, anything you can use the `2m` or `10m` prefix to get aggregate values
-for a rolling two or ten minutes, respectively.  `2m` and `10m` act just like `day`, `week`, `month`, `year` and `rainyear`.
+include the dollar sign).  Also, anything you can use a `2m`, `10m`, or `24h` prefix to get aggregate values
+for a rolling two, ten minutes, or 24 hoursrespectively.  `2m`, `10m` and `24h` act just like `day`, `week`, `month`, `year` and `rainyear`.
 
 For example, just like in a report, one can add the following extenstions to specialize the fields:
 * `No extension`: Field is converted and formatted per the report and a label is added.

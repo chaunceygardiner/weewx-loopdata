@@ -64,7 +64,7 @@
           <td id="current.rainRate.formatted" style='white-space:pre;'></td>
         </tr>
       </table>
-      #set $archive_data = [('Last 2 Minutes', '2m'), ('Last 10 Minutes', '10m'), ('Hour', 'hour'), ('Today', 'day'), ('Week', 'week'), ('Month', 'month'), ('Year', 'year'), ('Rain Year', 'rainyear')]
+      #set $archive_data = [('Last 2 Minutes', '2m'), ('Last 10 Minutes', '10m'), ('Last 24 Hours', '24h'), ('Hour', 'hour'), ('Today', 'day'), ('Week', 'week'), ('Month', 'month'), ('Year', 'year'), ('Rain Year', 'rainyear')]
       #for $archive in $archive_data
       <span style="font-size:32px;">$archive[0]</span>
       <table style="width:100%;margin:auto;">

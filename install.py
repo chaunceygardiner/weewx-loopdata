@@ -31,7 +31,7 @@ def loader():
 class LoopDataInstaller(ExtensionInstaller):
     def __init__(self):
         super(LoopDataInstaller, self).__init__(
-            version = "2.11",
+            version = "3.0",
             name = 'loopdata',
             description = 'Loop statistics for real time reporting.',
             author = "John A Kline",
@@ -81,12 +81,26 @@ class LoopDataInstaller(ExtensionInstaller):
                             'current.windSpeed.formatted',
                             'current.windSpeed.raw',
 
+                            '2m.outTemp.max.formatted',
+                            '2m.outTemp.min.formatted',
+                            '2m.rain.sum.formatted',
+                            '2m.wind.rms.formatted',
+                            '2m.windGust.max',
+                            '2m.windGust.max.formatted',
+
                             '10m.outTemp.max.formatted',
                             '10m.outTemp.min.formatted',
                             '10m.rain.sum.formatted',
                             '10m.wind.rms.formatted',
                             '10m.windGust.max',
                             '10m.windGust.max.formatted',
+
+                            '24h.outTemp.max.formatted',
+                            '24h.outTemp.min.formatted',
+                            '24h.rain.sum.formatted',
+                            '24h.wind.rms.formatted',
+                            '24h.windGust.max',
+                            '24h.windGust.max.formatted',
 
                             'hour.outTemp.max.formatted',
                             'hour.outTemp.min.formatted',

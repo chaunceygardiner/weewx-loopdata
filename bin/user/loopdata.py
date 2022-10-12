@@ -72,50 +72,51 @@ class CheetahName:
     field      : str           # $day.outTemp.avg.formatted
     prefix     : Optional[str] # unit or None
     prefix2    : Optional[str] # label or None
-    period     : Optional[str] # 2m, 10m, hour, day, week, month, year, rainyear, current, trend
+    period     : Optional[str] # 2m, 10m, 24h, hour, day, week, month, year, rainyear, current, trend
     obstype    : str           # e.g,. outTemp
     agg_type   : Optional[str] # avg, sum, etc. (required if period, other than current, is specified, else None)
     format_spec: Optional[str] # formatted (formatted value sans label), raw or ordinal_compass (could be on direction), or None
 
 @dataclass
 class Configuration:
-    queue              : queue.SimpleQueue
-    config_dict        : Dict[str, Any]
-    unit_system        : int
-    archive_interval   : int
-    loop_data_dir      : str
-    filename           : str
-    target_report      : str
-    loop_frequency     : float
-    specified_fields   : List[str]
-    fields_to_include  : List[CheetahName]
-    formatter          : weewx.units.Formatter
-    converter          : weewx.units.Converter
-    tmpname            : str
-    enable             : bool
-    remote_server      : str
-    remote_port        : int
-    remote_user        : str
-    remote_dir         : str
-    compress           : bool
-    log_success        : bool
-    ssh_options        : str
-    skip_if_older_than : int
-    timeout            : int
-    time_delta         : int
-    week_start         : int
-    rainyear_start     : int
-    current_obstypes   : List[str]
-    trend_obstypes     : List[str]
-    rainyear_obstypes  : List[str]
-    year_obstypes      : List[str]
-    month_obstypes     : List[str]
-    week_obstypes      : List[str]
-    day_obstypes       : List[str]
-    hour_obstypes      : List[str]
-    ten_min_obstypes   : List[str]
-    two_min_obstypes   : List[str]
-    baro_trend_descs   : Any # Dict[BarometerTrend, str]
+    queue                    : queue.SimpleQueue
+    config_dict              : Dict[str, Any]
+    unit_system              : int
+    archive_interval         : int
+    loop_data_dir            : str
+    filename                 : str
+    target_report            : str
+    loop_frequency           : float
+    specified_fields         : List[str]
+    fields_to_include        : List[CheetahName]
+    formatter                : weewx.units.Formatter
+    converter                : weewx.units.Converter
+    tmpname                  : str
+    enable                   : bool
+    remote_server            : str
+    remote_port              : int
+    remote_user              : str
+    remote_dir               : str
+    compress                 : bool
+    log_success              : bool
+    ssh_options              : str
+    skip_if_older_than       : int
+    timeout                  : int
+    time_delta               : int
+    week_start               : int
+    rainyear_start           : int
+    current_obstypes         : List[str]
+    trend_obstypes           : List[str]
+    rainyear_obstypes        : List[str]
+    year_obstypes            : List[str]
+    month_obstypes           : List[str]
+    week_obstypes            : List[str]
+    day_obstypes             : List[str]
+    hour_obstypes            : List[str]
+    twentyfour_hour_obstypes : List[str]
+    ten_min_obstypes         : List[str]
+    two_min_obstypes         : List[str]
+    baro_trend_descs         : Any # Dict[BarometerTrend, str]
 
 # ===============================================================================
 #                             ContinuousScalarStats
@@ -155,8 +156,10 @@ class ContinuousScalarStats(object):
         mintime: int = timelist[0]
         max, timelist = self.values_dict.peekitem(-1)
         maxtime: int = timelist[0]
+        sum = LoopData.massage_near_zero(self.sum)
+        wsum = LoopData.massage_near_zero(self.wsum)
         return (min, mintime, max, maxtime,
-                self.sum, self.count, self.wsum, self.sumtime)
+                sum, self.count, wsum, self.sumtime)
 
     def addSum(self, ts, val, weight=1):
         """Add a scalar value to my running sum and count.
@@ -283,12 +286,19 @@ class ContinuousVecStats(object):
         else:
             min, mintime, max, maxtime = None, None, None, None
 
+        sum  = LoopData.massage_near_zero(self.sum)
+        wsum = LoopData.massage_near_zero(self.wsum)
+        sumtime = LoopData.massage_near_zero(self.sumtime)
+        dirsumtime = LoopData.massage_near_zero(self.dirsumtime)
+        squaresum = LoopData.massage_near_zero(self.squaresum)
+        wsquaresum = LoopData.massage_near_zero(self.wsquaresum)
+
         return (min, mintime,
                 max, maxtime,
-                self.sum, self.count,
-                self.wsum, self.sumtime,
+                sum, self.count,
+                wsum, sumtime,
                 maxdir, self.xsum, self.ysum,
-                self.dirsumtime, self.squaresum, self.wsquaresum)
+                dirsumtime, squaresum, wsquaresum)
 
 
     def addSum(self, ts, val, weight=1):
@@ -646,15 +656,16 @@ def get_add_function(obs_type):
 
 @dataclass
 class AccumulatorPayload:
-    rainyear_accum: Optional[weewx.accum.Accum]
-    year_accum   : Optional[weewx.accum.Accum]
-    month_accum  : Optional[weewx.accum.Accum]
-    week_accum   : Optional[weewx.accum.Accum]
-    day_accum    : Optional[weewx.accum.Accum]
-    hour_accum   : Optional[weewx.accum.Accum]
-    ten_min_accum: Optional[ContinuousAccum]
-    two_min_accum: Optional[ContinuousAccum]
-    trend_accum  : Optional[ContinuousAccum]
+    rainyear_accum       : Optional[weewx.accum.Accum]
+    year_accum           : Optional[weewx.accum.Accum]
+    month_accum          : Optional[weewx.accum.Accum]
+    week_accum           : Optional[weewx.accum.Accum]
+    day_accum            : Optional[weewx.accum.Accum]
+    hour_accum           : Optional[weewx.accum.Accum]
+    twentyfour_hour_accum: Optional[ContinuousAccum]
+    ten_min_accum        : Optional[ContinuousAccum]
+    two_min_accum        : Optional[ContinuousAccum]
+    trend_accum          : Optional[ContinuousAccum]
 
 class BarometerTrend(Enum):
     RISING_VERY_RAPIDLY  =  4
@@ -734,7 +745,7 @@ class LoopData(StdService):
         specified_fields = include_spec_dict.get('fields', [])
         (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            ten_min_obstypes, two_min_obstypes) = LoopData.get_fields_to_include(specified_fields)
+            twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = LoopData.get_fields_to_include(specified_fields)
 
         # Get the time_delta (number of seconds) to use for trend_accum.
         try:
@@ -758,44 +769,45 @@ class LoopData(StdService):
             rainyear_start = 1
 
         self.cfg: Configuration = Configuration(
-            queue               = queue.SimpleQueue(),
-            config_dict         = config_dict,
-            unit_system         = unit_system,
-            archive_interval    = to_int(std_archive_dict.get('archive_interval')),
-            loop_data_dir       = loop_data_dir,
-            filename            = file_spec_dict.get('filename', 'loop-data.txt'),
-            target_report       = target_report,
-            loop_frequency      = loop_frequency,
-            specified_fields    = specified_fields,
-            fields_to_include   = fields_to_include,
-            formatter           = weewx.units.Formatter.fromSkinDict(target_report_dict),
-            converter           = weewx.units.Converter.fromSkinDict(target_report_dict),
-            tmpname             = tmp.name,
-            enable              = to_bool(rsync_spec_dict.get('enable')),
-            remote_server       = rsync_spec_dict.get('remote_server'),
-            remote_port         = to_int(rsync_spec_dict.get('remote_port')) if rsync_spec_dict.get(
+            queue                    = queue.SimpleQueue(),
+            config_dict              = config_dict,
+            unit_system              = unit_system,
+            archive_interval         = to_int(std_archive_dict.get('archive_interval')),
+            loop_data_dir            = loop_data_dir,
+            filename                 = file_spec_dict.get('filename', 'loop-data.txt'),
+            target_report            = target_report,
+            loop_frequency           = loop_frequency,
+            specified_fields         = specified_fields,
+            fields_to_include        = fields_to_include,
+            formatter                = weewx.units.Formatter.fromSkinDict(target_report_dict),
+            converter                = weewx.units.Converter.fromSkinDict(target_report_dict),
+            tmpname                  = tmp.name,
+            enable                   = to_bool(rsync_spec_dict.get('enable')),
+            remote_server            = rsync_spec_dict.get('remote_server'),
+            remote_port              = to_int(rsync_spec_dict.get('remote_port')) if rsync_spec_dict.get(
                                       'remote_port') is not None else None,
-            remote_user         = rsync_spec_dict.get('remote_user'),
-            remote_dir          = rsync_spec_dict.get('remote_dir'),
-            compress            = to_bool(rsync_spec_dict.get('compress')),
-            log_success         = to_bool(rsync_spec_dict.get('log_success')),
-            ssh_options         = rsync_spec_dict.get('ssh_options', '-o ConnectTimeout=1'),
-            timeout             = to_int(rsync_spec_dict.get('timeout', 1)),
-            skip_if_older_than  = to_int(rsync_spec_dict.get('skip_if_older_than', 3)),
-            time_delta          = time_delta,
-            week_start          = week_start,
-            rainyear_start      = rainyear_start,
-            current_obstypes    = current_obstypes,
-            trend_obstypes      = trend_obstypes,
-            rainyear_obstypes   = rainyear_obstypes,
-            year_obstypes       = year_obstypes,
-            month_obstypes      = month_obstypes,
-            week_obstypes       = week_obstypes,
-            day_obstypes        = day_obstypes,
-            hour_obstypes       = hour_obstypes,
-            ten_min_obstypes    = ten_min_obstypes,
-            two_min_obstypes    = two_min_obstypes,
-            baro_trend_descs    = baro_trend_descs)
+            remote_user              = rsync_spec_dict.get('remote_user'),
+            remote_dir               = rsync_spec_dict.get('remote_dir'),
+            compress                 = to_bool(rsync_spec_dict.get('compress')),
+            log_success              = to_bool(rsync_spec_dict.get('log_success')),
+            ssh_options              = rsync_spec_dict.get('ssh_options', '-o ConnectTimeout     =1'),
+            timeout                  = to_int(rsync_spec_dict.get('timeout', 1)),
+            skip_if_older_than       = to_int(rsync_spec_dict.get('skip_if_older_than', 3)),
+            time_delta               = time_delta,
+            week_start               = week_start,
+            rainyear_start           = rainyear_start,
+            current_obstypes         = current_obstypes,
+            trend_obstypes           = trend_obstypes,
+            rainyear_obstypes        = rainyear_obstypes,
+            year_obstypes            = year_obstypes,
+            month_obstypes           = month_obstypes,
+            week_obstypes            = week_obstypes,
+            day_obstypes             = day_obstypes,
+            hour_obstypes            = hour_obstypes,
+            twentyfour_hour_obstypes = twentyfour_hour_obstypes,
+            ten_min_obstypes         = ten_min_obstypes,
+            two_min_obstypes         = two_min_obstypes,
+            baro_trend_descs         = baro_trend_descs)
 
         if not os.path.exists(self.cfg.loop_data_dir):
             os.makedirs(self.cfg.loop_data_dir)
@@ -804,6 +816,13 @@ class LoopData(StdService):
 
         self.bind(weewx.PRE_LOOP, self.pre_loop)
         self.bind(weewx.NEW_LOOP_PACKET, self.new_loop)
+
+    @staticmethod
+    def massage_near_zero(val: float)-> float:
+        if val > -0.0000000001 and val < 0.0000000001:
+            return 0.0
+        else:
+            return val
 
     @staticmethod
     def compose_loop_data_dir(config_dict: Dict[str, Any],
@@ -832,12 +851,12 @@ class LoopData(StdService):
 
     @staticmethod
     def get_fields_to_include(specified_fields: List[str]
-            ) -> Tuple[List[CheetahName], List[str], List[str], List[str],
+            ) -> Tuple[List[CheetahName], List[str], List[str], List[str], List[str],
             List[str], List[str], List[str], List[str], List[str], List[str], List[str]]:
         """
         Return fields_to_include, current_obstypes, trend_obstypes,
                rainyear_obstypes, year_obstypes, month_obstypes, week_obstypes,
-               day_obstypes, hour_obstypes, ten_min_obstypes, two_min_obstypes
+               day_obstypes, hour_obstypes, twentyfour_hour_obstypes,ten_min_obstypes, two_min_obstypes
         """
         specified_fields = list(dict.fromkeys(specified_fields))
         fields_to_include: List[CheetahName] = []
@@ -861,6 +880,8 @@ class LoopData(StdService):
             fields_to_include, 'day')
         hour_obstypes    : List[str] = LoopData.compute_period_obstypes(
             fields_to_include, 'hour')
+        twentyfour_hour_obstypes: List[str] = LoopData.compute_period_obstypes(
+            fields_to_include, '24h')
         ten_min_obstypes: List[str] = LoopData.compute_period_obstypes(
             fields_to_include, '10m')
         two_min_obstypes: List[str] = LoopData.compute_period_obstypes(
@@ -870,12 +891,12 @@ class LoopData(StdService):
         # needed to feed all the others.  As such, take the union of all.
         current_obstypes = current_obstypes + trend_obstypes + \
             rainyear_obstypes + year_obstypes + month_obstypes + \
-            week_obstypes + day_obstypes + hour_obstypes + ten_min_obstypes + two_min_obstypes
+            week_obstypes + day_obstypes + hour_obstypes + twentyfour_hour_obstypes + ten_min_obstypes + two_min_obstypes
         current_obstypes = list(dict.fromkeys(current_obstypes))
 
         return (fields_to_include, current_obstypes, trend_obstypes,
             rainyear_obstypes, year_obstypes, month_obstypes, week_obstypes,
-            day_obstypes, hour_obstypes, ten_min_obstypes, two_min_obstypes)
+            day_obstypes, hour_obstypes, twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes)
 
     @staticmethod
     def compute_period_obstypes(fields_to_include: List[CheetahName], period: str) -> List[str]:
@@ -1069,6 +1090,8 @@ class LoopData(StdService):
                 self.cfg.unit_system, self.cfg.archive_interval, self.cfg.week_obstypes, pkt_time, self.cfg.week_start, day_accum, dbm)
             hour_accum, self.cfg.hour_obstypes = LoopData.create_hour_accum(
                 self.cfg.unit_system, self.cfg.archive_interval, self.cfg.hour_obstypes, pkt_time, day_accum, dbm)
+            twentyfour_hour_accum, self.cfg.twentyfour_hour_obstypes = LoopData.create_continuous_accum(
+                '24h', self.cfg.unit_system, self.cfg.archive_interval, self.cfg.twentyfour_hour_obstypes, 86400, day_accum, dbm)
             ten_min_accum, self.cfg.ten_min_obstypes = LoopData.create_continuous_accum(
                 '10m', self.cfg.unit_system, self.cfg.archive_interval, self.cfg.ten_min_obstypes, 600, day_accum, dbm)
             two_min_accum, self.cfg.two_min_obstypes = LoopData.create_continuous_accum(
@@ -1076,15 +1099,16 @@ class LoopData(StdService):
             trend_accum, self.cfg.trend_obstypes = LoopData.create_continuous_accum(
                 'trend', self.cfg.unit_system, self.cfg.archive_interval, self.cfg.trend_obstypes, self.cfg.time_delta, day_accum, dbm)
             self.cfg.queue.put(AccumulatorPayload(
-                rainyear_accum = rainyear_accum,
-                year_accum     = year_accum,
-                month_accum    = month_accum,
-                week_accum     = week_accum,
-                day_accum      = day_accum,
-                hour_accum     = hour_accum,
-                ten_min_accum  = ten_min_accum,
-                two_min_accum  = two_min_accum,
-                trend_accum    = trend_accum))
+                rainyear_accum        = rainyear_accum,
+                year_accum            = year_accum,
+                month_accum           = month_accum,
+                week_accum            = week_accum,
+                day_accum             = day_accum,
+                hour_accum            = hour_accum,
+                twentyfour_hour_accum = twentyfour_hour_accum,
+                ten_min_accum         = ten_min_accum,
+                two_min_accum         = two_min_accum,
+                trend_accum           = trend_accum))
         self.cfg.queue.put(event)
 
     @staticmethod
@@ -1272,7 +1296,7 @@ class LoopData(StdService):
         valid_prefixes    : List[str] = [ 'unit' ]
         valid_prefixes2   : List[str] = [ 'label' ]
         valid_periods     : List[str] = [ 'rainyear', 'year', 'month', 'week',
-                                          'current', 'hour', '2m', '10m', 'day',
+                                          'current', 'hour', '2m', '10m', '24h', 'day',
                                           'trend' ]
         valid_agg_types   : List[str] = [ 'max', 'min', 'maxtime', 'mintime',
                                           'gustdir', 'avg', 'sum', 'vecavg',
@@ -1314,8 +1338,8 @@ class LoopData(StdService):
         next_seg += 1
 
         agg_type = None
-        # 2m/10m/hour/day/week/month/year/rainyear must have an agg_type
-        if period in [ '2m', '10m', 'hour', 'day', 'week','month', 'year', 'rainyear' ]:
+        # 2m/10m/24h/hour/day/week/month/year/rainyear must have an agg_type
+        if period in [ '2m', '10m', '24h', 'hour', 'day', 'week','month', 'year', 'rainyear' ]:
             if len(segment) <= next_seg:
                 return None
             if segment[next_seg] not in valid_agg_types:
@@ -1367,6 +1391,7 @@ class LoopProcessor:
                     self.week_accum = event.week_accum
                     self.day_accum = event.day_accum
                     self.hour_accum = event.hour_accum
+                    self.twentyfour_hour_accum = event.twentyfour_hour_accum
                     self.ten_min_accum = event.ten_min_accum
                     self.two_min_accum = event.two_min_accum
                     self.trend_accum = event.trend_accum
@@ -1417,6 +1442,7 @@ class LoopProcessor:
                     self.week_accum, self.cfg.week_start, self.cfg.week_obstypes,
                     self.day_accum, self.cfg.day_obstypes,
                     self.hour_accum, self.cfg.hour_obstypes,
+                    self.twentyfour_hour_accum, self.cfg.twentyfour_hour_obstypes,
                     self.ten_min_accum, self.cfg.ten_min_obstypes,
                     self.two_min_accum, self.cfg.two_min_obstypes,
                     self.cfg.time_delta,
@@ -1453,6 +1479,7 @@ class LoopProcessor:
             week_accum: Optional[weewx.accum.Accum], week_start: int, week_obstypes: List[str],
             day_accum: weewx.accum.Accum, day_obstypes: List[str],
             hour_accum: weewx.accum.Accum, hour_obstypes: List[str],
+            twentyfour_hour_accum: ContinuousAccum, twentyfour_hour_obstypes: List[str],
             ten_min_accum: ContinuousAccum, ten_min_obstypes: List[str],
             two_min_accum: ContinuousAccum, two_min_obstypes: List[str],
             time_delta: int,
@@ -1533,6 +1560,11 @@ class LoopProcessor:
             # Try again:
             hour_accum.addRecord(pkt, weight=loop_frequency)
 
+        # Add packet to 24h accumulator.
+        if len(twentyfour_hour_obstypes) > 0:
+            pruned_pkt = LoopProcessor.prune_period_packet(pkt_time, pkt, twentyfour_hour_obstypes)
+            twentyfour_hour_accum.addRecord(pruned_pkt, weight=loop_frequency)
+
         # Add packet to 10m accumulator.
         if len(ten_min_obstypes) > 0:
             pruned_pkt = LoopProcessor.prune_period_packet(pkt_time, pkt, ten_min_obstypes)
@@ -1552,7 +1584,7 @@ class LoopProcessor:
         return (LoopProcessor.create_loopdata_packet(pkt,
             fields_to_include, rainyear_accum,
             year_accum, month_accum, week_accum, day_accum, hour_accum,
-            ten_min_accum, two_min_accum, time_delta, trend_accum, baro_trend_descs, converter, formatter),
+            twentyfour_hour_accum, ten_min_accum, two_min_accum, time_delta, trend_accum, baro_trend_descs, converter, formatter),
             rainyear_accum, year_accum, month_accum, week_accum, day_accum, hour_accum)
 
     @staticmethod
@@ -1741,6 +1773,7 @@ class LoopProcessor:
             month_accum: Optional[weewx.accum.Accum], week_accum: Optional[weewx.accum.Accum],
             day_accum: weewx.accum.Accum,
             hour_accum: weewx.accum.Accum,
+            twentyfour_hour_accum: Optional[ContinuousAccum],
             ten_min_accum: Optional[ContinuousAccum],
             two_min_accum: Optional[ContinuousAccum],
             time_delta: int,
@@ -1782,6 +1815,9 @@ class LoopProcessor:
             if cname.period == 'hour':
                 LoopProcessor.add_period_obstype(cname, hour_accum, loopdata_pkt, converter, formatter)
                 continue
+            if cname.period == '24h' and twentyfour_hour_accum is not None:
+                LoopProcessor.add_period_obstype(cname, twentyfour_hour_accum, loopdata_pkt, converter, formatter)
+                continue
             if cname.period == '10m' and ten_min_accum is not None:
                 LoopProcessor.add_period_obstype(cname, ten_min_accum, loopdata_pkt, converter, formatter)
                 continue
@@ -1808,40 +1844,41 @@ class LoopProcessor:
     def log_configuration(cfg: Configuration):
         # queue
         # config_dict
-        log.info('unit_system        : %d' % cfg.unit_system)
-        log.info('archive_interval   : %d' % cfg.archive_interval)
-        log.info('loop_data_dir      : %s' % cfg.loop_data_dir)
-        log.info('filename           : %s' % cfg.filename)
-        log.info('target_report      : %s' % cfg.target_report)
-        log.info('loop_frequency     : %s' % cfg.loop_frequency)
-        log.info('specified_fields   : %s' % cfg.specified_fields)
+        log.info('unit_system             : %d' % cfg.unit_system)
+        log.info('archive_interval        : %d' % cfg.archive_interval)
+        log.info('loop_data_dir           : %s' % cfg.loop_data_dir)
+        log.info('filename                : %s' % cfg.filename)
+        log.info('target_report           : %s' % cfg.target_report)
+        log.info('loop_frequency          : %s' % cfg.loop_frequency)
+        log.info('specified_fields        : %s' % cfg.specified_fields)
         # fields_to_include
         # formatter
         # converter
-        log.info('tmpname            : %s' % cfg.tmpname)
-        log.info('enable             : %d' % cfg.enable)
-        log.info('remote_server      : %s' % cfg.remote_server)
-        log.info('remote_port        : %r' % cfg.remote_port)
-        log.info('remote_user        : %s' % cfg.remote_user)
-        log.info('remote_dir         : %s' % cfg.remote_dir)
-        log.info('compress           : %d' % cfg.compress)
-        log.info('log_success        : %d' % cfg.log_success)
-        log.info('ssh_options        : %s' % cfg.ssh_options)
-        log.info('timeout            : %d' % cfg.timeout)
-        log.info('skip_if_older_than : %d' % cfg.skip_if_older_than)
-        log.info('time_delta         : %d' % cfg.time_delta)
-        log.info('week_start         : %d' % cfg.week_start)
-        log.info('rainyear_start     : %d' % cfg.rainyear_start)
-        log.info('trend_obstypes     : %s' % cfg.trend_obstypes)
-        log.info('rainyear_obstypes  : %s' % cfg.rainyear_obstypes)
-        log.info('year_obstypes      : %s' % cfg.year_obstypes)
-        log.info('month_obstypes     : %s' % cfg.month_obstypes)
-        log.info('week_obstypes      : %s' % cfg.week_obstypes)
-        log.info('day_obstypes       : %s' % cfg.day_obstypes)
-        log.info('hour_obstypes      : %s' % cfg.hour_obstypes)
-        log.info('ten_min_obstypes   : %s' % cfg.ten_min_obstypes)
-        log.info('two_min_obstypes   : %s' % cfg.two_min_obstypes)
-        log.info('baro_trend_descs   : %s' % cfg.baro_trend_descs)
+        log.info('tmpname                 : %s' % cfg.tmpname)
+        log.info('enable                  : %d' % cfg.enable)
+        log.info('remote_server           : %s' % cfg.remote_server)
+        log.info('remote_port             : %r' % cfg.remote_port)
+        log.info('remote_user             : %s' % cfg.remote_user)
+        log.info('remote_dir              : %s' % cfg.remote_dir)
+        log.info('compress                : %d' % cfg.compress)
+        log.info('log_success             : %d' % cfg.log_success)
+        log.info('ssh_options             : %s' % cfg.ssh_options)
+        log.info('timeout                 : %d' % cfg.timeout)
+        log.info('skip_if_older_than      : %d' % cfg.skip_if_older_than)
+        log.info('time_delta              : %d' % cfg.time_delta)
+        log.info('week_start              : %d' % cfg.week_start)
+        log.info('rainyear_start          : %d' % cfg.rainyear_start)
+        log.info('trend_obstypes          : %s' % cfg.trend_obstypes)
+        log.info('rainyear_obstypes       : %s' % cfg.rainyear_obstypes)
+        log.info('year_obstypes           : %s' % cfg.year_obstypes)
+        log.info('month_obstypes          : %s' % cfg.month_obstypes)
+        log.info('week_obstypes           : %s' % cfg.week_obstypes)
+        log.info('day_obstypes            : %s' % cfg.day_obstypes)
+        log.info('hour_obstypes           : %s' % cfg.hour_obstypes)
+        log.info('twentyfour_hour_obstypes: %s' % cfg.twentyfour_hour_obstypes)
+        log.info('ten_min_obstypes        : %s' % cfg.ten_min_obstypes)
+        log.info('two_min_obstypes        : %s' % cfg.two_min_obstypes)
+        log.info('baro_trend_descs        : %s' % cfg.baro_trend_descs)
 
     @staticmethod
     def rsync_data(pktTime: int, skip_if_older_than: int, loop_data_dir: str,

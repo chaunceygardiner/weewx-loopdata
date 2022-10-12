@@ -1,15 +1,33 @@
 loopdata change history
 -----------------------
 
+3.0 Release 2022/10/??
+1. Much more efficient rolling time periods (2m, 10m, trend...).
+2. Add support 24h tag.
+   Note: The sample skin is updated to use 24h tags.
+      For existing installations that actually use the
+      sample skin, you need to add the following fields
+      to the fields clause in the LoopData section in
+      weewx.conf:
+          '24h.outTemp.max.formatted'
+          '24h.outTemp.min.formatted'
+          '24h.rain.sum.formatted'
+          '24h.wind.rms.formatted'
+          '24h.windGust.max'
+          '24h.windGust.max.formatted'
+
 2.11 Release 2022/09/25
+-----------------------
 1. Specify what drivers this extension has been tested with.
 2. Continue if windrun and/or beaufort can't be calculated.
 
 2.10 Release 2022/02/18
+-----------------------
 1. Bugfix.  Use loop frequency as the weight when adding to the accumulators.
 
 
 2.9 Release 13 February 2022
+----------------------------
 1. Fix to work with WeeWX 4.6
 
 2.8 Release ?? ??? 2020
