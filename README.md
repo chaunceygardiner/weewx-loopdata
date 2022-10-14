@@ -10,6 +10,9 @@ Copyright (C)2020 by John A Kline (john@johnkline.com)
 LoopData is a WeeWX service that generates a json file (loop-data.txt)
 on every loop (e.g., every 2s).
 
+Note: If you are upgrading to 3.0, you must install `python3-sortedcontainers`.
+On debian, you can do this with: `apt install python3-sortedcontainers`
+
 **IMPORTANT**: This extension has been tested with the WeeWX's vantage and cc3000 drivers.
 It will likely also work with other drivers that, like the two drivers tested, report
 loop packets on a regular basis and report all observations on every loop packet.
@@ -192,6 +195,9 @@ A WeatherBoard&trade; screenshot is below.
 This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gjr80/weewx-realtime_gauge-data).
 
 # Installation Instructions
+
+1. Install the `python3-sortedcontainers` package.
+   * On debian: `sudo apt install python3-sortedcontainers`
 
 1. Download the lastest release, weewx-loopdata-3.0.zip, from the
    [GitHub Repository](https://github.com/chaunceygardiner/weewx-loopdata).
