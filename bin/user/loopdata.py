@@ -136,7 +136,52 @@ class ContinuousScalarStats(object):
     the time it was seen.
 
     Property 'last' is the last non-None value seen. Property 'lasttime' is
-    the time it was seen. """
+    the time it was seen.
+
+    The accumulator collects a rolling number of observations spanning timelength
+    seconds.
+
+    addSum(ts, val, weight)
+              |                          future_debits (List)
+              |                          --------------------
+              '------------------------> ts|expiration(ts+timelength)|value|weight
+              |
+              |
+              v
+        values_dict (Sorted Dict)
+        key         value
+        ----------- ------------------------
+        val         timestamp_list (SortedList) (could be a list)
+                    --------------
+                    ts
+
+    Every time an observation is added (with addSum), a future
+    debit is created with the same information and an expiration of ts + timelength.
+    In the continous accumulator addRecord function, after addSum is called on all
+    continous stats instances, trimExpiredEntries(ts) is called on
+    all continous stats instances.
+
+    The list of future debits is stored in a List.  Each time trimExpiredEntries is
+    called, the top of the list is iterated on looking for any entries where
+    the expiration is <= the current dateTime.
+
+    In addition to the future debit list, a values_dict (SortedDict) is maintained where:
+    key  : the value specified in the call to addSum
+    value: timestamp_list, a sorted list of timestamps (as specified in an addSum call)
+           for the particular value of the key
+    When addSum is called:
+    1. If the value does not already exist in values_dict, it is created as the key and an
+       empty timestamp_list is created for the value part of the key/value pair.
+    2. a new ts is added to the end of the time_stamp list.
+    When trimExpiredEntries is called,
+    1. The timestamp_list is retrieved in values_dict by looking up the value.
+    2. The creation timestamp is removed from the timestamp_list.
+    3. If the timestamp_list is now empty, the key/value pair is removed from values_dict.
+    As the values_dict is sorted by value, it is used to efficiently find the min and max
+    values when getStatsTuple is called.  For max, maxtime is the first entry in the
+    timestamp_list for that value.  As expected, for min, mintime is the first entry in the
+    timestamp_list for that value.
+    """
 
     def __init__(self, timelength: int):
         self.timelength: int = timelength
@@ -256,7 +301,54 @@ class VecDebit:
     weight    : float
 
 class ContinuousVecStats(object):
-    """Accumulates statistics for a vector value."""
+    """Accumulates statistics for a vector value.
+    The accumulator collects a rolling number of observations spanning timelength
+    seconds.
+
+    addSum(ts, val(speed,dirN), weight)
+              |                          future_debits (List)
+              |                          --------------------
+              '------------------------> ts|expiration(ts+timelength)|value|weight
+              |
+              |
+              v
+        speed_dict (Sorted Dict)
+        key         value
+        ----------- ------------------------
+        speed       timestamp_dict (SortedDict)
+                    --------------
+                    key    value
+                    -----  -----
+                    ts     dirN
+
+    Every time an observation is added (with addSum), a future
+    debit is created with the same information and an expiration of ts + timelength.
+    In the continous accumulator addRecord function, after addSum is called on all
+    continous stats instances, trimExpiredEntries(ts) is called on
+    all continous stats instances.
+
+    The list of future debits is stored in a List.  Each time trimExpiredEntries is
+    called, the top of the list is iterated on looking for any entries where
+    the expiration is <= the current dateTime.
+
+    In addition to the future debit list, a speed_dict (SortedDict) is maintained where:
+    key  : the value specified in the call to addSum
+    value: timestamp_dict, a sorted dict of entries where key is the timestamp, and value
+           is the direction (>=0.0 and < 360.0).
+    When addSum is called:
+    1. If the speed does not already exist in speed_dict, it is created as the key and an
+       empty timestamp_dict is created for the value part of the key/value pair.
+    2. a new key value pair (ts, dirN) is added to the timestamp_dict.
+    When trimExpiredEntries is called,
+    1. The timestamp_dict is retrieved in values_dict by looking up the value.
+    2. The creation timestamp key/value pair is removed from the timestamp_dict.
+    3. If the timestamp_dict is now empty, speed entry is removed from speed_dict.
+    As the speed_dict is sorted by value, it is used to efficiently find the min and max
+    values when getStatsTuple is called.  For max, maxtime is the first entry in the
+    timestamp_dict for that value (with dirN being the dirN that is paired with that
+    first timestamp.  As expected, for min, mintime is the first entry in the
+    timestamp_dict with dirN being the value paired with the mintime.
+    """
 
     def __init__(self, timelength: int):
         self.timelength: int = timelength
@@ -437,6 +529,30 @@ class FirstLastEntry:
 class ContinuousFirstLastAccum(object):
     """Minimal accumulator, suitable for strings.
     It can only return the first and last strings it has seen, along with their timestamps.
+
+    The accumulator collects a rolling number of observations spanning timelength
+    seconds.
+
+    addSum(ts, val, weight)
+              |
+              v
+        values_list (List)
+        FirstLastEntry
+        --------------
+        dateTime|value
+
+    In the continous accumulator addRecord function, after addSum is called on all
+    continous stats instances, trimExpiredEntries(ts) is called on
+    all continous stats instances.
+
+    When addSum is called, FirstLastEntry is added to values_list.
+
+    When trimExpiredEntries is called,
+    1. the values_list is iterated over while FirstLastEntry.dateTime <= ts
+    2.     the FirstLastEntry is deleted
+
+    first/firsttime is the dateTime value and dateTime of the first entry in values_list
+    last/lasttime is the dateTime value and dateTime of the last entry in values_list
     """
 
     def __init__(self, timelength: int):
@@ -468,7 +584,15 @@ class ContinuousFirstLastAccum(object):
 # ===============================================================================
 
 class ContinuousAccum(dict):
-    """Accumulates statistics for a set of observation types."""
+    """Accumulates statistics for a set of observation types.
+
+    ContinousAccum is a lot like WeeWX's accum, but a timelength (rather than
+    a timespan) is specified and the ContinousAccum gives stats on a rolling
+    timelength number of seconds.
+
+    ContinuousAccums never expire.  In their steady state, for every loop packet,
+    they add the new packet and drop the olest packet.
+    """
 
     def __init__(self, timelength: int, unit_system=None):
         """Initialize a Accum.
