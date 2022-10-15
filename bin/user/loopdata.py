@@ -101,7 +101,7 @@ class Configuration:
     ssh_options              : str
     skip_if_older_than       : int
     timeout                  : int
-    time_delta               : int
+    time_delta               : int # Used for trend.
     week_start               : int
     rainyear_start           : int
     current_obstypes         : List[str]
@@ -1836,7 +1836,7 @@ class LoopProcessor:
             baro_trend_descs, converter: weewx.units.Converter,
             formatter: weewx.units.Formatter) -> None:
 
-        value, unit_type, group_type = LoopProcessor.get_trend(cname, pkt, trend_accum, converter)
+        value, unit_type, group_type = LoopProcessor.get_trend(cname, pkt, trend_accum, converter, time_delta)
         if value is None:
             log.debug('add_trend_obstype: %s: get_trend returned None.' % cname.field)
             return
@@ -2062,7 +2062,7 @@ class LoopProcessor:
 
     @staticmethod
     def get_trend(cname: CheetahName, pkt: Dict[str, Any], trend_accum: ContinuousAccum,
-            converter) -> Tuple[Optional[Any], Optional[str], Optional[str]]:
+            converter, time_delta: int) -> Tuple[Optional[Any], Optional[str], Optional[str]]:
         first = trend_accum[cname.obstype].first
         firsttime = trend_accum[cname.obstype].firsttime
         last = trend_accum[cname.obstype].last
@@ -2082,8 +2082,13 @@ class LoopProcessor:
             log.debug('get_trend: %s: start_value: %s' % (cname.obstype, start_value))
             log.debug('get_trend: %s: end_value: %s' % (cname.obstype, end_value))
             if start_value is not None and end_value is not None:
-                log.debug('get_trend: %s: %s' % (cname.obstype, end_value - start_value))
-                return end_value - start_value, unit_type, group_type
+                trend = end_value - start_value
+                # This may not be over the entire range of time_delta (e.g., new station startup)
+                # Adjust to spread over entire range.
+                actual_time_delta = lasttime - firsttime
+                adj_trend = time_delta / actual_time_delta * trend
+                log.debug('get_trend: %s: %s unadjusted(%s)' % (cname.obstype, adj_trend, trend))
+                return adj_trend, unit_type, group_type
         except:
             # Perhaps not a scalar value
             log.debug('Could not compute trend for %s' % cname.obstype)
