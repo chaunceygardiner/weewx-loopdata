@@ -237,24 +237,20 @@ class ContinuousScalarStats(object):
 
     def trimExpiredEntries(self, ts):
         # Remove any debits that may have matured.
-        del_count: int = 0
-        for debit in self.future_debits:
-            if debit.expiration <= ts:
-                del_count += 1
-                # Apply this debit.
-                log.debug('Applying debit: %s value: %f, weight: %f' % (timestamp_to_string(debit.timestamp), debit.value, debit.weight))
-                self.sum -= debit.value
-                self.count -= 1
-                self.wsum -= debit.value * debit.weight
-                self.sumtime -= debit.weight
-                # Remove the debit entry in the values_dict.
-                timestamp_list: List[int] = self.values_dict[debit.value]
-                first_timestamp = timestamp_list.pop(0)
-                assert first_timestamp == debit.timestamp
-                if len(timestamp_list) == 0:
-                    del self.values_dict[debit.value]
-        for i in range(del_count):
-            del self.future_debits[0]
+        while len(self.future_debits) > 0 and self.future_debits[0].expiration <= ts:
+            # Apply this debit.
+            debit = self.future_debits.pop(0)
+            log.debug('Applying debit: %s value: %f, weight: %f' % (timestamp_to_string(debit.timestamp), debit.value, debit.weight))
+            self.sum -= debit.value
+            self.count -= 1
+            self.wsum -= debit.value * debit.weight
+            self.sumtime -= debit.weight
+            # Remove the debit entry in the values_dict.
+            timestamp_list: List[int] = self.values_dict[debit.value]
+            first_timestamp = timestamp_list.pop(0)
+            assert first_timestamp == debit.timestamp
+            if len(timestamp_list) == 0:
+                del self.values_dict[debit.value]
 
     @property
     def avg(self):
@@ -440,30 +436,24 @@ class ContinuousVecStats(object):
 
     def trimExpiredEntries(self, ts):
         # Remove any debits that may have matured.
-        del_count: int = 0
-        for debit in self.future_debits:
-            if debit.expiration <= ts:
-                del_count += 1
-                log.debug('Applying ContinuousVecStats debit: %s speed: %f, dirN: %r, weight: %f' % (timestamp_to_string(debit.timestamp), debit.speed, debit.dirN, debit.weight))
-                # Apply this debit.
-                self.sum -= debit.speed
-                self.count -= 1
-                self.wsum -= debit.weight * debit.speed
-                self.sumtime -= debit.weight
-                self.squaresum -= debit.speed ** 2
-                self.wsquaresum -= debit.weight * debit.speed ** 2
-                if debit.dirN is not None:
-                    self.xsum += debit.weight * debit.speed * math.cos(math.radians(90.0 - debit.dirN))
-                    self.ysum += debit.weight * debit.speed * math.sin(math.radians(90.0 - debit.dirN))
-                # Remove the debit entry in the speed_dict.
-                timestamp_dict: Optional[SortedDict[int, float]] = self.speed_dict[debit.speed]
-                del timestamp_dict[debit.timestamp]
-                if len(timestamp_dict) == 0:
-                    del self.speed_dict[debit.speed]
-            else:
-                break
-        for i in range(del_count):
-            del self.future_debits[0]
+        while len(self.future_debits) > 0 and self.future_debits[0].expiration <= ts:
+            debit = self.future_debits.pop(0)
+            log.debug('Applying ContinuousVecStats debit: %s speed: %f, dirN: %r, weight: %f' % (timestamp_to_string(debit.timestamp), debit.speed, debit.dirN, debit.weight))
+            # Apply this debit.
+            self.sum -= debit.speed
+            self.count -= 1
+            self.wsum -= debit.weight * debit.speed
+            self.sumtime -= debit.weight
+            self.squaresum -= debit.speed ** 2
+            self.wsquaresum -= debit.weight * debit.speed ** 2
+            if debit.dirN is not None:
+                self.xsum += debit.weight * debit.speed * math.cos(math.radians(90.0 - debit.dirN))
+                self.ysum += debit.weight * debit.speed * math.sin(math.radians(90.0 - debit.dirN))
+            # Remove the debit entry in the speed_dict.
+            timestamp_dict: Optional[SortedDict[int, float]] = self.speed_dict[debit.speed]
+            del timestamp_dict[debit.timestamp]
+            if len(timestamp_dict) == 0:
+                del self.speed_dict[debit.speed]
 
     @property
     def avg(self):
@@ -573,10 +563,8 @@ class ContinuousFirstLastAccum(object):
 
     def trimExpiredEntries(self, ts):
         # Remove any expired entries
-        entry = self.values_list[-1]
-        while entry is not None and entry.dateTime + self.timelength <= ts:
-            del self.values_list[-1]
-            entry = self.values_list[-1]
+        while len(self.values_list) > 0 and self.values_list[0].dateTime + self.timelength <= ts:
+            self.values_list.pop(0)
 
 
 # ===============================================================================
