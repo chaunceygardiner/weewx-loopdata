@@ -27,7 +27,6 @@ from dataclasses import dataclass
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 from enum import Enum
 from sortedcontainers import SortedDict
-from sortedcontainers import SortedList
 
 import weewx
 import weewx.defaults
@@ -151,7 +150,7 @@ class ContinuousScalarStats(object):
         values_dict (Sorted Dict)
         key         value
         ----------- ------------------------
-        val         timestamp_list (SortedList) (could be a list)
+        val         timestamp_list (List)
                     --------------
                     ts
 
@@ -167,7 +166,7 @@ class ContinuousScalarStats(object):
 
     In addition to the future debit list, a values_dict (SortedDict) is maintained where:
     key  : the value specified in the call to addSum
-    value: timestamp_list, a sorted list of timestamps (as specified in an addSum call)
+    value: timestamp_list, a list of timestamps (as specified in an addSum call)
            for the particular value of the key
     When addSum is called:
     1. If the value does not already exist in values_dict, it is created as the key and an
@@ -175,7 +174,7 @@ class ContinuousScalarStats(object):
     2. a new ts is added to the end of the time_stamp list.
     When trimExpiredEntries is called,
     1. The timestamp_list is retrieved in values_dict by looking up the value.
-    2. The creation timestamp is removed from the timestamp_list.
+    2. The creation timestamp is removed from the timestamp_list (it will be the first)
     3. If the timestamp_list is now empty, the key/value pair is removed from values_dict.
     As the values_dict is sorted by value, it is used to efficiently find the min and max
     values when getStatsTuple is called.  For max, maxtime is the first entry in the
@@ -186,7 +185,7 @@ class ContinuousScalarStats(object):
     def __init__(self, timelength: int):
         self.timelength: int = timelength
         self.future_debits: List[ScalarDebit] = []
-        self.values_dict: SortedDict[float, SortedList[int]] = SortedDict()
+        self.values_dict: SortedDict[float, List[int]] = SortedDict()
         self.sum = 0.0
         self.count = 0
         self.wsum = 0.0
@@ -225,9 +224,9 @@ class ContinuousScalarStats(object):
             self.sumtime += weight
             # Add to values_dict
             if not val in self.values_dict:
-                self.values_dict[val] = SortedList()
-            timestamp_list: Optional[SortedList[int]] = self.values_dict[val]
-            timestamp_list.add(ts)
+                self.values_dict[val] = []
+            timestamp_list: List[int] = self.values_dict[val]
+            timestamp_list.append(ts)
             # Add future debit
             debit= ScalarDebit(
                 timestamp  = ts,
@@ -249,8 +248,9 @@ class ContinuousScalarStats(object):
                 self.wsum -= debit.value * debit.weight
                 self.sumtime -= debit.weight
                 # Remove the debit entry in the values_dict.
-                timestamp_list: Optional[SortedList[int]] = self.values_dict[debit.value]
-                timestamp_list.remove(debit.timestamp)
+                timestamp_list: List[int] = self.values_dict[debit.value]
+                first_timestamp = timestamp_list.pop(0)
+                assert first_timestamp == debit.timestamp
                 if len(timestamp_list) == 0:
                     del self.values_dict[debit.value]
         for i in range(del_count):
