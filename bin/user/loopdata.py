@@ -250,7 +250,7 @@ class ContinuousScalarStats(object):
             first_timestamp = timestamp_list.pop(0)
             assert first_timestamp == debit.timestamp
             if len(timestamp_list) == 0:
-                del self.values_dict[debit.value]
+                self.values_dict.pop(debit.value)
 
     @property
     def avg(self):
@@ -311,11 +311,9 @@ class ContinuousVecStats(object):
         speed_dict (Sorted Dict)
         key         value
         ----------- ------------------------
-        speed       timestamp_dict (SortedDict)
-                    --------------
-                    key    value
-                    -----  -----
-                    ts     dirN
+        speed       timestamp_dirn_list (List)
+                    -------------------------
+                    tuple(ts, dirN)
 
     Every time an observation is added (with addSum), a future
     debit is created with the same information and an expiration of ts + timelength.
@@ -329,27 +327,27 @@ class ContinuousVecStats(object):
 
     In addition to the future debit list, a speed_dict (SortedDict) is maintained where:
     key  : the value specified in the call to addSum
-    value: timestamp_dict, a sorted dict of entries where key is the timestamp, and value
-           is the direction (>=0.0 and < 360.0).
+    value: timestamp_dirn_list, a List of (ts, dirN) tuples
     When addSum is called:
     1. If the speed does not already exist in speed_dict, it is created as the key and an
-       empty timestamp_dict is created for the value part of the key/value pair.
-    2. a new key value pair (ts, dirN) is added to the timestamp_dict.
+       empty timestamp_dirn_list is created for the value part of the key/value pair.
+    2. a new (ts, dirN) tuple is added to the timestamp_dirn_list.
+
     When trimExpiredEntries is called,
-    1. The timestamp_dict is retrieved in values_dict by looking up the value.
-    2. The creation timestamp key/value pair is removed from the timestamp_dict.
-    3. If the timestamp_dict is now empty, speed entry is removed from speed_dict.
+    1. The timestamp_dirn_list is retrieved in speed_dict by looking up the speed.
+    2. The timestamp, dirN tuple (which is the first) entry is removed from the timestamp_dirn_list.
+    3. If the timestamp_dirn_lisat is now empty, the speed entry is removed from speed_dict.
     As the speed_dict is sorted by value, it is used to efficiently find the min and max
     values when getStatsTuple is called.  For max, maxtime is the first entry in the
-    timestamp_dict for that value (with dirN being the dirN that is paired with that
+    timestamp_dirn_list for that value (with dirN being the dirN that is paired with that
     first timestamp.  As expected, for min, mintime is the first entry in the
-    timestamp_dict with dirN being the value paired with the mintime.
+    timestamp_dirn_list with dirN being the value paired with the mintime.
     """
 
     def __init__(self, timelength: int):
         self.timelength: int = timelength
         self.future_debits: List[VecDebit] = []
-        self.speed_dict: SortedDict[float, SortedDict[int, float]] = SortedDict()
+        self.speed_dict: SortedDict[float, List[Tuple[int, float]]] = SortedDict()
         self.sum = 0.0
         self.count = 0
         self.wsum = 0.0
@@ -362,15 +360,15 @@ class ContinuousVecStats(object):
 
     def getStatsTuple(self):
         # min is key of first key in speed_dict
-        # mintime is first key of the timestamp_dict contained in the value of the first element in speed_dict
+        # mintime is first entry of the timestamp_dirn_list contained in the value of the first element in speed_dict
         # max is key of last key in speed_dict
         # max is key of last element in speed_dict
-        # maxtime is first key of the timestamp_dict contained in the value of the last element in speed_dict
+        # maxtime is first entry of the timestamp_dirn_list contained in the value of the last element in speed_dict
         if len(self.speed_dict) != 0:
-            min, time_dict = self.speed_dict.peekitem(0)
-            mintime, dummy = time_dict.peekitem(0)
+            min, time_dirn_list = self.speed_dict.peekitem(0)
+            mintime, dummy = time_dirn_list[0]
             max, time_dict = self.speed_dict.peekitem(-1)
-            maxtime, maxdir = time_dict.peekitem(-1)
+            maxtime, maxdir = time_dirn_list[-1]
         else:
             min, mintime, max, maxtime = None, None, None, None
 
@@ -422,9 +420,9 @@ class ContinuousVecStats(object):
                 self.dirsumtime += weight
             # Add to speed_dict
             if not speed in self.speed_dict:
-                self.speed_dict[speed] = SortedDict()
-            timestamp_dict: Optional[SortedDict[int, float]] = self.speed_dict[speed]
-            timestamp_dict[ts] = dirN
+                self.speed_dict[speed] = []
+            timestamp_dirn_list: List[Tuple[int, float]] = self.speed_dict[speed]
+            timestamp_dirn_list.append((ts, dirN))
             # Add future debit
             debit = VecDebit(
                 timestamp  = ts,
@@ -450,10 +448,11 @@ class ContinuousVecStats(object):
                 self.xsum += debit.weight * debit.speed * math.cos(math.radians(90.0 - debit.dirN))
                 self.ysum += debit.weight * debit.speed * math.sin(math.radians(90.0 - debit.dirN))
             # Remove the debit entry in the speed_dict.
-            timestamp_dict: Optional[SortedDict[int, float]] = self.speed_dict[debit.speed]
-            del timestamp_dict[debit.timestamp]
-            if len(timestamp_dict) == 0:
-                del self.speed_dict[debit.speed]
+            timestamp_dirn_list: List[Tuple[int, float]] = self.speed_dict[debit.speed]
+            timestamp, dirN = timestamp_dirn_list.pop(0)
+            assert timestamp == debit.timestamp
+            if len(timestamp_dirn_list) == 0:
+                self.speed_dict.pop(debit.speed)
 
     @property
     def avg(self):
@@ -650,7 +649,7 @@ class ContinuousAccum(dict):
         if obs_type in ['windDir', 'windGust', 'windGustDir']:
             return
         if weewx.debug:
-            assert (obs_type == 'windSpeed')
+            assert obs_type == 'windSpeed'
 
         # First add it to regular old 'windSpeed', then
         # treat it like a vector.
@@ -664,7 +663,7 @@ class ContinuousAccum(dict):
 
     def check_units(self, record, obs_type, weight):
         if weewx.debug:
-            assert (obs_type == 'usUnits')
+            assert obs_type == 'usUnits'
         self._check_units(record['usUnits'])
 
     def noop(self, record, obs_type, weight=1):
