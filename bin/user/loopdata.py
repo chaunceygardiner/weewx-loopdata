@@ -1487,7 +1487,6 @@ class LoopProcessor:
     def __init__(self, cfg: Configuration):
         self.cfg = cfg
         self.archive_start: float = time.time()
-        self.last_processed_pkt_time = 0 # To weed out duplicate packets.
 
     def process_queue(self) -> None:
         try:
@@ -1514,11 +1513,6 @@ class LoopProcessor:
                 pkt: Dict[str, Any] = event.packet
                 pkt_time: int       = to_int(pkt['dateTime'])
                 pkt['interval']     = self.cfg.loop_frequency / 60.0
-
-                if pkt_time == self.last_processed_pkt_time:
-                    log.info('LoopProcessor: process_queue: skipping duplicate loop packet: %s' % timestamp_to_string(pkt_time))
-                    continue
-                self.last_processed_pkt_time = pkt_time
 
                 log.debug('Dequeued loop event(%s): %s' % (event, timestamp_to_string(pkt_time)))
                 log.debug(pkt)

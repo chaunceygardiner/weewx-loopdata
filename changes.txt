@@ -15,7 +15,7 @@ loopdata change history
           '24h.wind.rms.formatted'
           '24h.windGust.max'
           '24h.windGust.max.formatted'
-3. The python3-sortedcontainers package is now required.  Ton install
+3. The python3-sortedcontainers package is now required.  To install
    it on debian, type:
    sudo apt install python3-sortedcontainers
 
