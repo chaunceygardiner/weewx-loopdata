@@ -1,8 +1,8 @@
 loopdata change history
 -----------------------
 
-3.0 Release 2022/10/??
-1. Much more efficient rolling time periods (2m, 10m, trend...).
+3.0.1 Release 2022/10/30
+1. Much more efficient rolling time periods (2m, 10m, 24h, trend).
 2. Add support 24h tag.
    Note: The sample skin is updated to use 24h tags.
       For existing installations that actually use the

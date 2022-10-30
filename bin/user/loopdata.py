@@ -49,7 +49,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '3.0'
+LOOP_DATA_VERSION = '3.0.1'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -365,10 +365,10 @@ class ContinuousVecStats(object):
         # max is key of last element in speed_dict
         # maxtime is first entry of the timestamp_dirn_list contained in the value of the last element in speed_dict
         if len(self.speed_dict) != 0:
-            min, time_dirn_list = self.speed_dict.peekitem(0)
-            mintime, dummy = time_dirn_list[0]
-            max, time_dict = self.speed_dict.peekitem(-1)
-            maxtime, maxdir = time_dirn_list[-1]
+            min, time_dirn_list_min = self.speed_dict.peekitem(0)
+            mintime, dummy = time_dirn_list_min[0]
+            max, time_dirn_list_max = self.speed_dict.peekitem(-1)
+            maxtime, maxdir = time_dirn_list_max[-1]
         else:
             min, mintime, max, maxtime = None, None, None, None
 
