@@ -1623,6 +1623,188 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(week_accum['outTemp'].max, 87.5)
         self.assertEqual(loopdata_pkt['week.outTemp.max'], '87.5°F')
 
+    def test_new_db_startup(self):
+
+        config_dict = ProcessPacketTests._get_config_dict('us')
+        unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
+
+        pkts = [ {'dateTime': 1665796967, 'usUnits': 1, 'windDir': 355.0, 'windSpeed': 4.0, 'outTemp': 69.1},
+                 {'dateTime': 1665796969, 'usUnits': 1, 'windDir':   5.0, 'windSpeed': 3.0, 'outTemp': 69.2},
+                 {'dateTime': 1665796971, 'usUnits': 1, 'windDir':  10.0, 'windSpeed': 2.0, 'outTemp': 69.3}]
+        first_pkt_time = pkts[0]['dateTime']
+        (rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
+            week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
+            config_dict, first_pkt_time)
+
+        converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
+        self.assertEqual(type(converter), weewx.units.Converter)
+        self.assertEqual(type(formatter), weewx.units.Formatter)
+
+        wind_fields = [
+            '2m.outTemp.avg',
+            '2m.outTemp.max',
+            '2m.outTemp.maxtime.raw',
+            '2m.outTemp.min',
+            '2m.outTemp.mintime.raw',
+            '2m.wind.avg',
+            '2m.wind.rms',
+            '2m.wind.max',
+            '2m.wind.maxtime.raw',
+            '2m.wind.min',
+            '2m.wind.mintime.raw',
+            '2m.wind.vecdir',
+            '2m.windSpeed.avg',
+            '2m.windSpeed.max',
+            '2m.windSpeed.maxtime.raw',
+            '2m.windSpeed.min',
+            '2m.windSpeed.mintime.raw',
+            '2m.windDir.avg',
+            'current.dateTime.raw',
+            'current.dateTime',
+            'current.windSpeed',
+            'current.windDir',
+            'current.windDir.ordinal_compass',
+            'unit.label.outTemp',
+            'unit.label.wind',
+            'unit.label.windDir',
+            'unit.label.windSpeed']
+
+        (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
+            year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
+            twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(wind_fields)
+
+        loop_frequency = 2.0
+        time_delta = 10800
+        baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
+
+        self.maxDiff = None
+
+        # Test when adding very first packet.
+        pkt = pkts[0]
+        pkt_time = to_int(pkt['dateTime'])
+        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+            day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+            pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
+            fields_to_include, current_obstypes, rainyear_accum,
+            rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
+            month_accum, month_obstypes, week_accum, week_start, week_obstypes,
+            day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
+            baro_trend_descs)
+
+        # {'dateTime': 1665796967, 'usUnits': 1, 'windDir': 355.0, 'windSpeed': 4.0, 'outTemp': 69.1}
+        self.assertEqual(loopdata_pkt['unit.label.outTemp'], '°F')
+        self.assertEqual(loopdata_pkt['unit.label.wind'], ' mph')
+
+        self.assertEqual(loopdata_pkt['current.dateTime.raw'], 1665796967)
+        self.assertEqual(loopdata_pkt['current.dateTime'], '10/14/22 18:22:47')
+
+        self.assertEqual(loopdata_pkt['2m.outTemp.avg'], '69.1°F')
+        self.assertEqual(loopdata_pkt['2m.outTemp.min'], '69.1°F')
+        self.assertEqual(loopdata_pkt['2m.outTemp.mintime.raw'], 1665796967)
+        self.assertEqual(loopdata_pkt['2m.outTemp.max'], '69.1°F')
+        self.assertEqual(loopdata_pkt['2m.outTemp.maxtime.raw'], 1665796967)
+
+        self.assertEqual(loopdata_pkt['2m.wind.vecdir'], '355°')
+        self.assertEqual(loopdata_pkt['2m.windDir.avg'], '355°')
+
+        self.assertEqual(loopdata_pkt['2m.wind.avg'], '4 mph')
+        self.assertEqual(loopdata_pkt['2m.wind.rms'], '4 mph')
+        self.assertEqual(loopdata_pkt['2m.windSpeed.avg'], '4 mph')
+
+        self.assertEqual(loopdata_pkt['2m.wind.min'], '4 mph')
+        self.assertEqual(loopdata_pkt['2m.wind.mintime.raw'], 1665796967)
+        self.assertEqual(loopdata_pkt['2m.wind.max'], '4 mph')
+        self.assertEqual(loopdata_pkt['2m.wind.maxtime.raw'], 1665796967)
+        self.assertEqual(loopdata_pkt['2m.windSpeed.min'], '4 mph')
+        self.assertEqual(loopdata_pkt['2m.windSpeed.mintime.raw'], 1665796967)
+        self.assertEqual(loopdata_pkt['2m.windSpeed.max'], '4 mph')
+        self.assertEqual(loopdata_pkt['2m.windSpeed.maxtime.raw'], 1665796967)
+
+        # Add 2nd packet.
+        pkt = pkts[1]
+        pkt_time = to_int(pkt['dateTime'])
+        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+            day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+            pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
+            fields_to_include, current_obstypes, rainyear_accum,
+            rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
+            month_accum, month_obstypes, week_accum, week_start, week_obstypes,
+            day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
+            baro_trend_descs)
+
+        # {'dateTime': 1665796967, 'usUnits': 1, 'windDir': 355.0, 'windSpeed': 4.0, 'outTemp': 69.1}
+        # {'dateTime': 1665796969, 'usUnits': 1, 'windDir':   5.0, 'windSpeed': 3.0, 'outTemp': 69.2},
+        self.assertEqual(loopdata_pkt['unit.label.outTemp'], '°F')
+        self.assertEqual(loopdata_pkt['unit.label.wind'], ' mph')
+
+        self.assertEqual(loopdata_pkt['current.dateTime.raw'], 1665796969)
+        self.assertEqual(loopdata_pkt['current.dateTime'], '10/14/22 18:22:49')
+
+        self.assertEqual(loopdata_pkt['2m.outTemp.avg'], '69.2°F')
+        self.assertEqual(loopdata_pkt['2m.outTemp.min'], '69.1°F')
+        self.assertEqual(loopdata_pkt['2m.outTemp.mintime.raw'], 1665796967)
+        self.assertEqual(loopdata_pkt['2m.outTemp.max'], '69.2°F')
+        self.assertEqual(loopdata_pkt['2m.outTemp.maxtime.raw'], 1665796969)
+
+        self.assertEqual(loopdata_pkt['2m.wind.vecdir'], '359°')
+        self.assertEqual(loopdata_pkt['2m.windDir.avg'], '180°')  # A bogus value, which is why we need to use wind.vecdir.
+
+        self.assertEqual(loopdata_pkt['2m.wind.avg'], '4 mph')
+        self.assertEqual(loopdata_pkt['2m.wind.rms'], '4 mph')
+        self.assertEqual(loopdata_pkt['2m.windSpeed.avg'], '4 mph')
+
+        self.assertEqual(loopdata_pkt['2m.wind.min'], '3 mph')
+        self.assertEqual(loopdata_pkt['2m.wind.mintime.raw'], 1665796969)
+        self.assertEqual(loopdata_pkt['2m.wind.max'], '4 mph')
+        self.assertEqual(loopdata_pkt['2m.wind.maxtime.raw'], 1665796967)
+        self.assertEqual(loopdata_pkt['2m.windSpeed.min'], '3 mph')
+        self.assertEqual(loopdata_pkt['2m.windSpeed.mintime.raw'], 1665796969)
+        self.assertEqual(loopdata_pkt['2m.windSpeed.max'], '4 mph')
+        self.assertEqual(loopdata_pkt['2m.windSpeed.maxtime.raw'], 1665796967)
+
+        # Add 3rd packet.
+        pkt = pkts[2]
+        pkt_time = to_int(pkt['dateTime'])
+        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+            day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+            pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
+            fields_to_include, current_obstypes, rainyear_accum,
+            rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
+            month_accum, month_obstypes, week_accum, week_start, week_obstypes,
+            day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
+            baro_trend_descs)
+
+        # {'dateTime': 1665796967, 'usUnits': 1, 'windDir': 355.0, 'windSpeed': 4.0, 'outTemp': 69.1}
+        # {'dateTime': 1665796969, 'usUnits': 1, 'windDir':   5.0, 'windSpeed': 3.0, 'outTemp': 69.2}
+        # {'dateTime': 1665796971, 'usUnits': 1, 'windDir':  10.0, 'windSpeed': 2.0, 'outTemp': 69.3}
+        self.assertEqual(loopdata_pkt['unit.label.outTemp'], '°F')
+        self.assertEqual(loopdata_pkt['unit.label.wind'], ' mph')
+
+        self.assertEqual(loopdata_pkt['current.dateTime.raw'], 1665796971)
+        self.assertEqual(loopdata_pkt['current.dateTime'], '10/14/22 18:22:51')
+
+        self.assertEqual(loopdata_pkt['2m.outTemp.avg'], '69.2°F')
+        self.assertEqual(loopdata_pkt['2m.outTemp.min'], '69.1°F')
+        self.assertEqual(loopdata_pkt['2m.outTemp.mintime.raw'], 1665796967)
+        self.assertEqual(loopdata_pkt['2m.outTemp.max'], '69.3°F')
+        self.assertEqual(loopdata_pkt['2m.outTemp.maxtime.raw'], 1665796971)
+
+        self.assertEqual(loopdata_pkt['2m.wind.vecdir'], '2°')
+        self.assertEqual(loopdata_pkt['2m.windDir.avg'], '123°')  # A bogus value, which is why we need to use wind.vecdir.
+
+        self.assertEqual(loopdata_pkt['2m.wind.avg'], '3 mph')
+        self.assertEqual(loopdata_pkt['2m.wind.rms'], '3 mph')
+        self.assertEqual(loopdata_pkt['2m.windSpeed.avg'], '3 mph')
+
+        self.assertEqual(loopdata_pkt['2m.wind.min'], '2 mph')
+        self.assertEqual(loopdata_pkt['2m.wind.mintime.raw'], 1665796971)
+        self.assertEqual(loopdata_pkt['2m.wind.max'], '4 mph')
+        self.assertEqual(loopdata_pkt['2m.wind.maxtime.raw'], 1665796967)
+        self.assertEqual(loopdata_pkt['2m.windSpeed.min'], '2 mph')
+        self.assertEqual(loopdata_pkt['2m.windSpeed.mintime.raw'], 1665796971)
+        self.assertEqual(loopdata_pkt['2m.windSpeed.max'], '4 mph')
+        self.assertEqual(loopdata_pkt['2m.windSpeed.maxtime.raw'], 1665796967)
+
     def test_wind(self):
 
         config_dict = ProcessPacketTests._get_config_dict('us')
@@ -1642,6 +1824,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         wind_fields = [
             '2m.wind.avg',
+            '2m.wind.rms',
             '2m.wind.max',
             '2m.wind.maxtime.raw',
             '2m.wind.min',
@@ -1697,6 +1880,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['2m.windDir.avg'], '123°')  # A bogus value, which is why we need to use wind.vecdir.
 
         self.assertEqual(loopdata_pkt['2m.wind.avg'], '3 mph')
+        self.assertEqual(loopdata_pkt['2m.wind.rms'], '3 mph')
         self.assertEqual(loopdata_pkt['2m.windSpeed.avg'], '3 mph')
 
         self.assertEqual(loopdata_pkt['2m.wind.min'], '2 mph')
@@ -1707,6 +1891,92 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['2m.windSpeed.mintime.raw'], 1665796971)
         self.assertEqual(loopdata_pkt['2m.windSpeed.max'], '4 mph')
         self.assertEqual(loopdata_pkt['2m.windSpeed.maxtime.raw'], 1665796967)
+
+    def test_wind2(self):
+
+        config_dict = ProcessPacketTests._get_config_dict('us')
+        unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
+
+        pkts = [ {'dateTime': 1665796967, 'usUnits': 1, 'windDir': 355.0, 'windGust': 4.0, 'windGustDir': 355.0, 'windrun': None, 'windSpeed': 4.0},
+                 {'dateTime': 1665796969, 'usUnits': 1, 'windDir':   5.0, 'windGust': 100.0, 'windGustDir':   5.0, 'windrun': None, 'windSpeed': 100.0}]
+        first_pkt_time = pkts[0]['dateTime']
+        (rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
+            week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
+            config_dict, first_pkt_time)
+
+        converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
+        self.assertEqual(type(converter), weewx.units.Converter)
+        self.assertEqual(type(formatter), weewx.units.Formatter)
+
+        wind_fields = [
+            '2m.wind.avg',
+            '2m.wind.rms',
+            '2m.wind.max',
+            '2m.wind.maxtime.raw',
+            '2m.wind.min',
+            '2m.wind.mintime.raw',
+            '2m.wind.vecdir',
+            '2m.windSpeed.avg',
+            '2m.windSpeed.max',
+            '2m.windSpeed.maxtime.raw',
+            '2m.windSpeed.min',
+            '2m.windSpeed.mintime.raw',
+            '2m.windDir.avg',
+            '2m.windGust.max',
+            '2m.windGust.max.formatted',
+            '2m.windGust.max.raw',
+            '2m.windGust.maxtime',
+            '2m.windGust.maxtime.raw',
+            'current.dateTime.raw',
+            'current.dateTime',
+            'current.windSpeed',
+            'current.windDir',
+            'current.windDir.ordinal_compass',
+            'unit.label.wind',
+            'unit.label.windDir',
+            'unit.label.windSpeed']
+
+        (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
+            year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
+            twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(wind_fields)
+
+        loop_frequency = 2.0
+        time_delta = 10800
+        baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
+
+        for pkt in pkts:
+            pkt_time = to_int(pkt['dateTime'])
+            (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+                day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+                pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
+                fields_to_include, current_obstypes, rainyear_accum,
+                rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
+                month_accum, month_obstypes, week_accum, week_start, week_obstypes,
+                day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
+                baro_trend_descs)
+
+        self.maxDiff = None
+
+        self.assertEqual(loopdata_pkt['unit.label.wind'], ' mph')
+
+        self.assertEqual(loopdata_pkt['current.dateTime.raw'], 1665796969)
+        self.assertEqual(loopdata_pkt['current.dateTime'], '10/14/22 18:22:49')
+
+        self.assertEqual(loopdata_pkt['2m.wind.vecdir'], '5°')
+        self.assertEqual(loopdata_pkt['2m.windDir.avg'], '180°')  # A bogus value, which is why we need to use wind.vecdir.
+
+        self.assertEqual(loopdata_pkt['2m.wind.avg'], '52 mph')
+        self.assertEqual(loopdata_pkt['2m.wind.rms'], '71 mph')   # RMS is a better 'average' than average
+        self.assertEqual(loopdata_pkt['2m.windSpeed.avg'], '52 mph')
+
+        self.assertEqual(loopdata_pkt['2m.wind.min'], '4 mph')
+        self.assertEqual(loopdata_pkt['2m.wind.mintime.raw'], 1665796967)
+        self.assertEqual(loopdata_pkt['2m.wind.max'], '100 mph')
+        self.assertEqual(loopdata_pkt['2m.wind.maxtime.raw'], 1665796969)
+        self.assertEqual(loopdata_pkt['2m.windSpeed.min'], '4 mph')
+        self.assertEqual(loopdata_pkt['2m.windSpeed.mintime.raw'], 1665796967)
+        self.assertEqual(loopdata_pkt['2m.windSpeed.max'], '100 mph')
+        self.assertEqual(loopdata_pkt['2m.windSpeed.maxtime.raw'], 1665796969)
 
     def test_ip100_packet_processing(self):
 
