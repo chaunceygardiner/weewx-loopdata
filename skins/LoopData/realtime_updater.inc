@@ -64,29 +64,21 @@
     // restart everything
     pageTimedOut = false;
     // restart the page timeout
-    timeOfNextPageExpiration = getTimeOfNextPageExpiration();
+    setPageExpirationTimer();
   }
-  function getTimeToNextUpdateCurrent() {
-    return refresh_rate * 1000;
-  }
-  // Get time that page expires.
-  function getTimeOfNextPageExpiration() {
+  function setPageExpirationTimer() {
     if (getUrlParam('pageUpdate') !== page_update_pwd) {
       // expire in N hours
-      return Date.now() + 1000 * 60 * 60 * expiration_time;
-    } else {
-      // expire in 10,000 days
-      return Date.now() + 1000 * 60 * 60 * 24 * 10000;
+      setTimeout(expirePage, 1000 * 60 * 60 * expiration_time);
     }
   }
-  // global variables - times of next events
-  var timeOfNextPageExpiration = getTimeOfNextPageExpiration();
+  setPageExpirationTimer();
+  setInterval(updateCurrent, 2000);
   addLoadEvent(updateCurrent);
 
   function updateCurrent() {
     if (pageTimedOut) {
         setUpExpiredClickListener();
-        setTimeout(updateCurrent, getTimeToNextUpdateCurrent());
         return false;
     }
     var xhttp = new XMLHttpRequest();
@@ -192,13 +184,6 @@
       xhttp.send();
     } catch (e) {
       console.log(e);
-    } finally {
-      // set a timer to call updateCurrent (the 2 second timer) 2s from now.
-      setTimeout(updateCurrent, getTimeToNextUpdateCurrent());
-      // Check to see if it's time to call expirePage.
-      if (Date.now() >= timeOfNextPageExpiration) {
-        expirePage();
-      }
     }
   }
   function decode_rgb(i) {
