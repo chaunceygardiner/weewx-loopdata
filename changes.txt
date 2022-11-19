@@ -1,7 +1,22 @@
 loopdata change history
 -----------------------
 
+3.1 Release 2022/11/19
+----------------------
+1. Add support for alltime tag.
+   Note: The sample skin is updated to use alltime tags.
+      For existing installations that actually use the
+      sample skin, you need to add the following fields
+      to the fields clause in the LoopData section in
+      weewx.conf:
+          'alltime.outTemp.max.formatted'
+          'alltime.outTemp.min.formatted'
+          'alltime.rain.sum.formatted'
+          'alltime.wind.rms.formatted'
+          'alltime.windGust.max.formatted'
+
 3.0.1 Release 2022/10/30
+------------------------
 1. Much more efficient rolling time periods (2m, 10m, 24h, trend).
 2. Add support 24h tag.
    Note: The sample skin is updated to use 24h tags.
@@ -13,7 +28,6 @@ loopdata change history
           '24h.outTemp.min.formatted'
           '24h.rain.sum.formatted'
           '24h.wind.rms.formatted'
-          '24h.windGust.max'
           '24h.windGust.max.formatted'
 3. The python3-sortedcontainers package is now required.  To install
    it on debian, type:
@@ -45,7 +59,6 @@ loopdata change history
           'hour.outTemp.min.formatted'
           'hour.rain.sum.formatted'
           'hour.wind.rms.formatted'
-          'hour.windGust.max'
           'hour.windGust.max.formatted'
 2. Add support for 2m tag.
    Note: The sample skin is updated to use the hour tags.
@@ -57,7 +70,6 @@ loopdata change history
           '2m.outTemp.min.formatted'
           '2m.rain.sum.formatted'
           '2m.wind.rms.formatted'
-          '2m.windGust.max'
           '2m.windGust.max.formatted'
 3. In addition to the already supported trend.barometer.desc,
    trend.barometer.code is also supported.  The code can

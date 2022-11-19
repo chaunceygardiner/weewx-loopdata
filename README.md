@@ -42,13 +42,14 @@ The json file will contain any specified values for:
 * monthly aggregate values (e.g., `month.barometer.avg`)
 * yearly aggregate values (e.g., `year.wind.max`)
 * rainyear aggregate values (e.g., `rainyear.rain.sum`)
+* alltime aggregate values (e.g., `alltime.outTemp.max`)
 
 
 In addition to the usual observation types (which includes `windrun`), there
 are special `windrun_<direction>` observation types that can be used with `current`,
 `2m`, `10m`, `24h`, `trend`, `hour` and `day` periods.  These report the distance for each of sixteen
 directions; and can be used to make a windrose.  Note: `windrun_<direction>` observations
-are NOT supported for `week`, `month`, `year` and `rainyear` periods.
+are NOT supported for `week`, `month`, `year`, `rainyear` and `alltime` periods.
 
 Note: `windrun_<direction>` observations are experimental and are likely to be moved to a
 separate plugin (and available to loopdata).
@@ -151,6 +152,12 @@ The total rain for this rain year can be included as:
 * `rainyear.rain`           which might yeild `7.1 in`
 * `rainyear.rain.raw`       which might yeild `7.13`
 
+The alltime hight outside temperature can be included as:
+
+* `alltime.outTemp.formatted` which might yeild `107.3`
+* `alltime.outTemp`           which might yeild `107.3°`
+* `alltime.outTemp.raw`       which might yeild `107.29`
+
 If a field is requested, but the data is missing, it will not be present
 in loop-data.txt.  Your JavaScript should expect this and react
 accordingly.
@@ -162,7 +169,7 @@ separate thread.  The information gathered is only that which is needed
 for LoopData to prime it's accumulators.  For example, if a week field is
 included in the weewx.conf fields line (week.rain.sum), daily summaries
 for the week will be read to prime the week accumulator.  If no week field
-is included, no work will be done.  Ditto for rainyear, year, month, 24h, 10m
+is included, no work will be done.  Ditto for alltime, rainyear, year, month, 24h, 10m
 and 2m accumulators.  They are populated only if they are used.  Lastly, only the
 necessary observation types are tracked in the accumulators.  For example,
 if no form of monthy.barometer is specified on the fields line, the monthly
@@ -199,7 +206,7 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
 1. Install the `python3-sortedcontainers` package.
    * On debian: `sudo apt install python3-sortedcontainers`
 
-1. Download the lastest release, weewx-loopdata-3.0.1.zip, from the
+1. Download the lastest release, weewx-loopdata-3.1.zip, from the
    [GitHub Repository](https://github.com/chaunceygardiner/weewx-loopdata).
 
 1. Run the following command.
@@ -300,8 +307,9 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
 
 Generally, if you can specify a field in a Cheetah template, and that field begins with $current,
 `$trend`, `$day`, `$week`, `$month`, `$year`, or `$rainyear`, you can specify it here (but don't
-include the dollar sign).  Also, anything you can use a `2m`, `10m`, or `24h` prefix to get aggregate values
-for a rolling two, ten minutes, or 24 hoursrespectively.  `2m`, `10m` and `24h` act just like `day`, `week`, `month`, `year` and `rainyear`.
+include the dollar sign).  For all time, you can use `alltime`.  Also, you can use a `2m`, `10m`,
+or `24h` prefix to get aggregate values for a rolling two, ten minutes, or 24 hours respectively.
+`2m`, `10m` and `24h` act just like `day`, `week`, `month`, `year` `rainyear` and `alltime`.
 
 For example, just like in a report, one can add the following extenstions to specialize the fields:
 * `No extension`: Field is converted and formatted per the report and a label is added.

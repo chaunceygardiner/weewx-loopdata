@@ -123,6 +123,9 @@ class ProcessPacketTests(unittest.TestCase):
         cname = user.loopdata.LoopData.parse_cname('rainyear')
         self.assertEqual(cname, None)
 
+        cname = user.loopdata.LoopData.parse_cname('alltime')
+        self.assertEqual(cname, None)
+
         cname = user.loopdata.LoopData.parse_cname('week.outTemp')
         self.assertEqual(cname, None)
 
@@ -136,6 +139,9 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname, None)
 
         cname = user.loopdata.LoopData.parse_cname('rainyear.windrun_ENE.sum.formatted')
+        self.assertEqual(cname, None)
+
+        cname = user.loopdata.LoopData.parse_cname('alltime.windrun_ENE.sum.formatted')
         self.assertEqual(cname, None)
 
         cname = user.loopdata.LoopData.parse_cname('week.outTemp.avg')
@@ -174,6 +180,15 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, 'avg')
         self.assertEqual(cname.format_spec, None)
 
+        cname = user.loopdata.LoopData.parse_cname('alltime.outTemp.avg')
+        self.assertEqual(cname.field, 'alltime.outTemp.avg')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'alltime')
+        self.assertEqual(cname.obstype, 'outTemp')
+        self.assertEqual(cname.agg_type, 'avg')
+        self.assertEqual(cname.format_spec, None)
+
         cname = user.loopdata.LoopData.parse_cname('week.windGust.max.formatted')
         self.assertEqual(cname.field, 'week.windGust.max.formatted')
         self.assertEqual(cname.prefix, None)
@@ -206,6 +221,15 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
         self.assertEqual(cname.period, 'rainyear')
+        self.assertEqual(cname.obstype, 'windGust')
+        self.assertEqual(cname.agg_type, 'max')
+        self.assertEqual(cname.format_spec, 'formatted')
+
+        cname = user.loopdata.LoopData.parse_cname('alltime.windGust.max.formatted')
+        self.assertEqual(cname.field, 'alltime.windGust.max.formatted')
+        self.assertEqual(cname.prefix, None)
+        self.assertEqual(cname.prefix2, None)
+        self.assertEqual(cname.period, 'alltime')
         self.assertEqual(cname.obstype, 'windGust')
         self.assertEqual(cname.agg_type, 'max')
         self.assertEqual(cname.format_spec, 'formatted')
@@ -570,7 +594,7 @@ class ProcessPacketTests(unittest.TestCase):
             'trend.barometer.desc', '2m.wind.max', '2m.wind.gustdir', '10m.wind.max', '10m.wind.gustdir', '10m.windSpeed.max', '10m.windDir.max', '24h.rain.sum', 'hour.inTemp.min', 'hour.inTemp.mintime',
             'day.barometer.min', 'day.barometer.max', 'day.wind.max', 'day.wind.gustdir', 'day.wind.maxtime' ]
 
-        (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
+        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
             twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(specified_fields)
 
@@ -811,7 +835,7 @@ class ProcessPacketTests(unittest.TestCase):
         pkt = {'dateTime': 1593630000, 'usUnits': 1, 'outTemp': 77.4, 'rain': 0.01}
         pkt_time = pkt['dateTime']
 
-        (rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
+        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
             week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
             config_dict, pkt_time)
         self.assertEqual(week_start, 6)
@@ -829,9 +853,10 @@ class ProcessPacketTests(unittest.TestCase):
                              'week.outTemp.max', 'week.outTemp.min', 'week.outTemp.avg',
                              'month.outTemp.max', 'month.outTemp.min', 'month.outTemp.avg',
                              'year.outTemp.max', 'year.outTemp.min', 'year.outTemp.avg',
-                             'rainyear.outTemp.max', 'rainyear.outTemp.min', 'rainyear.outTemp.avg']
+                             'rainyear.outTemp.max', 'rainyear.outTemp.min', 'rainyear.outTemp.avg',
+                             'alltime.outTemp.max', 'alltime.outTemp.min', 'alltime.outTemp.avg']
 
-        (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
+        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
             twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(specified_fields)
 
@@ -840,10 +865,10 @@ class ProcessPacketTests(unittest.TestCase):
         baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
 
         # First packet.
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -852,10 +877,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Next packet 1 minute later
         pkt = {'dateTime': 1593630060, 'usUnits': 1, 'outTemp': 77.3}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -878,10 +903,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Next packet 9 minute later
         pkt = {'dateTime': 1593630600, 'usUnits': 1, 'outTemp': 77.2, 'rain': 0.01}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -902,10 +927,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Next packet 2:51 later
         pkt = {'dateTime': 1593640860, 'usUnits': 1, 'outTemp': 76.9, 'rain': 0.00}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -924,10 +949,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Next packet 4:00 later
         pkt = {'dateTime': 1593655260, 'usUnits': 1, 'outTemp': 75.0, 'rain': 0.01}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -947,10 +972,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Next packet 20:00 later
         pkt = {'dateTime': 1593727260, 'usUnits': 1, 'outTemp': 70.0, 'rain': 0.00}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -971,10 +996,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Add another temp a minute later so we get a trend
         pkt = {'dateTime': 1593727320, 'usUnits': 1, 'outTemp': 70.0, 'rain': 0.04}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -999,10 +1024,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Jump a week
         pkt = {'dateTime': 1594332120, 'usUnits': 1, 'outTemp': 66.0, 'rain': 0.00}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1027,10 +1052,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Jump a month
         pkt = {'dateTime': 1597010520, 'usUnits': 1, 'outTemp': 88.0, 'rain': 0.01}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1055,10 +1080,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Jump a year
         pkt = {'dateTime': 1628546520, 'usUnits': 1, 'outTemp': 99.0, 'rain': 0.02}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1083,10 +1108,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Jump a minute
         pkt = {'dateTime': 1628546580, 'usUnits': 1, 'outTemp': 97.0, 'rain': 0.01}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1108,16 +1133,18 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['year.outTemp.max'],      '99.0°F')
         self.assertEqual(loopdata_pkt['rainyear.outTemp.min'],  '97.0°F')
         self.assertEqual(loopdata_pkt['rainyear.outTemp.max'],  '99.0°F')
+        self.assertEqual(loopdata_pkt['alltime.outTemp.min'],   '66.0°F')
+        self.assertEqual(loopdata_pkt['alltime.outTemp.max'],   '99.0°F')
         self.assertEqual(loopdata_pkt['trend.outTemp'],         '-360.0°F')
 
         # Jump to October 15 (new rain year)
         # Friday, October 15, 2021 12:00:00 PM GMT-07:00 DST
         pkt = {'dateTime': 1634324400, 'usUnits': 1, 'outTemp': 41.0, 'rain': 0.00}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1139,15 +1166,17 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['year.outTemp.max'],      '99.0°F')
         self.assertEqual(loopdata_pkt['rainyear.outTemp.min'],  '41.0°F')
         self.assertEqual(loopdata_pkt['rainyear.outTemp.max'],  '41.0°F')
+        self.assertEqual(loopdata_pkt['alltime.outTemp.min'],   '41.0°F')
+        self.assertEqual(loopdata_pkt['alltime.outTemp.max'],   '99.0°F')
         self.assertEqual(loopdata_pkt.get('trend.outTemp'), None)
 
         # 1s later
         pkt = {'dateTime': 1634324401, 'usUnits': 1, 'outTemp': 42.0, 'rain': 0.01}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1177,15 +1206,18 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['rainyear.outTemp.min'],  '41.0°F')
         self.assertEqual(loopdata_pkt['rainyear.outTemp.max'],  '42.0°F')
         self.assertEqual(loopdata_pkt['rainyear.outTemp.avg'],  '41.5°F')
+        self.assertEqual(loopdata_pkt['alltime.outTemp.min'],   '41.0°F')
+        self.assertEqual(loopdata_pkt['alltime.outTemp.max'],   '99.0°F')
+        self.assertEqual(loopdata_pkt['alltime.outTemp.avg'],   '73.6°F')
         self.assertEqual(loopdata_pkt['trend.outTemp'],         '10800.0°F')
 
         # About 2 days later, Sunday, October 17, 2021 04:24:27 PM PDT
         pkt = {'dateTime': 1634513067, 'usUnits': 1, 'outTemp': 88.0, 'rain': 0.00}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1194,10 +1226,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Next day, Monday, October 18, 2021 04:24:27 PM PDT
         pkt = {'dateTime': 1634599467, 'usUnits': 1, 'outTemp': 87.5, 'rain': 0.01}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1206,10 +1238,10 @@ class ProcessPacketTests(unittest.TestCase):
         # 6 days later, Saturday, October 23, 2021 04:24:27 PM PDT
         pkt = {'dateTime': 1635031467, 'usUnits': 1, 'outTemp': 87.0, 'rain': 0.04}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1219,10 +1251,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Sunday, October 24, 2021 04:24:27 PM PDT
         pkt = {'dateTime': 1635117867, 'usUnits': 1, 'outTemp': 85.0, 'rain': 0.01}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum,hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1243,7 +1275,7 @@ class ProcessPacketTests(unittest.TestCase):
         pkt = {'dateTime': 1593630000, 'usUnits': 1, 'outTemp': 77.4}
         pkt_time = pkt['dateTime']
 
-        (rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
+        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
             week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
             config_dict, pkt_time)
         self.assertEqual(week_start, 0)
@@ -1258,9 +1290,10 @@ class ProcessPacketTests(unittest.TestCase):
                              'week.outTemp.max', 'week.outTemp.min', 'week.outTemp.avg',
                              'month.outTemp.max', 'month.outTemp.min', 'month.outTemp.avg',
                              'year.outTemp.max', 'year.outTemp.min', 'year.outTemp.avg',
-                             'rainyear.outTemp.max', 'rainyear.outTemp.min', 'rainyear.outTemp.avg']
+                             'rainyear.outTemp.max', 'rainyear.outTemp.min', 'rainyear.outTemp.avg',
+                             'alltime.outTemp.max', 'alltime.outTemp.min', 'alltime.outTemp.avg']
 
-        (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
+        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
             twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(specified_fields)
 
@@ -1269,10 +1302,10 @@ class ProcessPacketTests(unittest.TestCase):
         baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
 
         # First packet.
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1281,10 +1314,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Next packet 1 minute later
         pkt = {'dateTime': 1593630060, 'usUnits': 1, 'outTemp': 77.3}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1299,10 +1332,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Next packet 9 minute later
         pkt = {'dateTime': 1593630600, 'usUnits': 1, 'outTemp': 77.2}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1318,10 +1351,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Next packet 2:51 later
         pkt = {'dateTime': 1593640860, 'usUnits': 1, 'outTemp': 76.9}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1336,10 +1369,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Next packet 4:00 later
         pkt = {'dateTime': 1593655260, 'usUnits': 1, 'outTemp': 75.0}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1356,10 +1389,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Next packet 20:00 later
         pkt = {'dateTime': 1593727260, 'usUnits': 1, 'outTemp': 70.0}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1376,10 +1409,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Add another temp a minute later so we get a trend
         pkt = {'dateTime': 1593727320, 'usUnits': 1, 'outTemp': 70.0}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1400,10 +1433,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Jump a week
         pkt = {'dateTime': 1594332120, 'usUnits': 1, 'outTemp': 66.0}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1424,10 +1457,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Jump a month
         pkt = {'dateTime': 1597010520, 'usUnits': 1, 'outTemp': 88.0}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1450,10 +1483,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Jump a year
         pkt = {'dateTime': 1628546520, 'usUnits': 1, 'outTemp': 99.0}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1476,10 +1509,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Jump a minute
         pkt = {'dateTime': 1628546580, 'usUnits': 1, 'outTemp': 97.0}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1499,15 +1532,17 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['year.outTemp.max'],      '99.0°F')
         self.assertEqual(loopdata_pkt['rainyear.outTemp.min'],  '97.0°F')
         self.assertEqual(loopdata_pkt['rainyear.outTemp.max'],  '99.0°F')
+        self.assertEqual(loopdata_pkt['alltime.outTemp.min'],   '66.0°F')
+        self.assertEqual(loopdata_pkt['alltime.outTemp.max'],   '99.0°F')
         self.assertEqual(loopdata_pkt['trend.outTemp'],         '-360.0°F')
 
         # Jump to October 15 (new rain year)
         pkt = {'dateTime': 1634324400, 'usUnits': 1, 'outTemp': 41.0}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1527,15 +1562,17 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['year.outTemp.max'],      '99.0°F')
         self.assertEqual(loopdata_pkt['rainyear.outTemp.min'],  '41.0°F')
         self.assertEqual(loopdata_pkt['rainyear.outTemp.max'],  '41.0°F')
+        self.assertEqual(loopdata_pkt['alltime.outTemp.min'],      '41.0°F')
+        self.assertEqual(loopdata_pkt['alltime.outTemp.max'],      '99.0°F')
         self.assertEqual(loopdata_pkt.get('trend.outTemp'), None)
 
         # 1s later
         pkt = {'dateTime': 1634324401, 'usUnits': 1, 'outTemp': 42.0}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1561,15 +1598,18 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['rainyear.outTemp.min'],  '41.0°F')
         self.assertEqual(loopdata_pkt['rainyear.outTemp.max'],  '42.0°F')
         self.assertEqual(loopdata_pkt['rainyear.outTemp.avg'],  '41.5°F')
+        self.assertEqual(loopdata_pkt['alltime.outTemp.min'],   '41.0°F')
+        self.assertEqual(loopdata_pkt['alltime.outTemp.max'],   '99.0°F')
+        self.assertEqual(loopdata_pkt['alltime.outTemp.avg'],   '73.6°F')
         self.assertEqual(loopdata_pkt['trend.outTemp'],         '10800.0°F')
 
         # About 2 days later, Sunday, October 17, 2021 04:24:27 PM PDT
         pkt = {'dateTime': 1634513067, 'usUnits': 1, 'outTemp': 88.0}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1581,10 +1621,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Next day, Monday, October 18, 2021 04:24:27 PM PDT
         pkt = {'dateTime': 1634599467, 'usUnits': 1, 'outTemp': 87.5}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1596,10 +1636,10 @@ class ProcessPacketTests(unittest.TestCase):
         # 6 days later, Saturday, October 23, 2021 04:24:27 PM PDT
         pkt = {'dateTime': 1635031467, 'usUnits': 1, 'outTemp': 87.0}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1609,10 +1649,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Sunday, October 24, 2021 04:24:27 PM PDT
         pkt = {'dateTime': 1635117867, 'usUnits': 1, 'outTemp': 85.0}
         pkt_time = pkt['dateTime']
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1632,7 +1672,7 @@ class ProcessPacketTests(unittest.TestCase):
                  {'dateTime': 1665796969, 'usUnits': 1, 'windDir':   5.0, 'windSpeed': 3.0, 'outTemp': 69.2},
                  {'dateTime': 1665796971, 'usUnits': 1, 'windDir':  10.0, 'windSpeed': 2.0, 'outTemp': 69.3}]
         first_pkt_time = pkts[0]['dateTime']
-        (rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
+        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
             week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
             config_dict, first_pkt_time)
 
@@ -1687,7 +1727,7 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windDir',
             'unit.label.windSpeed']
 
-        (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
+        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
             twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(wind_fields)
 
@@ -1700,10 +1740,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Test when adding very first packet.
         pkt = pkts[0]
         pkt_time = to_int(pkt['dateTime'])
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1764,10 +1804,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Add 2nd packet.
         pkt = pkts[1]
         pkt_time = to_int(pkt['dateTime'])
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1829,10 +1869,10 @@ class ProcessPacketTests(unittest.TestCase):
         # Add 3rd packet.
         pkt = pkts[2]
         pkt_time = to_int(pkt['dateTime'])
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -1901,7 +1941,7 @@ class ProcessPacketTests(unittest.TestCase):
                  {'dateTime': 1665796969, 'usUnits': 1, 'windDir':   5.0, 'windGust': 3.0, 'windGustDir':   5.0, 'windrun': None, 'windSpeed': 3.0},
                  {'dateTime': 1665796971, 'usUnits': 1, 'windDir':  10.0, 'windGust': 2.0, 'windGustDir':  10.0, 'windrun': None, 'windSpeed': 2.0}]
         first_pkt_time = pkts[0]['dateTime']
-        (rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
+        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
             week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
             config_dict, first_pkt_time)
 
@@ -1955,7 +1995,7 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windDir',
             'unit.label.windSpeed']
 
-        (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
+        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
             twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(wind_fields)
 
@@ -1965,10 +2005,10 @@ class ProcessPacketTests(unittest.TestCase):
 
         for pkt in pkts:
             pkt_time = to_int(pkt['dateTime'])
-            (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+            (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
                 day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-                fields_to_include, current_obstypes, rainyear_accum,
+                fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
                 rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
                 month_accum, month_obstypes, week_accum, week_start, week_obstypes,
                 day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -2022,7 +2062,7 @@ class ProcessPacketTests(unittest.TestCase):
         pkts = [ {'dateTime': 1665796967, 'usUnits': 1, 'windDir': 355.0, 'windGust': 4.0, 'windGustDir': 355.0, 'windrun': None, 'windSpeed': 4.0},
                  {'dateTime': 1665796969, 'usUnits': 1, 'windDir':   5.0, 'windGust': 100.0, 'windGustDir':   5.0, 'windrun': None, 'windSpeed': 100.0}]
         first_pkt_time = pkts[0]['dateTime']
-        (rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
+        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
             week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
             config_dict, first_pkt_time)
 
@@ -2076,7 +2116,7 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windDir',
             'unit.label.windSpeed']
 
-        (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
+        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
             twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(wind_fields)
 
@@ -2086,10 +2126,10 @@ class ProcessPacketTests(unittest.TestCase):
 
         for pkt in pkts:
             pkt_time = to_int(pkt['dateTime'])
-            (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+            (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
                 day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-                fields_to_include, current_obstypes, rainyear_accum,
+                fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
                 rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
                 month_accum, month_obstypes, week_accum, week_start, week_obstypes,
                 day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -2143,7 +2183,7 @@ class ProcessPacketTests(unittest.TestCase):
         pkts = [ {'dateTime': 1665796967, 'usUnits': 1, 'windGust': 0.0, 'windSpeed': 0.0},
                  {'dateTime': 1665796969, 'usUnits': 1, 'windDir':   5.0, 'windGust': 200.0, 'windGustDir':   5.0, 'windrun': None, 'windSpeed': 200.0}]
         first_pkt_time = pkts[0]['dateTime']
-        (rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
+        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
             week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
             config_dict, first_pkt_time)
 
@@ -2197,7 +2237,7 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windDir',
             'unit.label.windSpeed']
 
-        (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
+        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
             twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(wind_fields)
 
@@ -2207,10 +2247,10 @@ class ProcessPacketTests(unittest.TestCase):
 
         pkt = pkts[0]
         pkt_time = to_int(pkt['dateTime'])
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -2259,10 +2299,10 @@ class ProcessPacketTests(unittest.TestCase):
 
         pkt = pkts[1]
         pkt_time = to_int(pkt['dateTime'])
-        (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+        (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
             day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
             pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-            fields_to_include, current_obstypes, rainyear_accum,
+            fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
             rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
             month_accum, month_obstypes, week_accum, week_start, week_obstypes,
             day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -2314,7 +2354,7 @@ class ProcessPacketTests(unittest.TestCase):
         unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
 
         first_pkt_time, pkts = ip100_packets.IP100Packets._get_packets()
-        (rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
+        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
             week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
             config_dict, first_pkt_time)
 
@@ -2322,7 +2362,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
-        (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
+        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
             twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
@@ -2332,10 +2372,10 @@ class ProcessPacketTests(unittest.TestCase):
 
         for pkt in pkts:
             pkt_time = to_int(pkt['dateTime'])
-            (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+            (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
                 day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-                fields_to_include, current_obstypes, rainyear_accum,
+                fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
                 rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
                 month_accum, month_obstypes, week_accum, week_start, week_obstypes,
                 day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -2454,7 +2494,7 @@ class ProcessPacketTests(unittest.TestCase):
         unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
 
         first_pkt_time, pkts = ip100_packets.IP100Packets._get_packets()
-        (rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
+        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
             week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
             config_dict, first_pkt_time)
 
@@ -2462,7 +2502,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
-        (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
+        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
             twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
@@ -2472,10 +2512,10 @@ class ProcessPacketTests(unittest.TestCase):
 
         for pkt in pkts:
             pkt_time = to_int(pkt['dateTime'])
-            (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+            (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
                 day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-                fields_to_include, current_obstypes, rainyear_accum,
+                fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
                 rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
                 month_accum, month_obstypes, week_accum, week_start, week_obstypes,
                 day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -2582,7 +2622,7 @@ class ProcessPacketTests(unittest.TestCase):
         unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
 
         first_pkt_time, pkts = vantagepro2_packets.VantagePro2Packets._get_batch_one_packets()
-        (rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
+        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
             week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
             config_dict, first_pkt_time)
 
@@ -2590,7 +2630,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
-        (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
+        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
             twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
@@ -2602,10 +2642,10 @@ class ProcessPacketTests(unittest.TestCase):
 
         for pkt in pkts:
             pkt_time = to_int(pkt['dateTime'])
-            (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+            (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
                 day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-                fields_to_include, current_obstypes, rainyear_accum,
+                fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
                 rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
                 month_accum, month_obstypes, week_accum, week_start, week_obstypes,
                 day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -2748,10 +2788,10 @@ class ProcessPacketTests(unittest.TestCase):
 
         for pkt in pkts:
             pkt_time = to_int(pkt['dateTime'])
-            (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+            (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
                 day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-                fields_to_include, current_obstypes, rainyear_accum,
+                fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
                 rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
                 month_accum, month_obstypes, week_accum, week_start, week_obstypes,
                 day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -2887,7 +2927,7 @@ class ProcessPacketTests(unittest.TestCase):
         unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
 
         first_pkt_time, pkts = cc3000_packets.CC3000Packets._get_packets()
-        (rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
+        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
             week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
             config_dict, first_pkt_time)
 
@@ -2895,7 +2935,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
-        (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
+        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
             twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
@@ -2905,10 +2945,10 @@ class ProcessPacketTests(unittest.TestCase):
 
         for pkt in pkts:
             pkt_time = to_int(pkt['dateTime'])
-            (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+            (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
                 day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-                fields_to_include, current_obstypes, rainyear_accum,
+                fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
                 rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
                 month_accum, month_obstypes, week_accum, week_start, week_obstypes,
                 day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -3024,7 +3064,7 @@ class ProcessPacketTests(unittest.TestCase):
         unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
 
         first_pkt_time, pkts = cc3000_packets.CC3000Packets._get_packets()
-        (rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
+        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
             week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
             config_dict, first_pkt_time)
 
@@ -3032,7 +3072,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
-        (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
+        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
             twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
@@ -3042,10 +3082,10 @@ class ProcessPacketTests(unittest.TestCase):
 
         for pkt in pkts:
             pkt_time = to_int(pkt['dateTime'])
-            (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+            (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
                 day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-                fields_to_include, current_obstypes, rainyear_accum,
+                fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
                 rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
                 month_accum, month_obstypes, week_accum, week_start, week_obstypes,
                 day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -3150,7 +3190,7 @@ class ProcessPacketTests(unittest.TestCase):
         unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
 
         first_pkt_time, pkts = cc3000_cross_midnight_packets.CC3000CrossMidnightPackets._get_pre_midnight_packets()
-        (rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
+        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
             week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
             config_dict, first_pkt_time)
 
@@ -3158,7 +3198,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
-        (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
+        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
             twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
@@ -3170,10 +3210,10 @@ class ProcessPacketTests(unittest.TestCase):
 
         for pkt in pkts:
             pkt_time = to_int(pkt['dateTime'])
-            (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+            (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
                 day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-                fields_to_include, current_obstypes, rainyear_accum,
+                fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
                 rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
                 month_accum, month_obstypes, week_accum, week_start, week_obstypes,
                 day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -3300,10 +3340,10 @@ class ProcessPacketTests(unittest.TestCase):
 
         for pkt in pkts:
             pkt_time = to_int(pkt['dateTime'])
-            (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+            (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
                 day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-                fields_to_include, current_obstypes, rainyear_accum,
+                fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
                 rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
                 month_accum, month_obstypes, week_accum, week_start, week_obstypes,
                 day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -3417,7 +3457,7 @@ class ProcessPacketTests(unittest.TestCase):
         unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
 
         first_pkt_time, pkts = simulator_packets.SimulatorPackets._get_packets()
-        (rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
+        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
             week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
             config_dict, first_pkt_time)
 
@@ -3425,7 +3465,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(type(converter), weewx.units.Converter)
         self.assertEqual(type(formatter), weewx.units.Formatter)
 
-        (fields_to_include, current_obstypes, trend_obstypes, rainyear_obstypes,
+        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
             twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(_get_specified_fields())
 
@@ -3435,10 +3475,10 @@ class ProcessPacketTests(unittest.TestCase):
 
         for pkt in pkts:
             pkt_time = to_int(pkt['dateTime'])
-            (loopdata_pkt, rainyear_accum, year_accum, month_accum, week_accum,
+            (loopdata_pkt, alltime_accum, rainyear_accum, year_accum, month_accum, week_accum,
                 day_accum, hour_accum) =  user.loopdata.LoopProcessor.generate_loopdata_dictionary(
                 pkt, pkt_time, unit_system, loop_frequency, converter, formatter,
-                fields_to_include, current_obstypes, rainyear_accum,
+                fields_to_include, current_obstypes, alltime_accum, alltime_obstypes, rainyear_accum,
                 rainyear_start, rainyear_obstypes, year_accum, year_obstypes,
                 month_accum, month_obstypes, week_accum, week_start, week_obstypes,
                 day_accum, day_obstypes, hour_accum, hour_obstypes, twentyfour_hour_accum, twentyfour_hour_obstypes, ten_min_accum, ten_min_obstypes, two_min_accum, two_min_obstypes, time_delta, trend_accum, trend_obstypes,
@@ -3541,12 +3581,15 @@ class ProcessPacketTests(unittest.TestCase):
     @staticmethod
     def _get_accums(config_dict, pkt_time):
         """
-        Returns rainyear_accum, rainyear_start, year_accum, month_accum, week_accum, week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum.
+        Returns alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum, week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum.
         """
 
         unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
         rainyear_start: int = to_int(config_dict['Station']['rain_year_start'])
         week_start: int = to_int(config_dict['Station']['week_start'])
+
+        span = weeutil.weeutil.TimeSpan(86400, 17514144000)
+        alltime_accum = weewx.accum.Accum(span, unit_system)
 
         span = weeutil.weeutil.archiveRainYearSpan(pkt_time, rainyear_start)
         rainyear_accum = weewx.accum.Accum(span, unit_system)
@@ -3574,7 +3617,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         trend_accum = user.loopdata.ContinuousAccum(10800, unit_system)
 
-        return rainyear_accum, rainyear_start, year_accum, month_accum, week_accum, week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum
+        return alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum, week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum
 
     @staticmethod
     def _get_config_dict(kind):
