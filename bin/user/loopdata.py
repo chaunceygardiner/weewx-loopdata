@@ -1553,7 +1553,7 @@ class LoopProcessor:
                     pass
 
                 # Process new packet.
-                (loopdata_pkt, self.alltime_accum, self.rainyear_accum, self.year_accum,
+                (loopdata_pkt, self.rainyear_accum, self.year_accum,
                     self.month_accum, self.week_accum, self.day_accum,
                     self.hour_accum) = LoopProcessor.generate_loopdata_dictionary(
                     pkt, pkt_time, self.cfg.unit_system,
@@ -1610,7 +1610,7 @@ class LoopProcessor:
             time_delta: int,
             trend_accum: ContinuousAccum, trend_obstypes: List[str],
             baro_trend_descs: Dict[BarometerTrend, str]
-            ) -> Tuple[Dict[str, Any], Optional[weewx.accum.Accum], Optional[weewx.accum.Accum], Optional[weewx.accum.Accum],
+            ) -> Tuple[Dict[str, Any], Optional[weewx.accum.Accum], Optional[weewx.accum.Accum],
             Optional[weewx.accum.Accum], Optional[weewx.accum.Accum], Optional[weewx.accum.Accum],
             Optional[weewx.accum.Accum]]:
 
@@ -1716,7 +1716,7 @@ class LoopProcessor:
             fields_to_include, alltime_accum, rainyear_accum,
             year_accum, month_accum, week_accum, day_accum, hour_accum,
             twentyfour_hour_accum, ten_min_accum, two_min_accum, time_delta, trend_accum, baro_trend_descs, converter, formatter),
-            alltime_accum, rainyear_accum, year_accum, month_accum, week_accum, day_accum, hour_accum)
+            rainyear_accum, year_accum, month_accum, week_accum, day_accum, hour_accum)
 
     @staticmethod
     def add_unit_obstype(cname: CheetahName, loopdata_pkt: Dict[str, Any],
