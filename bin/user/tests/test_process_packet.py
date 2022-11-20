@@ -862,23 +862,6 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(new_pkt['barometer'], 1035.01)
 
     def test_changing_periods(self):
-
-        config_dict = ProcessPacketTests._get_config_dict('us')
-        unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
-
-        # July 1, 2020 Noon PDT
-        pkt = {'dateTime': 1593630000, 'usUnits': 1, 'outTemp': 77.4, 'rain': 0.01}
-        pkt_time = pkt['dateTime']
-
-        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
-            week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
-            config_dict, pkt_time)
-        self.assertEqual(week_start, 6)
-
-        converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
-        self.assertEqual(type(converter), weewx.units.Converter)
-        self.assertEqual(type(formatter), weewx.units.Formatter)
-
         specified_fields = [ 'current.outTemp', 'trend.outTemp',
                              '2m.outTemp.max', '2m.outTemp.min', '2m.outTemp.avg',
                              '10m.outTemp.max', '10m.outTemp.min', '10m.outTemp.avg',
@@ -890,48 +873,10 @@ class ProcessPacketTests(unittest.TestCase):
                              'year.outTemp.max', 'year.outTemp.min', 'year.outTemp.avg',
                              'rainyear.outTemp.max', 'rainyear.outTemp.min', 'rainyear.outTemp.avg',
                              'alltime.outTemp.max', 'alltime.outTemp.min', 'alltime.outTemp.avg']
-
-        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
-            year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(specified_fields)
-
-        time_delta = 10800
-        loop_frequency = 2.0
-        baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
-
-        payload = Payload(
-            unit_system              = unit_system,
-            loop_frequency           = loop_frequency,
-            converter                = converter,
-            formatter                = formatter,
-            week_start               = week_start,
-            rainyear_start           = rainyear_start,
-            time_delta               = time_delta,
-            baro_trend_descs         = baro_trend_descs,
-            fields_to_include        = fields_to_include,
-            current_obstypes         = current_obstypes,
-            alltime_obstypes         = alltime_obstypes,
-            rainyear_obstypes        = rainyear_obstypes,
-            year_obstypes            = year_obstypes,
-            month_obstypes           = month_obstypes,
-            week_obstypes            = week_obstypes,
-            day_obstypes             = day_obstypes,
-            hour_obstypes            = hour_obstypes,
-            twentyfour_hour_obstypes = twentyfour_hour_obstypes,
-            ten_min_obstypes         = ten_min_obstypes,
-            two_min_obstypes         = two_min_obstypes,
-            trend_obstypes           = trend_obstypes,
-            alltime_accum            = alltime_accum,
-            rainyear_accum           = rainyear_accum,
-            year_accum               = year_accum,
-            month_accum              = month_accum,
-            week_accum               = week_accum,
-            day_accum                = day_accum,
-            hour_accum               = hour_accum,
-            twentyfour_hour_accum    = twentyfour_hour_accum,
-            ten_min_accum           = ten_min_accum,
-            two_min_accum            = two_min_accum,
-            trend_accum              = trend_accum)
+        # July 1, 2020 Noon PDT
+        pkt = {'dateTime': 1593630000, 'usUnits': 1, 'outTemp': 77.4, 'rain': 0.01}
+        payload = ProcessPacketTests._get_payload('us', 6, specified_fields, pkt)
+        self.assertEqual(payload.week_start, 6)
 
         # First packet.
         loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
@@ -1200,24 +1145,6 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['week.outTemp.max'], '85.0°F')
 
     def test_changing_periods_week_start_0(self):
-
-        config_dict = ProcessPacketTests._get_config_dict('us')
-        config_dict['Station']['week_start'] = 0
-        unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
-
-        # July 1, 2020 Noon PDT
-        pkt = {'dateTime': 1593630000, 'usUnits': 1, 'outTemp': 77.4}
-        pkt_time = pkt['dateTime']
-
-        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
-            week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
-            config_dict, pkt_time)
-        self.assertEqual(week_start, 0)
-
-        converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
-        self.assertEqual(type(converter), weewx.units.Converter)
-        self.assertEqual(type(formatter), weewx.units.Formatter)
-
         specified_fields = [ 'current.outTemp', 'trend.outTemp',
                              '10m.outTemp.max', '10m.outTemp.min', '10m.outTemp.avg',
                              'day.outTemp.max', 'day.outTemp.min', 'day.outTemp.avg',
@@ -1226,48 +1153,10 @@ class ProcessPacketTests(unittest.TestCase):
                              'year.outTemp.max', 'year.outTemp.min', 'year.outTemp.avg',
                              'rainyear.outTemp.max', 'rainyear.outTemp.min', 'rainyear.outTemp.avg',
                              'alltime.outTemp.max', 'alltime.outTemp.min', 'alltime.outTemp.avg']
-
-        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
-            year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(specified_fields)
-
-        time_delta = 10800
-        loop_frequency = 2.0
-        baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
-
-        payload = Payload(
-            unit_system              = unit_system,
-            loop_frequency           = loop_frequency,
-            converter                = converter,
-            formatter                = formatter,
-            week_start               = week_start,
-            rainyear_start           = rainyear_start,
-            time_delta               = time_delta,
-            baro_trend_descs         = baro_trend_descs,
-            fields_to_include        = fields_to_include,
-            current_obstypes         = current_obstypes,
-            alltime_obstypes         = alltime_obstypes,
-            rainyear_obstypes        = rainyear_obstypes,
-            year_obstypes            = year_obstypes,
-            month_obstypes           = month_obstypes,
-            week_obstypes            = week_obstypes,
-            day_obstypes             = day_obstypes,
-            hour_obstypes            = hour_obstypes,
-            twentyfour_hour_obstypes = twentyfour_hour_obstypes,
-            ten_min_obstypes         = ten_min_obstypes,
-            two_min_obstypes         = two_min_obstypes,
-            trend_obstypes           = trend_obstypes,
-            alltime_accum            = alltime_accum,
-            rainyear_accum           = rainyear_accum,
-            year_accum               = year_accum,
-            month_accum              = month_accum,
-            week_accum               = week_accum,
-            day_accum                = day_accum,
-            hour_accum               = hour_accum,
-            twentyfour_hour_accum    = twentyfour_hour_accum,
-            ten_min_accum           = ten_min_accum,
-            two_min_accum            = two_min_accum,
-            trend_accum              = trend_accum)
+        # July 1, 2020 Noon PDT
+        pkt = {'dateTime': 1593630000, 'usUnits': 1, 'outTemp': 77.4}
+        payload = ProcessPacketTests._get_payload('us', 0, specified_fields, pkt)
+        self.assertEqual(payload.week_start, 0)
 
         # First packet.
         loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
@@ -1498,20 +1387,9 @@ class ProcessPacketTests(unittest.TestCase):
 
     def test_new_db_startup(self):
 
-        config_dict = ProcessPacketTests._get_config_dict('us')
-        unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
-
         pkts = [ {'dateTime': 1665796967, 'usUnits': 1, 'windDir': 355.0, 'windSpeed': 4.0, 'outTemp': 69.1},
                  {'dateTime': 1665796969, 'usUnits': 1, 'windDir':   5.0, 'windSpeed': 3.0, 'outTemp': 69.2},
                  {'dateTime': 1665796971, 'usUnits': 1, 'windDir':  10.0, 'windSpeed': 2.0, 'outTemp': 69.3}]
-        first_pkt_time = pkts[0]['dateTime']
-        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
-            week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
-            config_dict, first_pkt_time)
-
-        converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
-        self.assertEqual(type(converter), weewx.units.Converter)
-        self.assertEqual(type(formatter), weewx.units.Formatter)
 
         wind_fields = [
             '2m.outTemp.avg',
@@ -1560,49 +1438,9 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windDir',
             'unit.label.windSpeed']
 
-        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
-            year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(wind_fields)
-
-        loop_frequency = 2.0
-        time_delta = 10800
-        baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
+        payload = ProcessPacketTests._get_payload('us', 6, wind_fields, pkts[0])
 
         self.maxDiff = None
-
-        payload = Payload(
-            unit_system              = unit_system,
-            loop_frequency           = loop_frequency,
-            converter                = converter,
-            formatter                = formatter,
-            week_start               = week_start,
-            rainyear_start           = rainyear_start,
-            time_delta               = time_delta,
-            baro_trend_descs         = baro_trend_descs,
-            fields_to_include        = fields_to_include,
-            current_obstypes         = current_obstypes,
-            alltime_obstypes         = alltime_obstypes,
-            rainyear_obstypes        = rainyear_obstypes,
-            year_obstypes            = year_obstypes,
-            month_obstypes           = month_obstypes,
-            week_obstypes            = week_obstypes,
-            day_obstypes             = day_obstypes,
-            hour_obstypes            = hour_obstypes,
-            twentyfour_hour_obstypes = twentyfour_hour_obstypes,
-            ten_min_obstypes         = ten_min_obstypes,
-            two_min_obstypes         = two_min_obstypes,
-            trend_obstypes           = trend_obstypes,
-            alltime_accum            = alltime_accum,
-            rainyear_accum           = rainyear_accum,
-            year_accum               = year_accum,
-            month_accum              = month_accum,
-            week_accum               = week_accum,
-            day_accum                = day_accum,
-            hour_accum               = hour_accum,
-            twentyfour_hour_accum    = twentyfour_hour_accum,
-            ten_min_accum           = ten_min_accum,
-            two_min_accum            = two_min_accum,
-            trend_accum              = trend_accum)
 
         # Test when adding very first packet.
         pkt = pkts[0]
@@ -1777,20 +1615,9 @@ class ProcessPacketTests(unittest.TestCase):
 
     def test_wind(self):
 
-        config_dict = ProcessPacketTests._get_config_dict('us')
-        unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
-
         pkts = [ {'dateTime': 1665796967, 'usUnits': 1, 'windDir': 355.0, 'windGust': 4.0, 'windGustDir': 355.0, 'windrun': None, 'windSpeed': 4.0},
                  {'dateTime': 1665796969, 'usUnits': 1, 'windDir':   5.0, 'windGust': 3.0, 'windGustDir':   5.0, 'windrun': None, 'windSpeed': 3.0},
                  {'dateTime': 1665796971, 'usUnits': 1, 'windDir':  10.0, 'windGust': 2.0, 'windGustDir':  10.0, 'windrun': None, 'windSpeed': 2.0}]
-        first_pkt_time = pkts[0]['dateTime']
-        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
-            week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
-            config_dict, first_pkt_time)
-
-        converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
-        self.assertEqual(type(converter), weewx.units.Converter)
-        self.assertEqual(type(formatter), weewx.units.Formatter)
 
         wind_fields = [
             '2m.wind.avg',
@@ -1838,47 +1665,7 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windDir',
             'unit.label.windSpeed']
 
-        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
-            year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(wind_fields)
-
-        loop_frequency = 2.0
-        time_delta = 10800
-        baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
-
-        payload = Payload(
-            unit_system              = unit_system,
-            loop_frequency           = loop_frequency,
-            converter                = converter,
-            formatter                = formatter,
-            week_start               = week_start,
-            rainyear_start           = rainyear_start,
-            time_delta               = time_delta,
-            baro_trend_descs         = baro_trend_descs,
-            fields_to_include        = fields_to_include,
-            current_obstypes         = current_obstypes,
-            alltime_obstypes         = alltime_obstypes,
-            rainyear_obstypes        = rainyear_obstypes,
-            year_obstypes            = year_obstypes,
-            month_obstypes           = month_obstypes,
-            week_obstypes            = week_obstypes,
-            day_obstypes             = day_obstypes,
-            hour_obstypes            = hour_obstypes,
-            twentyfour_hour_obstypes = twentyfour_hour_obstypes,
-            ten_min_obstypes         = ten_min_obstypes,
-            two_min_obstypes         = two_min_obstypes,
-            trend_obstypes           = trend_obstypes,
-            alltime_accum            = alltime_accum,
-            rainyear_accum           = rainyear_accum,
-            year_accum               = year_accum,
-            month_accum              = month_accum,
-            week_accum               = week_accum,
-            day_accum                = day_accum,
-            hour_accum               = hour_accum,
-            twentyfour_hour_accum    = twentyfour_hour_accum,
-            ten_min_accum           = ten_min_accum,
-            two_min_accum            = two_min_accum,
-            trend_accum              = trend_accum)
+        payload = ProcessPacketTests._get_payload('us', 6, wind_fields, pkts[0])
 
         for pkt in pkts:
             loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
@@ -1925,19 +1712,8 @@ class ProcessPacketTests(unittest.TestCase):
 
     def test_wind2(self):
 
-        config_dict = ProcessPacketTests._get_config_dict('us')
-        unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
-
         pkts = [ {'dateTime': 1665796967, 'usUnits': 1, 'windDir': 355.0, 'windGust': 4.0, 'windGustDir': 355.0, 'windrun': None, 'windSpeed': 4.0},
                  {'dateTime': 1665796969, 'usUnits': 1, 'windDir':   5.0, 'windGust': 100.0, 'windGustDir':   5.0, 'windrun': None, 'windSpeed': 100.0}]
-        first_pkt_time = pkts[0]['dateTime']
-        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
-            week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
-            config_dict, first_pkt_time)
-
-        converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
-        self.assertEqual(type(converter), weewx.units.Converter)
-        self.assertEqual(type(formatter), weewx.units.Formatter)
 
         wind_fields = [
             '2m.wind.avg',
@@ -1985,47 +1761,7 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windDir',
             'unit.label.windSpeed']
 
-        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
-            year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(wind_fields)
-
-        loop_frequency = 2.0
-        time_delta = 10800
-        baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
-
-        payload = Payload(
-            unit_system              = unit_system,
-            loop_frequency           = loop_frequency,
-            converter                = converter,
-            formatter                = formatter,
-            week_start               = week_start,
-            rainyear_start           = rainyear_start,
-            time_delta               = time_delta,
-            baro_trend_descs         = baro_trend_descs,
-            fields_to_include        = fields_to_include,
-            current_obstypes         = current_obstypes,
-            alltime_obstypes         = alltime_obstypes,
-            rainyear_obstypes        = rainyear_obstypes,
-            year_obstypes            = year_obstypes,
-            month_obstypes           = month_obstypes,
-            week_obstypes            = week_obstypes,
-            day_obstypes             = day_obstypes,
-            hour_obstypes            = hour_obstypes,
-            twentyfour_hour_obstypes = twentyfour_hour_obstypes,
-            ten_min_obstypes         = ten_min_obstypes,
-            two_min_obstypes         = two_min_obstypes,
-            trend_obstypes           = trend_obstypes,
-            alltime_accum            = alltime_accum,
-            rainyear_accum           = rainyear_accum,
-            year_accum               = year_accum,
-            month_accum              = month_accum,
-            week_accum               = week_accum,
-            day_accum                = day_accum,
-            hour_accum               = hour_accum,
-            twentyfour_hour_accum    = twentyfour_hour_accum,
-            ten_min_accum           = ten_min_accum,
-            two_min_accum            = two_min_accum,
-            trend_accum              = trend_accum)
+        payload = ProcessPacketTests._get_payload('us', 6, wind_fields, pkts[0])
 
         for pkt in pkts:
             loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
@@ -2072,19 +1808,8 @@ class ProcessPacketTests(unittest.TestCase):
 
     def test_wind_rms(self):
 
-        config_dict = ProcessPacketTests._get_config_dict('us')
-        unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
-
         pkts = [ {'dateTime': 1665796967, 'usUnits': 1, 'windGust': 0.0, 'windSpeed': 0.0},
                  {'dateTime': 1665796969, 'usUnits': 1, 'windDir':   5.0, 'windGust': 200.0, 'windGustDir':   5.0, 'windrun': None, 'windSpeed': 200.0}]
-        first_pkt_time = pkts[0]['dateTime']
-        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
-            week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
-            config_dict, first_pkt_time)
-
-        converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
-        self.assertEqual(type(converter), weewx.units.Converter)
-        self.assertEqual(type(formatter), weewx.units.Formatter)
 
         wind_fields = [
             '2m.wind.avg',
@@ -2132,47 +1857,7 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windDir',
             'unit.label.windSpeed']
 
-        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
-            year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(wind_fields)
-
-        loop_frequency = 2.0
-        time_delta = 10800
-        baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
-
-        payload = Payload(
-            unit_system              = unit_system,
-            loop_frequency           = loop_frequency,
-            converter                = converter,
-            formatter                = formatter,
-            week_start               = week_start,
-            rainyear_start           = rainyear_start,
-            time_delta               = time_delta,
-            baro_trend_descs         = baro_trend_descs,
-            fields_to_include        = fields_to_include,
-            current_obstypes         = current_obstypes,
-            alltime_obstypes         = alltime_obstypes,
-            rainyear_obstypes        = rainyear_obstypes,
-            year_obstypes            = year_obstypes,
-            month_obstypes           = month_obstypes,
-            week_obstypes            = week_obstypes,
-            day_obstypes             = day_obstypes,
-            hour_obstypes            = hour_obstypes,
-            twentyfour_hour_obstypes = twentyfour_hour_obstypes,
-            ten_min_obstypes         = ten_min_obstypes,
-            two_min_obstypes         = two_min_obstypes,
-            trend_obstypes           = trend_obstypes,
-            alltime_accum            = alltime_accum,
-            rainyear_accum           = rainyear_accum,
-            year_accum               = year_accum,
-            month_accum              = month_accum,
-            week_accum               = week_accum,
-            day_accum                = day_accum,
-            hour_accum               = hour_accum,
-            twentyfour_hour_accum    = twentyfour_hour_accum,
-            ten_min_accum           = ten_min_accum,
-            two_min_accum            = two_min_accum,
-            trend_accum              = trend_accum)
+        payload = ProcessPacketTests._get_payload('us', 6, wind_fields, pkts[0])
 
         pkt = pkts[0]
         loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
@@ -2262,60 +1947,9 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.windSpeed.maxtime.raw'], 1665796969)
 
     def test_ip100_packet_processing(self):
+        pkts = ip100_packets.IP100Packets._get_packets()
 
-        config_dict = ProcessPacketTests._get_config_dict('us')
-        unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
-
-        first_pkt_time, pkts = ip100_packets.IP100Packets._get_packets()
-        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
-            week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
-            config_dict, first_pkt_time)
-
-        converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
-        self.assertEqual(type(converter), weewx.units.Converter)
-        self.assertEqual(type(formatter), weewx.units.Formatter)
-
-        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
-            year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(ProcessPacketTests._get_specified_fields())
-
-        loop_frequency = 2.0
-        time_delta = 10800
-        baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
-
-        payload = Payload(
-            unit_system              = unit_system,
-            loop_frequency           = loop_frequency,
-            converter                = converter,
-            formatter                = formatter,
-            week_start               = week_start,
-            rainyear_start           = rainyear_start,
-            time_delta               = time_delta,
-            baro_trend_descs         = baro_trend_descs,
-            fields_to_include        = fields_to_include,
-            current_obstypes         = current_obstypes,
-            alltime_obstypes         = alltime_obstypes,
-            rainyear_obstypes        = rainyear_obstypes,
-            year_obstypes            = year_obstypes,
-            month_obstypes           = month_obstypes,
-            week_obstypes            = week_obstypes,
-            day_obstypes             = day_obstypes,
-            hour_obstypes            = hour_obstypes,
-            twentyfour_hour_obstypes = twentyfour_hour_obstypes,
-            ten_min_obstypes         = ten_min_obstypes,
-            two_min_obstypes         = two_min_obstypes,
-            trend_obstypes           = trend_obstypes,
-            alltime_accum            = alltime_accum,
-            rainyear_accum           = rainyear_accum,
-            year_accum               = year_accum,
-            month_accum              = month_accum,
-            week_accum               = week_accum,
-            day_accum                = day_accum,
-            hour_accum               = hour_accum,
-            twentyfour_hour_accum    = twentyfour_hour_accum,
-            ten_min_accum           = ten_min_accum,
-            two_min_accum            = two_min_accum,
-            trend_accum              = trend_accum)
+        payload = ProcessPacketTests._get_payload('us', 6, ProcessPacketTests._get_specified_fields(), pkts[0])
 
         for pkt in pkts:
             loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
@@ -2428,60 +2062,9 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.wind.vecdir'], '26°')
 
     def test_ip100_us_packets_to_metric_db_to_us_report_processing(self):
+        pkts = ip100_packets.IP100Packets._get_packets()
 
-        config_dict = ProcessPacketTests._get_config_dict('db-metric.report-us')
-        unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
-
-        first_pkt_time, pkts = ip100_packets.IP100Packets._get_packets()
-        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
-            week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
-            config_dict, first_pkt_time)
-
-        converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
-        self.assertEqual(type(converter), weewx.units.Converter)
-        self.assertEqual(type(formatter), weewx.units.Formatter)
-
-        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
-            year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(ProcessPacketTests._get_specified_fields())
-
-        loop_frequency = 2.0
-        time_delta = 10800
-        baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
-
-        payload = Payload(
-            unit_system              = unit_system,
-            loop_frequency           = loop_frequency,
-            converter                = converter,
-            formatter                = formatter,
-            week_start               = week_start,
-            rainyear_start           = rainyear_start,
-            time_delta               = time_delta,
-            baro_trend_descs         = baro_trend_descs,
-            fields_to_include        = fields_to_include,
-            current_obstypes         = current_obstypes,
-            alltime_obstypes         = alltime_obstypes,
-            rainyear_obstypes        = rainyear_obstypes,
-            year_obstypes            = year_obstypes,
-            month_obstypes           = month_obstypes,
-            week_obstypes            = week_obstypes,
-            day_obstypes             = day_obstypes,
-            hour_obstypes            = hour_obstypes,
-            twentyfour_hour_obstypes = twentyfour_hour_obstypes,
-            ten_min_obstypes         = ten_min_obstypes,
-            two_min_obstypes         = two_min_obstypes,
-            trend_obstypes           = trend_obstypes,
-            alltime_accum            = alltime_accum,
-            rainyear_accum           = rainyear_accum,
-            year_accum               = year_accum,
-            month_accum              = month_accum,
-            week_accum               = week_accum,
-            day_accum                = day_accum,
-            hour_accum               = hour_accum,
-            twentyfour_hour_accum    = twentyfour_hour_accum,
-            ten_min_accum           = ten_min_accum,
-            two_min_accum            = two_min_accum,
-            trend_accum              = trend_accum)
+        payload = ProcessPacketTests._get_payload('db-metric.report-us', 6, ProcessPacketTests._get_specified_fields(), pkts[0])
 
         for pkt in pkts:
             loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
@@ -2582,60 +2165,9 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.wind.vecdir'], '26°')
 
     def test_vantage_pro2_packet_processing(self):
+        pkts = vantagepro2_packets.VantagePro2Packets._get_batch_one_packets()
 
-        config_dict = ProcessPacketTests._get_config_dict('us')
-        unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
-
-        first_pkt_time, pkts = vantagepro2_packets.VantagePro2Packets._get_batch_one_packets()
-        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
-            week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
-            config_dict, first_pkt_time)
-
-        converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
-        self.assertEqual(type(converter), weewx.units.Converter)
-        self.assertEqual(type(formatter), weewx.units.Formatter)
-
-        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
-            year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(ProcessPacketTests._get_specified_fields())
-
-        loop_frequency = 2.0
-        time_delta = 10800
-        baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
-
-        payload = Payload(
-            unit_system              = unit_system,
-            loop_frequency           = loop_frequency,
-            converter                = converter,
-            formatter                = formatter,
-            week_start               = week_start,
-            rainyear_start           = rainyear_start,
-            time_delta               = time_delta,
-            baro_trend_descs         = baro_trend_descs,
-            fields_to_include        = fields_to_include,
-            current_obstypes         = current_obstypes,
-            alltime_obstypes         = alltime_obstypes,
-            rainyear_obstypes        = rainyear_obstypes,
-            year_obstypes            = year_obstypes,
-            month_obstypes           = month_obstypes,
-            week_obstypes            = week_obstypes,
-            day_obstypes             = day_obstypes,
-            hour_obstypes            = hour_obstypes,
-            twentyfour_hour_obstypes = twentyfour_hour_obstypes,
-            ten_min_obstypes         = ten_min_obstypes,
-            two_min_obstypes         = two_min_obstypes,
-            trend_obstypes           = trend_obstypes,
-            alltime_accum            = alltime_accum,
-            rainyear_accum           = rainyear_accum,
-            year_accum               = year_accum,
-            month_accum              = month_accum,
-            week_accum               = week_accum,
-            day_accum                = day_accum,
-            hour_accum               = hour_accum,
-            twentyfour_hour_accum    = twentyfour_hour_accum,
-            ten_min_accum           = ten_min_accum,
-            two_min_accum            = two_min_accum,
-            trend_accum              = trend_accum)
+        payload = ProcessPacketTests._get_payload('us', 6, ProcessPacketTests._get_specified_fields(), pkts[0])
 
         # Batch One
 
@@ -2775,7 +2307,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # Batch Two
 
-        first_pkt_time, pkts = vantagepro2_packets.VantagePro2Packets._get_batch_two_packets()
+        pkts = vantagepro2_packets.VantagePro2Packets._get_batch_two_packets()
 
         for pkt in pkts:
             loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
@@ -2905,60 +2437,9 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt.get('day.wind.vecdir'), '332°')
 
     def test_cc3000_packet_processing(self):
+        pkts = cc3000_packets.CC3000Packets._get_packets()
 
-        config_dict = ProcessPacketTests._get_config_dict('us')
-        unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
-
-        first_pkt_time, pkts = cc3000_packets.CC3000Packets._get_packets()
-        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
-            week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
-            config_dict, first_pkt_time)
-
-        converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
-        self.assertEqual(type(converter), weewx.units.Converter)
-        self.assertEqual(type(formatter), weewx.units.Formatter)
-
-        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
-            year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(ProcessPacketTests._get_specified_fields())
-
-        loop_frequency = 2.0
-        time_delta = 10800
-        baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
-
-        payload = Payload(
-            unit_system              = unit_system,
-            loop_frequency           = loop_frequency,
-            converter                = converter,
-            formatter                = formatter,
-            week_start               = week_start,
-            rainyear_start           = rainyear_start,
-            time_delta               = time_delta,
-            baro_trend_descs         = baro_trend_descs,
-            fields_to_include        = fields_to_include,
-            current_obstypes         = current_obstypes,
-            alltime_obstypes         = alltime_obstypes,
-            rainyear_obstypes        = rainyear_obstypes,
-            year_obstypes            = year_obstypes,
-            month_obstypes           = month_obstypes,
-            week_obstypes            = week_obstypes,
-            day_obstypes             = day_obstypes,
-            hour_obstypes            = hour_obstypes,
-            twentyfour_hour_obstypes = twentyfour_hour_obstypes,
-            ten_min_obstypes         = ten_min_obstypes,
-            two_min_obstypes         = two_min_obstypes,
-            trend_obstypes           = trend_obstypes,
-            alltime_accum            = alltime_accum,
-            rainyear_accum           = rainyear_accum,
-            year_accum               = year_accum,
-            month_accum              = month_accum,
-            week_accum               = week_accum,
-            day_accum                = day_accum,
-            hour_accum               = hour_accum,
-            twentyfour_hour_accum    = twentyfour_hour_accum,
-            ten_min_accum           = ten_min_accum,
-            two_min_accum            = two_min_accum,
-            trend_accum              = trend_accum)
+        payload = ProcessPacketTests._get_payload('us', 6, ProcessPacketTests._get_specified_fields(), pkts[0])
 
         for pkt in pkts:
             loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
@@ -3069,59 +2550,9 @@ class ProcessPacketTests(unittest.TestCase):
 
     def test_cc3000_packet_processing_us_device_us_database_metric_report(self):
 
-        config_dict = ProcessPacketTests._get_config_dict('db-us.report-metric')
-        unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
+        pkts = cc3000_packets.CC3000Packets._get_packets()
 
-        first_pkt_time, pkts = cc3000_packets.CC3000Packets._get_packets()
-        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
-            week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
-            config_dict, first_pkt_time)
-
-        converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
-        self.assertEqual(type(converter), weewx.units.Converter)
-        self.assertEqual(type(formatter), weewx.units.Formatter)
-
-        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
-            year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(ProcessPacketTests._get_specified_fields())
-
-        loop_frequency = 2.0
-        time_delta = 10800
-        baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
-
-        payload = Payload(
-            unit_system              = unit_system,
-            loop_frequency           = loop_frequency,
-            converter                = converter,
-            formatter                = formatter,
-            week_start               = week_start,
-            rainyear_start           = rainyear_start,
-            time_delta               = time_delta,
-            baro_trend_descs         = baro_trend_descs,
-            fields_to_include        = fields_to_include,
-            current_obstypes         = current_obstypes,
-            alltime_obstypes         = alltime_obstypes,
-            rainyear_obstypes        = rainyear_obstypes,
-            year_obstypes            = year_obstypes,
-            month_obstypes           = month_obstypes,
-            week_obstypes            = week_obstypes,
-            day_obstypes             = day_obstypes,
-            hour_obstypes            = hour_obstypes,
-            twentyfour_hour_obstypes = twentyfour_hour_obstypes,
-            ten_min_obstypes         = ten_min_obstypes,
-            two_min_obstypes         = two_min_obstypes,
-            trend_obstypes           = trend_obstypes,
-            alltime_accum            = alltime_accum,
-            rainyear_accum           = rainyear_accum,
-            year_accum               = year_accum,
-            month_accum              = month_accum,
-            week_accum               = week_accum,
-            day_accum                = day_accum,
-            hour_accum               = hour_accum,
-            twentyfour_hour_accum    = twentyfour_hour_accum,
-            ten_min_accum           = ten_min_accum,
-            two_min_accum            = two_min_accum,
-            trend_accum              = trend_accum)
+        payload = ProcessPacketTests._get_payload('db-us.report-metric', 6, ProcessPacketTests._get_specified_fields(), pkts[0])
 
         for pkt in pkts:
             loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
@@ -3220,60 +2651,9 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.wind.vecdir'], '22°')
 
     def test_cc3000_cross_midnight_packet_processing(self):
+        pkts = cc3000_cross_midnight_packets.CC3000CrossMidnightPackets._get_pre_midnight_packets()
 
-        config_dict = ProcessPacketTests._get_config_dict('us')
-        unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
-
-        first_pkt_time, pkts = cc3000_cross_midnight_packets.CC3000CrossMidnightPackets._get_pre_midnight_packets()
-        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
-            week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
-            config_dict, first_pkt_time)
-
-        converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
-        self.assertEqual(type(converter), weewx.units.Converter)
-        self.assertEqual(type(formatter), weewx.units.Formatter)
-
-        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
-            year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(ProcessPacketTests._get_specified_fields())
-
-        loop_frequency = 2.0
-        time_delta = 10800
-        baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
-
-        payload = Payload(
-            unit_system              = unit_system,
-            loop_frequency           = loop_frequency,
-            converter                = converter,
-            formatter                = formatter,
-            week_start               = week_start,
-            rainyear_start           = rainyear_start,
-            time_delta               = time_delta,
-            baro_trend_descs         = baro_trend_descs,
-            fields_to_include        = fields_to_include,
-            current_obstypes         = current_obstypes,
-            alltime_obstypes         = alltime_obstypes,
-            rainyear_obstypes        = rainyear_obstypes,
-            year_obstypes            = year_obstypes,
-            month_obstypes           = month_obstypes,
-            week_obstypes            = week_obstypes,
-            day_obstypes             = day_obstypes,
-            hour_obstypes            = hour_obstypes,
-            twentyfour_hour_obstypes = twentyfour_hour_obstypes,
-            ten_min_obstypes         = ten_min_obstypes,
-            two_min_obstypes         = two_min_obstypes,
-            trend_obstypes           = trend_obstypes,
-            alltime_accum            = alltime_accum,
-            rainyear_accum           = rainyear_accum,
-            year_accum               = year_accum,
-            month_accum              = month_accum,
-            week_accum               = week_accum,
-            day_accum                = day_accum,
-            hour_accum               = hour_accum,
-            twentyfour_hour_accum    = twentyfour_hour_accum,
-            ten_min_accum           = ten_min_accum,
-            two_min_accum            = two_min_accum,
-            trend_accum              = trend_accum)
+        payload = ProcessPacketTests._get_payload('us', 6, ProcessPacketTests._get_specified_fields(), pkts[0])
 
         # Pre Midnight
 
@@ -3397,7 +2777,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # Post Midnight
 
-        first_pkt_time, pkts = cc3000_cross_midnight_packets.CC3000CrossMidnightPackets._get_post_midnight_packets()
+        pkts = cc3000_cross_midnight_packets.CC3000CrossMidnightPackets._get_post_midnight_packets()
 
         for pkt in pkts:
             loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
@@ -3506,59 +2886,9 @@ class ProcessPacketTests(unittest.TestCase):
 
     def test_simulator_packet_processing(self):
 
-        config_dict = ProcessPacketTests._get_config_dict('metric')
-        unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
+        pkts = simulator_packets.SimulatorPackets._get_packets()
 
-        first_pkt_time, pkts = simulator_packets.SimulatorPackets._get_packets()
-        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
-            week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
-            config_dict, first_pkt_time)
-
-        converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
-        self.assertEqual(type(converter), weewx.units.Converter)
-        self.assertEqual(type(formatter), weewx.units.Formatter)
-
-        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
-            year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(ProcessPacketTests._get_specified_fields())
-
-        loop_frequency = 2.0
-        time_delta = 10800
-        baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
-
-        payload = Payload(
-            unit_system              = unit_system,
-            loop_frequency           = loop_frequency,
-            converter                = converter,
-            formatter                = formatter,
-            week_start               = week_start,
-            rainyear_start           = rainyear_start,
-            time_delta               = time_delta,
-            baro_trend_descs         = baro_trend_descs,
-            fields_to_include        = fields_to_include,
-            current_obstypes         = current_obstypes,
-            alltime_obstypes         = alltime_obstypes,
-            rainyear_obstypes        = rainyear_obstypes,
-            year_obstypes            = year_obstypes,
-            month_obstypes           = month_obstypes,
-            week_obstypes            = week_obstypes,
-            day_obstypes             = day_obstypes,
-            hour_obstypes            = hour_obstypes,
-            twentyfour_hour_obstypes = twentyfour_hour_obstypes,
-            ten_min_obstypes         = ten_min_obstypes,
-            two_min_obstypes         = two_min_obstypes,
-            trend_obstypes           = trend_obstypes,
-            alltime_accum            = alltime_accum,
-            rainyear_accum           = rainyear_accum,
-            year_accum               = year_accum,
-            month_accum              = month_accum,
-            week_accum               = week_accum,
-            day_accum                = day_accum,
-            hour_accum               = hour_accum,
-            twentyfour_hour_accum    = twentyfour_hour_accum,
-            ten_min_accum           = ten_min_accum,
-            two_min_accum            = two_min_accum,
-            trend_accum              = trend_accum)
+        payload = ProcessPacketTests._get_payload('metric', 6, ProcessPacketTests._get_specified_fields(), pkts[0])
 
         for pkt in pkts:
             loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
@@ -3711,6 +3041,63 @@ class ProcessPacketTests(unittest.TestCase):
         formatter = weewx.units.Formatter.fromSkinDict(target_report_dict)
 
         return converter, formatter
+
+    @staticmethod
+    def _get_payload(config_dict_kind, week_start, specified_fields, pkt):
+        config_dict = ProcessPacketTests._get_config_dict(config_dict_kind)
+        config_dict['Station']['week_start'] = week_start
+        unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
+
+        pkt_time = pkt['dateTime']
+
+        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
+            week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
+            config_dict, pkt_time)
+
+        converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
+        assert type(converter) == weewx.units.Converter
+        assert type(formatter) == weewx.units.Formatter
+
+        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
+            year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
+            twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(specified_fields)
+
+        time_delta = 10800
+        loop_frequency = 2.0
+        baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
+        return Payload(
+            unit_system              = unit_system,
+            loop_frequency           = loop_frequency,
+            converter                = converter,
+            formatter                = formatter,
+            week_start               = week_start,
+            rainyear_start           = rainyear_start,
+            time_delta               = time_delta,
+            baro_trend_descs         = baro_trend_descs,
+            fields_to_include        = fields_to_include,
+            current_obstypes         = current_obstypes,
+            alltime_obstypes         = alltime_obstypes,
+            rainyear_obstypes        = rainyear_obstypes,
+            year_obstypes            = year_obstypes,
+            month_obstypes           = month_obstypes,
+            week_obstypes            = week_obstypes,
+            day_obstypes             = day_obstypes,
+            hour_obstypes            = hour_obstypes,
+            twentyfour_hour_obstypes = twentyfour_hour_obstypes,
+            ten_min_obstypes         = ten_min_obstypes,
+            two_min_obstypes         = two_min_obstypes,
+            trend_obstypes           = trend_obstypes,
+            alltime_accum            = alltime_accum,
+            rainyear_accum           = rainyear_accum,
+            year_accum               = year_accum,
+            month_accum              = month_accum,
+            week_accum               = week_accum,
+            day_accum                = day_accum,
+            hour_accum               = hour_accum,
+            twentyfour_hour_accum    = twentyfour_hour_accum,
+            ten_min_accum           = ten_min_accum,
+            two_min_accum            = two_min_accum,
+            trend_accum              = trend_accum)
 
     @staticmethod
     def _generate_loopdata(payload: Payload, pkt: Dict[str, Any]) -> Dict[str, Any]:
