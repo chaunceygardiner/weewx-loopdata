@@ -7,15 +7,15 @@
 import configobj
 import logging
 import os
+import queue
 import unittest
 
 import weewx
 import weewx.accum
-from dataclasses import dataclass
 from weeutil.weeutil import to_int
 from weeutil.weeutil import timestamp_to_string
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 import weeutil.logger
 
@@ -30,41 +30,6 @@ log = logging.getLogger(__name__)
 
 # Set up logging using the defaults.
 weeutil.logger.setup('test_config', {})
-
-@dataclass
-class Payload:
-    unit_system             : int
-    loop_frequency          : float
-    converter               : weewx.units.Converter
-    formatter               : weewx.units.Formatter
-    week_start              : int
-    rainyear_start          : int
-    time_delta              : int
-    baro_trend_descs        : Any # Dict[BarometerTrend, str]
-    fields_to_include       : List[user.loopdata.CheetahName]
-    current_obstypes        : List[str]
-    alltime_obstypes        : List[str]
-    rainyear_obstypes       : List[str]
-    year_obstypes           : List[str]
-    month_obstypes          : List[str]
-    week_obstypes           : List[str]
-    day_obstypes            : List[str]
-    hour_obstypes           : List[str]
-    twentyfour_hour_obstypes: List[str]
-    ten_min_obstypes        : List[str]
-    two_min_obstypes        : List[str]
-    trend_obstypes          : List[str]
-    alltime_accum           : Optional[weewx.accum.Accum]
-    rainyear_accum          : Optional[weewx.accum.Accum]
-    year_accum              : Optional[weewx.accum.Accum]
-    month_accum             : Optional[weewx.accum.Accum]
-    week_accum              : Optional[weewx.accum.Accum]
-    day_accum               : weewx.accum.Accum
-    hour_accum              : weewx.accum.Accum
-    twentyfour_hour_accum   : user.loopdata.ContinuousAccum
-    ten_min_accum           : user.loopdata.ContinuousAccum
-    two_min_accum           : user.loopdata.ContinuousAccum
-    trend_accum             : user.loopdata.ContinuousAccum
 
 class ProcessPacketTests(unittest.TestCase):
 
@@ -839,14 +804,14 @@ class ProcessPacketTests(unittest.TestCase):
 
         pkt = { 'dateTime': 123456789, 'usUnits': 1, 'windSpeed': 10, 'windDir': 27 }
         in_use_obstypes = { 'barometer' }
-        new_pkt = user.loopdata.LoopProcessor.prune_period_packet(pkt['dateTime'], pkt, in_use_obstypes)
+        new_pkt = user.loopdata.LoopProcessor.prune_period_packet(pkt, in_use_obstypes)
         self.assertEqual(len(new_pkt), 2)
         self.assertEqual(new_pkt['dateTime'], 123456789)
         self.assertEqual(new_pkt['usUnits'], 1)
 
         pkt = { 'dateTime': 123456789, 'usUnits': 1, 'windSpeed': 10, 'windDir': 27 }
         in_use_obstypes = { 'windSpeed' }
-        new_pkt = user.loopdata.LoopProcessor.prune_period_packet(pkt['dateTime'], pkt, in_use_obstypes)
+        new_pkt = user.loopdata.LoopProcessor.prune_period_packet(pkt, in_use_obstypes)
         self.assertEqual(len(new_pkt), 3)
         self.assertEqual(new_pkt['dateTime'], 123456789)
         self.assertEqual(new_pkt['usUnits'], 1)
@@ -854,7 +819,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         pkt = { 'dateTime': 123456789, 'usUnits': 1, 'windSpeed': 10, 'windDir': 27, 'barometer': 1035.01 }
         in_use_obstypes = { 'windSpeed', 'barometer', 'windDir' }
-        new_pkt = user.loopdata.LoopProcessor.prune_period_packet(pkt['dateTime'], pkt, in_use_obstypes)
+        new_pkt = user.loopdata.LoopProcessor.prune_period_packet(pkt, in_use_obstypes)
         self.assertEqual(len(new_pkt), 5)
         self.assertEqual(new_pkt['dateTime'], 123456789)
         self.assertEqual(new_pkt['usUnits'], 1)
@@ -873,17 +838,19 @@ class ProcessPacketTests(unittest.TestCase):
                              'year.outTemp.max', 'year.outTemp.min', 'year.outTemp.avg',
                              'rainyear.outTemp.max', 'rainyear.outTemp.min', 'rainyear.outTemp.avg',
                              'alltime.outTemp.max', 'alltime.outTemp.min', 'alltime.outTemp.avg']
+        cfg = ProcessPacketTests._get_config('us', 10800, 10, 6, specified_fields)
+
         # July 1, 2020 Noon PDT
         pkt = {'dateTime': 1593630000, 'usUnits': 1, 'outTemp': 77.4, 'rain': 0.01}
-        payload = ProcessPacketTests._get_payload('us', 10800, 6, specified_fields, pkt)
-        self.assertEqual(payload.week_start, 6)
+
+        accums = ProcessPacketTests._get_accums(cfg, pkt['dateTime'])
 
         # First packet.
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # Next packet 1 minute later
         pkt = {'dateTime': 1593630060, 'usUnits': 1, 'outTemp': 77.3}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'], '77.3°F')
@@ -901,7 +868,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # Next packet 9 minute later
         pkt = {'dateTime': 1593630600, 'usUnits': 1, 'outTemp': 77.2, 'rain': 0.01}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'], '77.2°F')
@@ -917,7 +884,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # Next packet 2:51 later
         pkt = {'dateTime': 1593640860, 'usUnits': 1, 'outTemp': 76.9, 'rain': 0.00}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'], '76.9°F')
@@ -931,7 +898,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # Next packet 4:00 later
         pkt = {'dateTime': 1593655260, 'usUnits': 1, 'outTemp': 75.0, 'rain': 0.01}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'], '75.0°F')
@@ -946,7 +913,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # Next packet 20:00 later
         pkt = {'dateTime': 1593727260, 'usUnits': 1, 'outTemp': 70.0, 'rain': 0.00}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'], '70.0°F')
@@ -962,7 +929,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # Add another temp a minute later so we get a trend
         pkt = {'dateTime': 1593727320, 'usUnits': 1, 'outTemp': 70.0, 'rain': 0.04}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],  '70.0°F')
@@ -982,7 +949,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # Jump a week
         pkt = {'dateTime': 1594332120, 'usUnits': 1, 'outTemp': 66.0, 'rain': 0.00}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],  '66.0°F')
@@ -1002,7 +969,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # Jump a month
         pkt = {'dateTime': 1597010520, 'usUnits': 1, 'outTemp': 88.0, 'rain': 0.01}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],   '88.0°F')
@@ -1022,7 +989,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # Jump a year
         pkt = {'dateTime': 1628546520, 'usUnits': 1, 'outTemp': 99.0, 'rain': 0.02}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],   '99.0°F')
@@ -1042,7 +1009,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # Jump a minute
         pkt = {'dateTime': 1628546580, 'usUnits': 1, 'outTemp': 97.0, 'rain': 0.01}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],       '97.0°F')
@@ -1067,7 +1034,7 @@ class ProcessPacketTests(unittest.TestCase):
         # Jump to October 15 (new rain year)
         # Friday, October 15, 2021 12:00:00 PM GMT-07:00 DST
         pkt = {'dateTime': 1634324400, 'usUnits': 1, 'outTemp': 41.0, 'rain': 0.00}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],       '41.0°F')
@@ -1091,7 +1058,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # 1s later
         pkt = {'dateTime': 1634324401, 'usUnits': 1, 'outTemp': 42.0, 'rain': 0.01}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],       '42.0°F')
@@ -1124,25 +1091,324 @@ class ProcessPacketTests(unittest.TestCase):
 
         # About 2 days later, Sunday, October 17, 2021 04:24:27 PM PDT
         pkt = {'dateTime': 1634513067, 'usUnits': 1, 'outTemp': 88.0, 'rain': 0.00}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # Next day, Monday, October 18, 2021 04:24:27 PM PDT
         pkt = {'dateTime': 1634599467, 'usUnits': 1, 'outTemp': 87.5, 'rain': 0.01}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # 6 days later, Saturday, October 23, 2021 04:24:27 PM PDT
         pkt = {'dateTime': 1635031467, 'usUnits': 1, 'outTemp': 87.0, 'rain': 0.04}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # Next day, starts a new week, the high should be 85 (from today)
         # Sunday, October 24, 2021 04:24:27 PM PDT
         pkt = {'dateTime': 1635117867, 'usUnits': 1, 'outTemp': 85.0, 'rain': 0.01}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # Make sure we have a new week accumulator that starts this Sunday 2021-10-24.
-        self.assertEqual(timestamp_to_string(payload.week_accum.timespan.start), '2021-10-24 00:00:00 PDT (1635058800)')
-        self.assertEqual(payload.week_accum['outTemp'].max, 85.0)
+        self.assertEqual(timestamp_to_string(accums.week_accum.timespan.start), '2021-10-24 00:00:00 PDT (1635058800)')
+        self.assertEqual(accums.week_accum['outTemp'].max, 85.0)
         self.assertEqual(loopdata_pkt['week.outTemp.max'], '85.0°F')
+
+    def test_changing_periods_rainyear_start_1(self):
+        specified_fields = [ 'current.outTemp', 'trend.outTemp',
+                             '2m.outTemp.max', '2m.outTemp.min', '2m.outTemp.avg',
+                             '10m.outTemp.max', '10m.outTemp.min', '10m.outTemp.avg',
+                             '24h.rain.sum', '24h.outTemp.min', '24h.outTemp.avg',
+                             'hour.outTemp.max', 'hour.outTemp.min', 'hour.outTemp.avg',
+                             'day.outTemp.max', 'day.outTemp.min', 'day.outTemp.avg',
+                             'week.outTemp.max', 'week.outTemp.min', 'week.outTemp.avg',
+                             'month.outTemp.max', 'month.outTemp.min', 'month.outTemp.avg',
+                             'year.outTemp.max', 'year.outTemp.min', 'year.outTemp.avg',
+                             'rainyear.outTemp.max', 'rainyear.outTemp.min', 'rainyear.outTemp.avg',
+                             'alltime.outTemp.max', 'alltime.outTemp.min', 'alltime.outTemp.avg']
+        cfg = ProcessPacketTests._get_config('us', 10800, 1, 6, specified_fields)
+
+        # July 1, 2020 Noon PDT
+        pkt = {'dateTime': 1593630000, 'usUnits': 1, 'outTemp': 77.4, 'rain': 0.01}
+
+        accums = ProcessPacketTests._get_accums(cfg, pkt['dateTime'])
+
+        # First packet.
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
+
+        # Next packet 1 minute later
+        pkt = {'dateTime': 1593630060, 'usUnits': 1, 'outTemp': 77.3}
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
+
+        self.maxDiff = None
+        self.assertEqual(loopdata_pkt['current.outTemp'], '77.3°F')
+        self.assertEqual(loopdata_pkt['2m.outTemp.max'], '77.4°F')
+        self.assertEqual(loopdata_pkt['2m.outTemp.min'], '77.3°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.max'], '77.4°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.min'], '77.3°F')
+        self.assertEqual(loopdata_pkt['24h.rain.sum'], '0.01 in')
+        self.assertEqual(loopdata_pkt['24h.outTemp.min'], '77.3°F')
+        self.assertEqual(loopdata_pkt['24h.outTemp.avg'], '77.3°F')
+        # New hour, since previous record (noon) was part of prev. hour.
+        self.assertEqual(loopdata_pkt['hour.outTemp.max'], '77.3°F')
+        self.assertEqual(loopdata_pkt['hour.outTemp.min'], '77.3°F')
+        self.assertEqual(loopdata_pkt['trend.outTemp'], '-18.0°F')
+
+        # Next packet 9 minute later
+        pkt = {'dateTime': 1593630600, 'usUnits': 1, 'outTemp': 77.2, 'rain': 0.01}
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
+
+        self.maxDiff = None
+        self.assertEqual(loopdata_pkt['current.outTemp'], '77.2°F')
+        # Previous max should have dropped off of 10m.
+        self.assertEqual(loopdata_pkt['10m.outTemp.max'], '77.3°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.min'], '77.2°F')
+        # hour
+        self.assertEqual(loopdata_pkt['hour.outTemp.max'], '77.3°F')
+        self.assertEqual(loopdata_pkt['hour.outTemp.min'], '77.2°F')
+        self.assertEqual(loopdata_pkt['trend.outTemp'], '-3.6°F')
+        # 24h
+        self.assertEqual(loopdata_pkt['24h.rain.sum'], '0.02 in')
+
+        # Next packet 2:51 later
+        pkt = {'dateTime': 1593640860, 'usUnits': 1, 'outTemp': 76.9, 'rain': 0.00}
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
+
+        self.maxDiff = None
+        self.assertEqual(loopdata_pkt['current.outTemp'], '76.9°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.max'], '76.9°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.min'], '76.9°F')
+        self.assertEqual(loopdata_pkt['hour.outTemp.max'], '76.9°F')
+        self.assertEqual(loopdata_pkt['hour.outTemp.min'], '76.9°F')
+        self.assertEqual(loopdata_pkt['trend.outTemp'], '-0.3°F')
+        # 24h
+        self.assertEqual(loopdata_pkt['24h.rain.sum'], '0.02 in')
+
+        # Next packet 4:00 later
+        pkt = {'dateTime': 1593655260, 'usUnits': 1, 'outTemp': 75.0, 'rain': 0.01}
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
+
+        self.maxDiff = None
+        self.assertEqual(loopdata_pkt['current.outTemp'], '75.0°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.max'], '75.0°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.min'], '75.0°F')
+        self.assertEqual(loopdata_pkt['hour.outTemp.max'], '75.0°F')
+        self.assertEqual(loopdata_pkt['hour.outTemp.min'], '75.0°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.min'], '75.0°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.max'], '77.4°F')
+        self.assertEqual(loopdata_pkt.get('trend.outTemp'), None)
+        self.assertEqual(loopdata_pkt['24h.rain.sum'], '0.03 in')
+
+        # Next packet 20:00 later
+        pkt = {'dateTime': 1593727260, 'usUnits': 1, 'outTemp': 70.0, 'rain': 0.00}
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
+
+        self.maxDiff = None
+        self.assertEqual(loopdata_pkt['current.outTemp'], '70.0°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.max'], '70.0°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.min'], '70.0°F')
+        self.assertEqual(loopdata_pkt['hour.outTemp.max'], '70.0°F')
+        self.assertEqual(loopdata_pkt['hour.outTemp.min'], '70.0°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.min'], '70.0°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.max'], '70.0°F')
+        self.assertEqual(loopdata_pkt.get('trend.outTemp'), None)
+        # 24h
+        self.assertEqual(loopdata_pkt['24h.rain.sum'], '0.01 in')
+
+        # Add another temp a minute later so we get a trend
+        pkt = {'dateTime': 1593727320, 'usUnits': 1, 'outTemp': 70.0, 'rain': 0.04}
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
+
+        self.maxDiff = None
+        self.assertEqual(loopdata_pkt['current.outTemp'],  '70.0°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.max'],  '70.0°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.min'],  '70.0°F')
+        self.assertEqual(loopdata_pkt['hour.outTemp.max'],  '70.0°F')
+        self.assertEqual(loopdata_pkt['hour.outTemp.min'],  '70.0°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.min'],  '70.0°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.max'],  '70.0°F')
+        self.assertEqual(loopdata_pkt['trend.outTemp'],    '0.0°F')
+        self.assertEqual(loopdata_pkt['week.outTemp.min'], '70.0°F')
+        self.assertEqual(loopdata_pkt['week.outTemp.max'], '77.4°F')
+        self.assertEqual(loopdata_pkt['month.outTemp.min'], '70.0°F')
+        self.assertEqual(loopdata_pkt['month.outTemp.max'], '77.4°F')
+        # 24h
+        self.assertEqual(loopdata_pkt['24h.rain.sum'], '0.05 in')
+
+        # Jump a week
+        pkt = {'dateTime': 1594332120, 'usUnits': 1, 'outTemp': 66.0, 'rain': 0.00}
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
+
+        self.maxDiff = None
+        self.assertEqual(loopdata_pkt['current.outTemp'],  '66.0°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.max'],  '66.0°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.min'],  '66.0°F')
+        self.assertEqual(loopdata_pkt['hour.outTemp.max'],  '66.0°F')
+        self.assertEqual(loopdata_pkt['hour.outTemp.min'],  '66.0°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.min'],  '66.0°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.max'],  '66.0°F')
+        self.assertEqual(loopdata_pkt['week.outTemp.min'], '66.0°F')
+        self.assertEqual(loopdata_pkt['week.outTemp.max'], '66.0°F')
+        self.assertEqual(loopdata_pkt['month.outTemp.min'], '66.0°F')
+        self.assertEqual(loopdata_pkt['month.outTemp.max'], '77.4°F')
+        self.assertEqual(loopdata_pkt.get('trend.outTemp'), None)
+        # 24h
+        self.assertEqual(loopdata_pkt['24h.rain.sum'], '0.00 in')
+
+        # Jump a month
+        pkt = {'dateTime': 1597010520, 'usUnits': 1, 'outTemp': 88.0, 'rain': 0.01}
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
+
+        self.maxDiff = None
+        self.assertEqual(loopdata_pkt['current.outTemp'],   '88.0°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.max'],   '88.0°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.min'],   '88.0°F')
+        self.assertEqual(loopdata_pkt['hour.outTemp.max'],   '88.0°F')
+        self.assertEqual(loopdata_pkt['hour.outTemp.min'],   '88.0°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.min'],   '88.0°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.max'],   '88.0°F')
+        self.assertEqual(loopdata_pkt['week.outTemp.min'],  '88.0°F')
+        self.assertEqual(loopdata_pkt['week.outTemp.max'],  '88.0°F')
+        self.assertEqual(loopdata_pkt['month.outTemp.min'], '88.0°F')
+        self.assertEqual(loopdata_pkt['month.outTemp.max'], '88.0°F')
+        self.assertEqual(loopdata_pkt['year.outTemp.min'],  '66.0°F')
+        self.assertEqual(loopdata_pkt['year.outTemp.max'],  '88.0°F')
+        self.assertEqual(loopdata_pkt.get('trend.outTemp'), None)
+
+        # Jump a year
+        pkt = {'dateTime': 1628546520, 'usUnits': 1, 'outTemp': 99.0, 'rain': 0.02}
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
+
+        self.maxDiff = None
+        self.assertEqual(loopdata_pkt['current.outTemp'],   '99.0°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.max'],   '99.0°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.min'],   '99.0°F')
+        self.assertEqual(loopdata_pkt['hour.outTemp.max'],   '99.0°F')
+        self.assertEqual(loopdata_pkt['hour.outTemp.min'],   '99.0°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.min'],   '99.0°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.max'],   '99.0°F')
+        self.assertEqual(loopdata_pkt['week.outTemp.min'],  '99.0°F')
+        self.assertEqual(loopdata_pkt['week.outTemp.max'],  '99.0°F')
+        self.assertEqual(loopdata_pkt['month.outTemp.min'], '99.0°F')
+        self.assertEqual(loopdata_pkt['month.outTemp.max'], '99.0°F')
+        self.assertEqual(loopdata_pkt['year.outTemp.min'],  '99.0°F')
+        self.assertEqual(loopdata_pkt['year.outTemp.max'],  '99.0°F')
+        self.assertEqual(loopdata_pkt.get('trend.outTemp'), None)
+
+        # Jump a minute
+        pkt = {'dateTime': 1628546580, 'usUnits': 1, 'outTemp': 97.0, 'rain': 0.01}
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
+
+        self.maxDiff = None
+        self.assertEqual(loopdata_pkt['current.outTemp'],       '97.0°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.max'],       '99.0°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.min'],       '97.0°F')
+        self.assertEqual(loopdata_pkt['hour.outTemp.max'],       '99.0°F')
+        self.assertEqual(loopdata_pkt['hour.outTemp.min'],       '97.0°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.min'],       '97.0°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.max'],       '99.0°F')
+        self.assertEqual(loopdata_pkt['week.outTemp.min'],      '97.0°F')
+        self.assertEqual(loopdata_pkt['week.outTemp.max'],      '99.0°F')
+        self.assertEqual(loopdata_pkt['month.outTemp.min'],     '97.0°F')
+        self.assertEqual(loopdata_pkt['month.outTemp.max'],     '99.0°F')
+        self.assertEqual(loopdata_pkt['year.outTemp.min'],      '97.0°F')
+        self.assertEqual(loopdata_pkt['year.outTemp.max'],      '99.0°F')
+        self.assertEqual(loopdata_pkt['rainyear.outTemp.min'],  '97.0°F')
+        self.assertEqual(loopdata_pkt['rainyear.outTemp.max'],  '99.0°F')
+        self.assertEqual(loopdata_pkt['alltime.outTemp.min'],   '66.0°F')
+        self.assertEqual(loopdata_pkt['alltime.outTemp.max'],   '99.0°F')
+        self.assertEqual(loopdata_pkt['trend.outTemp'],         '-360.0°F')
+
+        # Jump to October 15 (NOT a new rain year)
+        # Friday, October 15, 2021 12:00:00 PM GMT-07:00 DST
+        pkt = {'dateTime': 1634324400, 'usUnits': 1, 'outTemp': 41.0, 'rain': 0.00}
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
+
+        self.maxDiff = None
+        self.assertEqual(loopdata_pkt['current.outTemp'],       '41.0°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.max'],       '41.0°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.min'],       '41.0°F')
+        self.assertEqual(loopdata_pkt['hour.outTemp.max'],       '41.0°F')
+        self.assertEqual(loopdata_pkt['hour.outTemp.min'],       '41.0°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.min'],       '41.0°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.max'],       '41.0°F')
+        self.assertEqual(loopdata_pkt['week.outTemp.min'],      '41.0°F')
+        self.assertEqual(loopdata_pkt['week.outTemp.max'],      '41.0°F')
+        self.assertEqual(loopdata_pkt['month.outTemp.min'],     '41.0°F')
+        self.assertEqual(loopdata_pkt['month.outTemp.max'],     '41.0°F')
+        self.assertEqual(loopdata_pkt['year.outTemp.min'],      '41.0°F')
+        self.assertEqual(loopdata_pkt['year.outTemp.max'],      '99.0°F')
+        self.assertEqual(loopdata_pkt['rainyear.outTemp.min'],  '41.0°F')
+        self.assertEqual(loopdata_pkt['rainyear.outTemp.max'],  '99.0°F')
+        self.assertEqual(loopdata_pkt['alltime.outTemp.min'],   '41.0°F')
+        self.assertEqual(loopdata_pkt['alltime.outTemp.max'],   '99.0°F')
+        self.assertEqual(loopdata_pkt.get('trend.outTemp'), None)
+
+        # 1s later
+        pkt = {'dateTime': 1634324401, 'usUnits': 1, 'outTemp': 42.0, 'rain': 0.01}
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
+
+        self.maxDiff = None
+        self.assertEqual(loopdata_pkt['current.outTemp'],       '42.0°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.min'],       '41.0°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.max'],       '42.0°F')
+        self.assertEqual(loopdata_pkt['10m.outTemp.avg'],       '41.5°F')
+        # One second later starts new hour.
+        self.assertEqual(loopdata_pkt['hour.outTemp.min'],       '42.0°F')
+        self.assertEqual(loopdata_pkt['hour.outTemp.max'],       '42.0°F')
+        self.assertEqual(loopdata_pkt['hour.outTemp.avg'],       '42.0°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.min'],       '41.0°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.max'],       '42.0°F')
+        self.assertEqual(loopdata_pkt['day.outTemp.avg'],       '41.5°F')
+        self.assertEqual(loopdata_pkt['week.outTemp.min'],      '41.0°F')
+        self.assertEqual(loopdata_pkt['week.outTemp.max'],      '42.0°F')
+        self.assertEqual(loopdata_pkt['week.outTemp.avg'],      '41.5°F')
+        self.assertEqual(loopdata_pkt['month.outTemp.min'],     '41.0°F')
+        self.assertEqual(loopdata_pkt['month.outTemp.max'],     '42.0°F')
+        self.assertEqual(loopdata_pkt['month.outTemp.avg'],     '41.5°F')
+        self.assertEqual(loopdata_pkt['year.outTemp.min'],      '41.0°F')
+        self.assertEqual(loopdata_pkt['year.outTemp.max'],      '99.0°F')
+        self.assertEqual(loopdata_pkt['year.outTemp.avg'],      '69.8°F')
+        self.assertEqual(loopdata_pkt['rainyear.outTemp.min'],  '41.0°F')
+        self.assertEqual(loopdata_pkt['rainyear.outTemp.max'],  '99.0°F')
+        self.assertEqual(loopdata_pkt['rainyear.outTemp.avg'],  '69.8°F')
+        self.assertEqual(loopdata_pkt['alltime.outTemp.min'],   '41.0°F')
+        self.assertEqual(loopdata_pkt['alltime.outTemp.max'],   '99.0°F')
+        self.assertEqual(loopdata_pkt['alltime.outTemp.avg'],   '73.6°F')
+        self.assertEqual(loopdata_pkt['trend.outTemp'],         '10800.0°F')
+
+        # About 2 days later, Sunday, October 17, 2021 04:24:27 PM PDT
+        pkt = {'dateTime': 1634513067, 'usUnits': 1, 'outTemp': 88.0, 'rain': 0.00}
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
+
+        # Next day, Monday, October 18, 2021 04:24:27 PM PDT
+        pkt = {'dateTime': 1634599467, 'usUnits': 1, 'outTemp': 87.5, 'rain': 0.01}
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
+
+        # 6 days later, Saturday, October 23, 2021 04:24:27 PM PDT
+        pkt = {'dateTime': 1635031467, 'usUnits': 1, 'outTemp': 87.0, 'rain': 0.04}
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
+
+        # Next day, starts a new week, the high should be 85 (from today)
+        # Sunday, October 24, 2021 04:24:27 PM PDT
+        pkt = {'dateTime': 1635117867, 'usUnits': 1, 'outTemp': 85.0, 'rain': 0.01}
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
+
+        # Make sure we have a new week accumulator that starts this Sunday 2021-10-24.
+        self.assertEqual(timestamp_to_string(accums.week_accum.timespan.start), '2021-10-24 00:00:00 PDT (1635058800)')
+        self.assertEqual(accums.week_accum['outTemp'].max, 85.0)
+        self.assertEqual(loopdata_pkt['week.outTemp.max'], '85.0°F')
+
+        # Jump to January 2 (new rain year)
+        # Sunday, January 2, 2022 1:00:00 PM GMT-08:00
+        pkt = {'dateTime': 1641157200, 'usUnits': 1, 'outTemp': 55.0, 'rain': 0.00}
+        # And 1 minute later.
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
+        pkt = {'dateTime': 1641157260, 'usUnits': 1, 'outTemp': 60.0, 'rain': 0.00}
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
+        self.assertEqual(loopdata_pkt['year.outTemp.min'],      '55.0°F')
+        self.assertEqual(loopdata_pkt['year.outTemp.max'],      '60.0°F')
+        self.assertEqual(loopdata_pkt['year.outTemp.avg'],      '57.5°F')
+        self.assertEqual(loopdata_pkt['rainyear.outTemp.min'],  '55.0°F')
+        self.assertEqual(loopdata_pkt['rainyear.outTemp.max'],  '60.0°F')
+        self.assertEqual(loopdata_pkt['rainyear.outTemp.avg'],  '57.5°F')
 
     def test_changing_periods_week_start_0(self):
         specified_fields = [ 'current.outTemp', 'trend.outTemp',
@@ -1153,17 +1419,18 @@ class ProcessPacketTests(unittest.TestCase):
                              'year.outTemp.max', 'year.outTemp.min', 'year.outTemp.avg',
                              'rainyear.outTemp.max', 'rainyear.outTemp.min', 'rainyear.outTemp.avg',
                              'alltime.outTemp.max', 'alltime.outTemp.min', 'alltime.outTemp.avg']
+        cfg = ProcessPacketTests._get_config('us', 10800, 10, 0, specified_fields)
         # July 1, 2020 Noon PDT
         pkt = {'dateTime': 1593630000, 'usUnits': 1, 'outTemp': 77.4}
-        payload = ProcessPacketTests._get_payload('us', 10800, 0, specified_fields, pkt)
-        self.assertEqual(payload.week_start, 0)
+        accums = ProcessPacketTests._get_accums(cfg, pkt['dateTime'])
+        self.assertEqual(cfg.week_start, 0)
 
         # First packet.
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # Next packet 1 minute later
         pkt = {'dateTime': 1593630060, 'usUnits': 1, 'outTemp': 77.3}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'], '77.3°F')
@@ -1173,7 +1440,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # Next packet 9 minute later
         pkt = {'dateTime': 1593630600, 'usUnits': 1, 'outTemp': 77.2}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'], '77.2°F')
@@ -1184,7 +1451,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # Next packet 2:51 later
         pkt = {'dateTime': 1593640860, 'usUnits': 1, 'outTemp': 76.9}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'], '76.9°F')
@@ -1194,7 +1461,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # Next packet 4:00 later
         pkt = {'dateTime': 1593655260, 'usUnits': 1, 'outTemp': 75.0}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'], '75.0°F')
@@ -1206,7 +1473,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # Next packet 20:00 later
         pkt = {'dateTime': 1593727260, 'usUnits': 1, 'outTemp': 70.0}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'], '70.0°F')
@@ -1218,7 +1485,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # Add another temp a minute later so we get a trend
         pkt = {'dateTime': 1593727320, 'usUnits': 1, 'outTemp': 70.0}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],  '70.0°F')
@@ -1234,7 +1501,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # Jump a week
         pkt = {'dateTime': 1594332120, 'usUnits': 1, 'outTemp': 66.0}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],  '66.0°F')
@@ -1250,7 +1517,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # Jump a month
         pkt = {'dateTime': 1597010520, 'usUnits': 1, 'outTemp': 88.0}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],   '88.0°F')
@@ -1268,7 +1535,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # Jump a year
         pkt = {'dateTime': 1628546520, 'usUnits': 1, 'outTemp': 99.0}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],   '99.0°F')
@@ -1286,7 +1553,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # Jump a minute
         pkt = {'dateTime': 1628546580, 'usUnits': 1, 'outTemp': 97.0}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],       '97.0°F')
@@ -1308,7 +1575,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # Jump to October 15 (new rain year)
         pkt = {'dateTime': 1634324400, 'usUnits': 1, 'outTemp': 41.0}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],       '41.0°F')
@@ -1330,7 +1597,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # 1s later
         pkt = {'dateTime': 1634324401, 'usUnits': 1, 'outTemp': 42.0}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
         self.assertEqual(loopdata_pkt['current.outTemp'],       '42.0°F')
@@ -1359,30 +1626,30 @@ class ProcessPacketTests(unittest.TestCase):
 
         # About 2 days later, Sunday, October 17, 2021 04:24:27 PM PDT
         pkt = {'dateTime': 1634513067, 'usUnits': 1, 'outTemp': 88.0}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # Make sure we still have the old accumulator that started Monday 2021-10-11.
-        self.assertEqual(timestamp_to_string(payload.week_accum.timespan.start), '2021-10-11 00:00:00 PDT (1633935600)')
+        self.assertEqual(timestamp_to_string(accums.week_accum.timespan.start), '2021-10-11 00:00:00 PDT (1633935600)')
 
         # Next day, Monday, October 18, 2021 04:24:27 PM PDT
         pkt = {'dateTime': 1634599467, 'usUnits': 1, 'outTemp': 87.5}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # Make sure we still have a new accumulator that started Monday 2021-10-18.
-        self.assertEqual(timestamp_to_string(payload.week_accum.timespan.start), '2021-10-18 00:00:00 PDT (1634540400)')
+        self.assertEqual(timestamp_to_string(accums.week_accum.timespan.start), '2021-10-18 00:00:00 PDT (1634540400)')
 
         # 6 days later, Saturday, October 23, 2021 04:24:27 PM PDT
         pkt = {'dateTime': 1635031467, 'usUnits': 1, 'outTemp': 87.0}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # Next day DOES NOT START a new week since week_start is 0, high should be 87.5 (last Monday)
         # Sunday, October 24, 2021 04:24:27 PM PDT
         pkt = {'dateTime': 1635117867, 'usUnits': 1, 'outTemp': 85.0}
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # Make sure we still have the accumulator that started Monday 2021-10-18.
-        self.assertEqual(timestamp_to_string(payload.week_accum.timespan.start), '2021-10-18 00:00:00 PDT (1634540400)')
-        self.assertEqual(payload.week_accum['outTemp'].max, 87.5)
+        self.assertEqual(timestamp_to_string(accums.week_accum.timespan.start), '2021-10-18 00:00:00 PDT (1634540400)')
+        self.assertEqual(accums.week_accum['outTemp'].max, 87.5)
         self.assertEqual(loopdata_pkt['week.outTemp.max'], '87.5°F')
 
     def test_new_db_startup(self):
@@ -1438,13 +1705,14 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windDir',
             'unit.label.windSpeed']
 
-        payload = ProcessPacketTests._get_payload('us', 10800, 6, wind_fields, pkts[0])
+        cfg = ProcessPacketTests._get_config('us', 10800, 10, 6, wind_fields)
 
         self.maxDiff = None
 
         # Test when adding very first packet.
         pkt = pkts[0]
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        accums = ProcessPacketTests._get_accums(cfg, pkt['dateTime'])
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # {'dateTime': 1665796967, 'usUnits': 1, 'windDir': 355.0, 'windSpeed': 4.0, 'outTemp': 69.1}
         self.assertEqual(loopdata_pkt['unit.label.outTemp'], '°F')
@@ -1500,7 +1768,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # Add 2nd packet.
         pkt = pkts[1]
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # {'dateTime': 1665796967, 'usUnits': 1, 'windDir': 355.0, 'windSpeed': 4.0, 'outTemp': 69.1}
         # {'dateTime': 1665796969, 'usUnits': 1, 'windDir':   5.0, 'windSpeed': 3.0, 'outTemp': 69.2},
@@ -1557,7 +1825,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         # Add 3rd packet.
         pkt = pkts[2]
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # {'dateTime': 1665796967, 'usUnits': 1, 'windDir': 355.0, 'windSpeed': 4.0, 'outTemp': 69.1}
         # {'dateTime': 1665796969, 'usUnits': 1, 'windDir':   5.0, 'windSpeed': 3.0, 'outTemp': 69.2}
@@ -1665,10 +1933,11 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windDir',
             'unit.label.windSpeed']
 
-        payload = ProcessPacketTests._get_payload('us', 10800, 6, wind_fields, pkts[0])
+        cfg = ProcessPacketTests._get_config('us', 10800, 10, 6, wind_fields)
 
+        accums = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
         for pkt in pkts:
-            loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+            loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
 
@@ -1761,10 +2030,11 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windDir',
             'unit.label.windSpeed']
 
-        payload = ProcessPacketTests._get_payload('us', 10800, 6, wind_fields, pkts[0])
+        cfg = ProcessPacketTests._get_config('us', 10800, 10, 6, wind_fields)
 
+        accums = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
         for pkt in pkts:
-            loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+            loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
 
@@ -1857,10 +2127,11 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windDir',
             'unit.label.windSpeed']
 
-        payload = ProcessPacketTests._get_payload('us', 10800, 6, wind_fields, pkts[0])
+        cfg = ProcessPacketTests._get_config('us', 10800, 10, 6, wind_fields)
 
         pkt = pkts[0]
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        accums = ProcessPacketTests._get_accums(cfg, pkt['dateTime'])
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
 
@@ -1904,7 +2175,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.windSpeed.maxtime.raw'], 1665796967)
 
         pkt = pkts[1]
-        loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # {'dateTime': 1665796967, 'usUnits': 1, 'windGust': 0.0, 'windSpeed': 0.0}
         # {'dateTime': 1665796969, 'usUnits': 1, 'windDir':   5.0, 'windGust': 200.0, 'windGustDir':   5.0, 'windrun': None, 'windSpeed': 200.0}
@@ -1949,10 +2220,11 @@ class ProcessPacketTests(unittest.TestCase):
     def test_ip100_packet_processing(self):
         pkts = ip100_packets.IP100Packets._get_packets()
 
-        payload = ProcessPacketTests._get_payload('us', 10800, 6, ProcessPacketTests._get_specified_fields(), pkts[0])
+        cfg = ProcessPacketTests._get_config('us', 10800, 10, 6, ProcessPacketTests._get_specified_fields())
 
+        accums = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
         for pkt in pkts:
-            loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+            loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # {'dateTime': 1593883054, 'usUnits': 1, 'outTemp': 71.6, 'barometer': 30.060048358389471, 'dewpoint': 60.48739574937819
         # {'dateTime': 1593883332, 'usUnits': 1, 'outTemp': 72.0, 'barometer': 30.055425865734495, 'dewpoint': 59.57749595318801
@@ -2064,10 +2336,11 @@ class ProcessPacketTests(unittest.TestCase):
     def test_ip100_us_packets_to_metric_db_to_us_report_processing(self):
         pkts = ip100_packets.IP100Packets._get_packets()
 
-        payload = ProcessPacketTests._get_payload('db-metric.report-us', 10800, 6, ProcessPacketTests._get_specified_fields(), pkts[0])
+        cfg = ProcessPacketTests._get_config('db-metric.report-us', 10800, 10, 6, ProcessPacketTests._get_specified_fields())
 
+        accums = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
         for pkt in pkts:
-            loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+            loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # {'dateTime': 1593883054, 'usUnits': 1, 'outTemp': 71.6, 'barometer': 30.060048358389471, 'dewpoint': 60.48739574937819
         # {'dateTime': 1593883332, 'usUnits': 1, 'outTemp': 72.0, 'barometer': 30.055425865734495, 'dewpoint': 59.57749595318801
@@ -2167,12 +2440,13 @@ class ProcessPacketTests(unittest.TestCase):
     def test_vantage_pro2_packet_processing(self):
         pkts = vantagepro2_packets.VantagePro2Packets._get_batch_one_packets()
 
-        payload = ProcessPacketTests._get_payload('us', 10800, 6, ProcessPacketTests._get_specified_fields(), pkts[0])
+        cfg = ProcessPacketTests._get_config('us', 10800, 10, 6, ProcessPacketTests._get_specified_fields())
+
+        accums = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
 
         # Batch One
-
         for pkt in pkts:
-            loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+            loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # {'altimeter': '29.7797704917861', 'appTemp': '63.987293613602574', 'barometer': '29.777', 'cloudbase': '1277.245423375492', 'consBatteryVoltage': '3.78', 'dateTime': '1665797353', 'dayET': '0.087', 'dayRain': '0.0', 'dewpoint': '56.828520137147834', 'ET': 'None', 'extraAlarm1': '0', 'extraAlarm2': '0', 'extraAlarm3': '0', 'extraAlarm4': '0', 'extraAlarm5': '0', 'extraAlarm6': '0', 'extraAlarm7': '0', 'extraAlarm8': '0', 'extraHumid1': '63.0', 'extraHumid2': '50.0', 'extraTemp1': '72.0', 'extraTemp2': '76.9', 'forecastIcon': '6', 'forecastRule': '190', 'heatindex': '62.194', 'humidex': '68.24125795353245', 'inDewpoint': '58.70188105843598', 'inHumidity': '63.0', 'insideAlarm': '0', 'inTemp': '72.0', 'maxSolarRad': '0.004442804340921485', 'monthET': '1.49', 'monthRain': '0.0', 'outHumidity': '82.0', 'outsideAlarm1': '0', 'outsideAlarm2': '0', 'outTemp': '62.4', 'pm1_0': '4.6875', 'pm2_5': '5.080500000000001', 'pm2_5_aqi': '21', 'pm2_5_aqi_color': '32768', 'pm10_0': '8.0', 'pressure': '29.765246956632804', 'radiation': '5.0', 'rain': '0.0', 'rainAlarm': '0', 'rainRate': '0.0', 'soilLeafAlarm1': '0', 'soilLeafAlarm2': '0', 'soilLeafAlarm3': '0', 'soilLeafAlarm4': '0', 'stormRain': '0.0', 'sunrise': '1665756960', 'sunset': '1665797520', 'txBatteryStatus': '0', 'usUnits': '1', 'UV': '0.0', 'windchill': '62.4', 'windDir': '296.0', 'windGust': '3.0', 'windGustDir': '77.0', 'windrun': 'None', 'windSpeed': '1.0', 'windSpeed10': '2.0', 'yearET': '45.86', 'yearRain': '0.0'}])
 
@@ -2310,7 +2584,7 @@ class ProcessPacketTests(unittest.TestCase):
         pkts = vantagepro2_packets.VantagePro2Packets._get_batch_two_packets()
 
         for pkt in pkts:
-            loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+            loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # {'altimeter': '29.77677022521029', 'appTemp': '62.44239660171717', 'barometer': '29.774', 'cloudbase': '1198.7225365853292', 'consBatteryVoltage': '3.78', 'dateTime': '1665797745', 'dayET': '0.087', 'dayRain': '0.0', 'dewpoint': '56.77402083902455', 'ET': 'None', 'extraAlarm1': '0', 'extraAlarm2': '0', 'extraAlarm3': '0', 'extraAlarm4': '0', 'extraAlarm5': '0', 'extraAlarm6': '0', 'extraAlarm7': '0', 'extraAlarm8': '0', 'extraHumid1': '63.0', 'extraHumid2': '50.0', 'extraTemp1': '72.0', 'extraTemp2': '77.0', 'forecastIcon': '6', 'forecastRule': '190', 'heatindex': '61.801', 'humidex': '67.80972824587653', 'inDewpoint': '58.70188105843598', 'inHumidity': '63.0', 'insideAlarm': '0', 'inTemp': '72.0', 'maxSolarRad': '0.0', 'monthET': '1.49', 'monthRain': '0.0', 'outHumidity': '83.0', 'outsideAlarm1': '0', 'outsideAlarm2': '0', 'outTemp': '62.0', 'pm1_0': '5.5', 'pm2_5': '5.0920000000000005', 'pm2_5_aqi': '21', 'pm2_5_aqi_color': '32768', 'pm10_0': '8.5', 'pressure': '29.762248005689198', 'radiation': '0.0', 'rain': '0.0', 'rainAlarm': '0', 'rainRate': '0.0', 'soilLeafAlarm1': '0', 'soilLeafAlarm2': '0', 'soilLeafAlarm3': '0', 'soilLeafAlarm4': '0', 'stormRain': '0.0', 'sunrise': '1665756960', 'sunset': '1665797520', 'txBatteryStatus': '0', 'usUnits': '1', 'UV': '0.0', 'windchill': '62.0', 'windDir': '321.0', 'windGust': '3.0', 'windGustDir': '274.0', 'windrun': 'None', 'windSpeed': '3.0', 'windSpeed10': '1.0', 'yearET': '45.86', 'yearRain': '0.0'}])
 
@@ -2439,12 +2713,13 @@ class ProcessPacketTests(unittest.TestCase):
     def test_custom_time_delta(self):
         pkts = vantagepro2_packets.VantagePro2Packets._get_batch_one_packets()
 
-        payload = ProcessPacketTests._get_payload('us', 600, 6, ProcessPacketTests._get_specified_fields(), pkts[0])
+        cfg = ProcessPacketTests._get_config('us', 600, 10, 6, ProcessPacketTests._get_specified_fields())
+
+        accums = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
 
         # Batch One
-
         for pkt in pkts:
-            loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+            loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
 
@@ -2471,7 +2746,7 @@ class ProcessPacketTests(unittest.TestCase):
         pkts = vantagepro2_packets.VantagePro2Packets._get_batch_two_packets()
 
         for pkt in pkts:
-            loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+            loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
 
@@ -2492,10 +2767,12 @@ class ProcessPacketTests(unittest.TestCase):
     def test_cc3000_packet_processing(self):
         pkts = cc3000_packets.CC3000Packets._get_packets()
 
-        payload = ProcessPacketTests._get_payload('us', 10800, 6, ProcessPacketTests._get_specified_fields(), pkts[0])
+        cfg = ProcessPacketTests._get_config('us', 10800, 10, 6, ProcessPacketTests._get_specified_fields())
+
+        accums = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
 
         for pkt in pkts:
-            loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+            loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # {'dateTime': 1593975030, 'outTemp': 76.1, 'barometer': 30.014857385736513, 'dewpoint': 54.73645937493746
         # {'dateTime': 1593975366, 'outTemp': 75.4, 'barometer': 30.005222168998216, 'dewpoint': 56.53264564000546
@@ -2605,10 +2882,12 @@ class ProcessPacketTests(unittest.TestCase):
 
         pkts = cc3000_packets.CC3000Packets._get_packets()
 
-        payload = ProcessPacketTests._get_payload('db-us.report-metric', 10800, 6, ProcessPacketTests._get_specified_fields(), pkts[0])
+        cfg = ProcessPacketTests._get_config('db-us.report-metric', 10800, 10, 6, ProcessPacketTests._get_specified_fields())
+
+        accums = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
 
         for pkt in pkts:
-            loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+            loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # {'dateTime': 1593975030, 'outTemp': 76.1, 'barometer': 30.014857385736513, 'dewpoint': 54.73645937493746
         # {'dateTime': 1593975366, 'outTemp': 75.4, 'barometer': 30.005222168998216, 'dewpoint': 56.53264564000546
@@ -2706,12 +2985,13 @@ class ProcessPacketTests(unittest.TestCase):
     def test_cc3000_cross_midnight_packet_processing(self):
         pkts = cc3000_cross_midnight_packets.CC3000CrossMidnightPackets._get_pre_midnight_packets()
 
-        payload = ProcessPacketTests._get_payload('us', 10800, 6, ProcessPacketTests._get_specified_fields(), pkts[0])
+        cfg = ProcessPacketTests._get_config('us', 10800, 10, 6, ProcessPacketTests._get_specified_fields())
+
+        accums = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
 
         # Pre Midnight
-
         for pkt in pkts:
-            loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+            loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # {'dateTime': 1595487600, 'outTemp': 57.3, 'outHumidity': 89.0, 'pressure': 29.85,
 
@@ -2833,7 +3113,7 @@ class ProcessPacketTests(unittest.TestCase):
         pkts = cc3000_cross_midnight_packets.CC3000CrossMidnightPackets._get_post_midnight_packets()
 
         for pkt in pkts:
-            loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+            loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # {'dateTime': 1595488500, 'outTemp': 58.2, 'outHumidity': 90.0, 'pressure': 29.85,
 
@@ -2938,13 +3218,14 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.wind.vecdir'], '45°')
 
     def test_simulator_packet_processing(self):
+        cfg = ProcessPacketTests._get_config('metric', 10800, 10, 6, ProcessPacketTests._get_specified_fields())
 
         pkts = simulator_packets.SimulatorPackets._get_packets()
 
-        payload = ProcessPacketTests._get_payload('metric', 10800, 6, ProcessPacketTests._get_specified_fields(), pkts[0])
+        accums = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
 
         for pkt in pkts:
-            loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+            loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # {'dateTime': 1593976709, 'outTemp': 0.3770915275499615,  'barometer': 1053.1667173695532, 'dewpoint': -2.6645899102645934
         # {'dateTime': 1593977615, 'outTemp': 0.032246952164187964,'barometer': 1053.1483031344253, 'dewpoint': -3.003421962855377
@@ -3041,93 +3322,69 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.wind.vecdir'], '360°')
 
     @staticmethod
-    def _get_accums(config_dict, pkt_time):
+    def _get_accums(cfg: user.loopdata.Configuration, pkt_time) -> user.loopdata.Accumulators:
         """
-        Returns alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum, week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum.
+        Returns an Accumulators instance.
         """
-
-        unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
-        rainyear_start: int = to_int(config_dict['Station']['rain_year_start'])
-        week_start: int = to_int(config_dict['Station']['week_start'])
-
-        span = weeutil.weeutil.TimeSpan(86400, 17514144000)
-        alltime_accum = weewx.accum.Accum(span, unit_system)
-
-        span = weeutil.weeutil.archiveRainYearSpan(pkt_time, rainyear_start)
-        rainyear_accum = weewx.accum.Accum(span, unit_system)
-
-        span = weeutil.weeutil.archiveYearSpan(pkt_time)
-        year_accum = weewx.accum.Accum(span, unit_system)
-
-        span = weeutil.weeutil.archiveMonthSpan(pkt_time)
-        month_accum = weewx.accum.Accum(span, unit_system)
-
-        span = weeutil.weeutil.archiveWeekSpan(pkt_time, week_start)
-        week_accum = weewx.accum.Accum(span, unit_system)
-
-        timespan = weeutil.weeutil.archiveDaySpan(pkt_time)
-        day_accum = weewx.accum.Accum(timespan, unit_system=unit_system)
-
-        span = weeutil.weeutil.archiveHoursAgoSpan(pkt_time)
-        hour_accum = weewx.accum.Accum(span, unit_system)
-
-        twentyfour_hour_accum = user.loopdata.ContinuousAccum(86400, unit_system)
-
-        ten_min_accum = user.loopdata.ContinuousAccum(600, unit_system)
-
-        two_min_accum = user.loopdata.ContinuousAccum(120, unit_system)
-
-        trend_accum = user.loopdata.ContinuousAccum(10800, unit_system)
-
-        return alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum, week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum
+        return user.loopdata.Accumulators(
+            alltime_accum         = weewx.accum.Accum(weeutil.weeutil.TimeSpan(86400, 17514144000), cfg.unit_system),
+            rainyear_accum        = weewx.accum.Accum(weeutil.weeutil.archiveRainYearSpan(pkt_time, cfg.rainyear_start), cfg.unit_system),
+            year_accum            = weewx.accum.Accum(weeutil.weeutil.archiveYearSpan(pkt_time), cfg.unit_system),
+            month_accum           = weewx.accum.Accum(weeutil.weeutil.archiveMonthSpan(pkt_time), cfg.unit_system),
+            week_accum            = weewx.accum.Accum(weeutil.weeutil.archiveWeekSpan(pkt_time, cfg.week_start), cfg.unit_system),
+            day_accum             = weewx.accum.Accum(weeutil.weeutil.archiveDaySpan(pkt_time), cfg.unit_system),
+            hour_accum            = weewx.accum.Accum(weeutil.weeutil.archiveHoursAgoSpan(pkt_time), cfg.unit_system),
+            twentyfour_hour_accum = user.loopdata.ContinuousAccum(86400, cfg.unit_system),
+            ten_min_accum         = user.loopdata.ContinuousAccum(600, cfg.unit_system),
+            two_min_accum         = user.loopdata.ContinuousAccum(120, cfg.unit_system),
+            trend_accum           = user.loopdata.ContinuousAccum(10800, cfg.unit_system))
 
     @staticmethod
-    def _get_config_dict(kind):
+    def _get_config(config_dict_kind, time_delta, rainyear_start, week_start, specified_fields) -> user.loopdata.Configuration:
         os.environ['TZ'] = 'America/Los_Angeles'
-        return configobj.ConfigObj('bin/user/tests/weewx.conf.%s' % kind, encoding='utf-8')
-
-    @staticmethod
-    def _get_converter_and_formatter(config_dict):
-        target_report_dict = user.loopdata.LoopData.get_target_report_dict(config_dict, 'SeasonsReport')
-
-        converter = weewx.units.Converter.fromSkinDict(target_report_dict)
-        formatter = weewx.units.Formatter.fromSkinDict(target_report_dict)
-
-        return converter, formatter
-
-    @staticmethod
-    def _get_payload(config_dict_kind, time_delta, week_start, specified_fields, pkt):
-        config_dict = ProcessPacketTests._get_config_dict(config_dict_kind)
-        config_dict['Station']['week_start'] = week_start
-        unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
-
-        pkt_time = pkt['dateTime']
-
-        (alltime_accum, rainyear_accum, rainyear_start, year_accum, month_accum, week_accum,
-            week_start, day_accum, hour_accum, twentyfour_hour_accum, ten_min_accum, two_min_accum, trend_accum) = ProcessPacketTests._get_accums(
-            config_dict, pkt_time)
-
-        converter, formatter = ProcessPacketTests._get_converter_and_formatter(config_dict)
-        assert type(converter) == weewx.units.Converter
-        assert type(formatter) == weewx.units.Formatter
-
+        config_dict         = configobj.ConfigObj('bin/user/tests/weewx.conf.%s' % config_dict_kind, encoding='utf-8')
+        unit_system         = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
+        std_archive_dict    = config_dict.get('StdArchive', {})
         (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
             twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(specified_fields)
 
-        loop_frequency = 2.0
-        baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
-        return Payload(
+        # Get converter and formatter fr SeasonsReport.
+        target_report_dict = user.loopdata.LoopData.get_target_report_dict(config_dict, 'SeasonsReport')
+        converter = weewx.units.Converter.fromSkinDict(target_report_dict)
+        assert type(converter) == weewx.units.Converter
+        formatter = weewx.units.Formatter.fromSkinDict(target_report_dict)
+        assert type(formatter) == weewx.units.Formatter
+
+        return user.loopdata.Configuration(
+            queue                    = queue.SimpleQueue(), # dummy
+            config_dict              = config_dict,
             unit_system              = unit_system,
-            loop_frequency           = loop_frequency,
-            converter                = converter,
+            archive_interval         = to_int(std_archive_dict.get('archive_interval')),
+            loop_data_dir            = '', # dummy
+            filename                 = '', # dummy
+            target_report            = '', # dummy
+            loop_frequency           = 2.0,
+            specified_fields         = specified_fields,
+            fields_to_include        = fields_to_include,
             formatter                = formatter,
+            converter                = converter,
+            tmpname                  = '', # dummy
+            enable                   = True, # dummy
+            remote_server            = '', # dummy
+            remote_port              = 22, # dummy
+            remote_user              = '', # dummy
+            remote_dir               = '', # dummy
+            compress                 = True, # dummy
+            log_success              = False, # dummy
+            ssh_options              = '', # dummy
+            timeout                  = 1, # dummy
+            skip_if_older_than       = 3, # dummy
+            time_delta               = time_delta,
             week_start               = week_start,
             rainyear_start           = rainyear_start,
-            time_delta               = time_delta,
-            baro_trend_descs         = baro_trend_descs,
-            fields_to_include        = fields_to_include,
             current_obstypes         = current_obstypes,
+            trend_obstypes           = trend_obstypes,
             alltime_obstypes         = alltime_obstypes,
             rainyear_obstypes        = rainyear_obstypes,
             year_obstypes            = year_obstypes,
@@ -3138,35 +3395,7 @@ class ProcessPacketTests(unittest.TestCase):
             twentyfour_hour_obstypes = twentyfour_hour_obstypes,
             ten_min_obstypes         = ten_min_obstypes,
             two_min_obstypes         = two_min_obstypes,
-            trend_obstypes           = trend_obstypes,
-            alltime_accum            = alltime_accum,
-            rainyear_accum           = rainyear_accum,
-            year_accum               = year_accum,
-            month_accum              = month_accum,
-            week_accum               = week_accum,
-            day_accum                = day_accum,
-            hour_accum               = hour_accum,
-            twentyfour_hour_accum    = twentyfour_hour_accum,
-            ten_min_accum           = ten_min_accum,
-            two_min_accum            = two_min_accum,
-            trend_accum              = trend_accum)
-
-    @staticmethod
-    def _generate_loopdata(payload: Payload, pkt: Dict[str, Any]) -> Dict[str, Any]:
-        (loopdata_pkt, payload.rainyear_accum, payload.year_accum, payload.month_accum,
-            payload.week_accum, payload.day_accum, payload.hour_accum) = user.loopdata.LoopProcessor.generate_loopdata_dictionary(
-                pkt, pkt['dateTime'], payload.unit_system, payload.loop_frequency,
-                payload.converter, payload.formatter, payload.fields_to_include,
-                payload.current_obstypes, payload.alltime_accum, payload.alltime_obstypes,
-                payload.rainyear_accum, payload.rainyear_start, payload.rainyear_obstypes,
-                payload.year_accum, payload.year_obstypes, payload.month_accum,
-                payload.month_obstypes, payload.week_accum, payload.week_start,
-                payload.week_obstypes, payload.day_accum, payload.day_obstypes,
-                payload.hour_accum, payload.hour_obstypes, payload.twentyfour_hour_accum,
-                payload.twentyfour_hour_obstypes, payload.ten_min_accum, payload.ten_min_obstypes,
-                payload.two_min_accum, payload.two_min_obstypes, payload.time_delta,
-                payload.trend_accum, payload.trend_obstypes, payload.baro_trend_descs)
-        return loopdata_pkt
+            baro_trend_descs         = user.loopdata.LoopData.construct_baro_trend_descs({}))
 
     @staticmethod
     def _get_specified_fields():
