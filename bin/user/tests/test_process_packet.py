@@ -875,7 +875,7 @@ class ProcessPacketTests(unittest.TestCase):
                              'alltime.outTemp.max', 'alltime.outTemp.min', 'alltime.outTemp.avg']
         # July 1, 2020 Noon PDT
         pkt = {'dateTime': 1593630000, 'usUnits': 1, 'outTemp': 77.4, 'rain': 0.01}
-        payload = ProcessPacketTests._get_payload('us', 6, specified_fields, pkt)
+        payload = ProcessPacketTests._get_payload('us', 10800, 6, specified_fields, pkt)
         self.assertEqual(payload.week_start, 6)
 
         # First packet.
@@ -1155,7 +1155,7 @@ class ProcessPacketTests(unittest.TestCase):
                              'alltime.outTemp.max', 'alltime.outTemp.min', 'alltime.outTemp.avg']
         # July 1, 2020 Noon PDT
         pkt = {'dateTime': 1593630000, 'usUnits': 1, 'outTemp': 77.4}
-        payload = ProcessPacketTests._get_payload('us', 0, specified_fields, pkt)
+        payload = ProcessPacketTests._get_payload('us', 10800, 0, specified_fields, pkt)
         self.assertEqual(payload.week_start, 0)
 
         # First packet.
@@ -1438,7 +1438,7 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windDir',
             'unit.label.windSpeed']
 
-        payload = ProcessPacketTests._get_payload('us', 6, wind_fields, pkts[0])
+        payload = ProcessPacketTests._get_payload('us', 10800, 6, wind_fields, pkts[0])
 
         self.maxDiff = None
 
@@ -1665,7 +1665,7 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windDir',
             'unit.label.windSpeed']
 
-        payload = ProcessPacketTests._get_payload('us', 6, wind_fields, pkts[0])
+        payload = ProcessPacketTests._get_payload('us', 10800, 6, wind_fields, pkts[0])
 
         for pkt in pkts:
             loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
@@ -1761,7 +1761,7 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windDir',
             'unit.label.windSpeed']
 
-        payload = ProcessPacketTests._get_payload('us', 6, wind_fields, pkts[0])
+        payload = ProcessPacketTests._get_payload('us', 10800, 6, wind_fields, pkts[0])
 
         for pkt in pkts:
             loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
@@ -1857,7 +1857,7 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windDir',
             'unit.label.windSpeed']
 
-        payload = ProcessPacketTests._get_payload('us', 6, wind_fields, pkts[0])
+        payload = ProcessPacketTests._get_payload('us', 10800, 6, wind_fields, pkts[0])
 
         pkt = pkts[0]
         loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
@@ -1949,7 +1949,7 @@ class ProcessPacketTests(unittest.TestCase):
     def test_ip100_packet_processing(self):
         pkts = ip100_packets.IP100Packets._get_packets()
 
-        payload = ProcessPacketTests._get_payload('us', 6, ProcessPacketTests._get_specified_fields(), pkts[0])
+        payload = ProcessPacketTests._get_payload('us', 10800, 6, ProcessPacketTests._get_specified_fields(), pkts[0])
 
         for pkt in pkts:
             loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
@@ -1996,19 +1996,19 @@ class ProcessPacketTests(unittest.TestCase):
 
         # 30.055425865734495 - 30.060048358389471
         self.assertEqual(loopdata_pkt['trend.barometer'], '-0.180 inHg')
-        self.assertTrue(loopdata_pkt['trend.barometer.raw'] > -0.179578851345 and loopdata_pkt['trend.barometer.raw'] < -0.179578851344)
+        self.assertAlmostEqual(loopdata_pkt['trend.barometer.raw'], -0.1795789, 7)
         self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '-0.180')
         self.assertEqual(loopdata_pkt['trend.barometer.code'], -4)
         self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Falling Very Rapidly')
 
         # 72.0 - 71.6
         self.assertEqual(loopdata_pkt['trend.outTemp'], '15.5°F')
-        self.assertTrue(loopdata_pkt['trend.outTemp.raw'] > 15.5395683453 and loopdata_pkt['trend.outTemp.raw'] < 15.5395683454)
+        self.assertAlmostEqual(loopdata_pkt['trend.outTemp.raw'],  15.5395683, 7)
         self.assertEqual(loopdata_pkt['trend.outTemp.formatted'], '15.5')
 
         # 59.57749595318801 - 60.48739574937819
         self.assertEqual(loopdata_pkt['trend.dewpoint'], '-35.3°F')
-        self.assertTrue(loopdata_pkt['trend.dewpoint.raw'] > -35.3486251758 and loopdata_pkt['trend.dewpoint.raw'] < -35.3486251757)
+        self.assertAlmostEqual(loopdata_pkt['trend.dewpoint.raw'], -35.3486252, 7)
         self.assertEqual(loopdata_pkt['trend.dewpoint.formatted'], '-35.3')
 
         self.assertEqual(loopdata_pkt['day.rain.sum'], '0.00 in')
@@ -2064,7 +2064,7 @@ class ProcessPacketTests(unittest.TestCase):
     def test_ip100_us_packets_to_metric_db_to_us_report_processing(self):
         pkts = ip100_packets.IP100Packets._get_packets()
 
-        payload = ProcessPacketTests._get_payload('db-metric.report-us', 6, ProcessPacketTests._get_specified_fields(), pkts[0])
+        payload = ProcessPacketTests._get_payload('db-metric.report-us', 10800, 6, ProcessPacketTests._get_specified_fields(), pkts[0])
 
         for pkt in pkts:
             loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
@@ -2081,7 +2081,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         self.assertEqual(loopdata_pkt['10m.windGust.max'], '7 mph')
         self.assertEqual(loopdata_pkt['10m.windGust.max.formatted'], '7')
-        self.assertTrue(loopdata_pkt['10m.windGust.max.raw'] > 6.5 and loopdata_pkt['10m.windGust.max.raw'] < 6.51)
+        self.assertAlmostEqual(loopdata_pkt['10m.windGust.max.raw'], 6.5000162, 7)
         self.assertEqual(loopdata_pkt['10m.windGust.maxtime'], '07/04/20 10:18:20')
         self.assertEqual(loopdata_pkt['10m.windGust.maxtime.raw'], 1593883100)
 
@@ -2099,19 +2099,19 @@ class ProcessPacketTests(unittest.TestCase):
 
         # 30.055425865734495 - 30.060048358389471
         self.assertEqual(loopdata_pkt['trend.barometer'], '-0.180 inHg')
-        self.assertTrue(loopdata_pkt['trend.barometer.raw'] > -0.179578851345 and loopdata_pkt['trend.barometer.raw'] < -0.179578851344)
+        self.assertAlmostEqual(loopdata_pkt['trend.barometer.raw'], -0.1795789, 7)
         self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '-0.180')
         self.assertEqual(loopdata_pkt['trend.barometer.code'], -4)
         self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Falling Very Rapidly')
 
         # 72.0 - 71.6
         self.assertEqual(loopdata_pkt['trend.outTemp'], '15.5°F')
-        self.assertTrue(loopdata_pkt['trend.outTemp.raw'] > 15.5395683453 and loopdata_pkt['trend.outTemp.raw'] < 15.5395683454)
+        self.assertAlmostEqual(loopdata_pkt['trend.outTemp.raw'], 15.5395683, 7)
         self.assertEqual(loopdata_pkt['trend.outTemp.formatted'], '15.5')
 
         # 59.57749595318801 - 60.48739574937819
         self.assertEqual(loopdata_pkt['trend.dewpoint'], '-35.3°F')
-        self.assertTrue(loopdata_pkt['trend.dewpoint.raw'] > -35.3486251758 and loopdata_pkt['trend.dewpoint.raw'] < -35.3486251757)
+        self.assertAlmostEqual(loopdata_pkt['trend.dewpoint.raw'], -35.3486252, 7)
         self.assertEqual(loopdata_pkt['trend.dewpoint.formatted'], '-35.3')
 
         self.assertEqual(loopdata_pkt['day.rain.sum'], '0.00 in')
@@ -2167,7 +2167,7 @@ class ProcessPacketTests(unittest.TestCase):
     def test_vantage_pro2_packet_processing(self):
         pkts = vantagepro2_packets.VantagePro2Packets._get_batch_one_packets()
 
-        payload = ProcessPacketTests._get_payload('us', 6, ProcessPacketTests._get_specified_fields(), pkts[0])
+        payload = ProcessPacketTests._get_payload('us', 10800, 6, ProcessPacketTests._get_specified_fields(), pkts[0])
 
         # Batch One
 
@@ -2232,7 +2232,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt.get('current.windDir.ordinal_compass'), 'WNW')
 
         self.assertEqual(loopdata_pkt['trend.barometer'], '0.168 inHg')
-        self.assertTrue(loopdata_pkt['trend.barometer.raw'] > 0.16787564765 and loopdata_pkt['trend.barometer.raw'] < 0.16787564767)
+        self.assertAlmostEqual(loopdata_pkt['trend.barometer.raw'], 0.1678756, 7)
         self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '0.168')
         self.assertEqual(loopdata_pkt['trend.barometer.code'], 3)
         self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Rising Quickly')
@@ -2240,7 +2240,7 @@ class ProcessPacketTests(unittest.TestCase):
         #  -0.5               (unajdusted)
         # -13.989637305699482 (adjusted)
         self.assertEqual(loopdata_pkt['trend.outTemp'], '-14.0°F')
-        self.assertTrue(loopdata_pkt['trend.outTemp.raw'] > -13.9896373057 and loopdata_pkt['trend.outTemp.raw'] < -13.9896373055)
+        self.assertAlmostEqual(loopdata_pkt['trend.outTemp.raw'], -13.9896373, 7)
         self.assertEqual(loopdata_pkt['trend.outTemp.formatted'], '-14.0')
 
         # seconds = 1665797353 - 1665796967 = 386s
@@ -2248,7 +2248,7 @@ class ProcessPacketTests(unittest.TestCase):
         # 56.828520137147834 - 56.828520137147834 = 0.19734268078
         # 0.19734268078 * 27.9792746114 = 5.52150505809
         self.assertEqual(loopdata_pkt['trend.dewpoint'], '5.5°F')
-        self.assertTrue(loopdata_pkt['trend.dewpoint.raw'] > 5.52150505 and loopdata_pkt['trend.dewpoint.raw'] < 5.52150506)
+        self.assertAlmostEqual(loopdata_pkt['trend.dewpoint.raw'], 5.5215051, 7)
         self.assertEqual(loopdata_pkt['trend.dewpoint.formatted'], '5.5')
 
         self.assertEqual(loopdata_pkt['day.rain.sum'], '0.00 in')
@@ -2370,17 +2370,17 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt.get('current.windDir.ordinal_compass'), 'NW')
 
         self.assertEqual(loopdata_pkt['trend.barometer'], '0.042 inHg')
-        self.assertTrue(loopdata_pkt['trend.barometer.raw'] > 0.041645244215 and loopdata_pkt['trend.barometer.raw'] < 0.041645244216)
+        self.assertAlmostEqual(loopdata_pkt['trend.barometer.raw'], 0.0416452, 7)
         self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '0.042')
         self.assertEqual(loopdata_pkt['trend.barometer.code'], 1)
         self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Rising Slowly')
 
         self.assertEqual(loopdata_pkt['trend.outTemp'], '-12.5°F')
-        self.assertTrue(loopdata_pkt['trend.outTemp.raw'] > -12.4935732648 and loopdata_pkt['trend.outTemp.raw'] < -12.4935732647)
+        self.assertAlmostEqual(loopdata_pkt['trend.outTemp.raw'], -12.4935733, 7)
         self.assertEqual(loopdata_pkt['trend.outTemp.formatted'], '-12.5')
 
         self.assertEqual(loopdata_pkt['trend.dewpoint'], '2.0°F')
-        self.assertTrue(loopdata_pkt['trend.dewpoint.raw'] > 1.98291585182 and loopdata_pkt['trend.dewpoint.raw'] < 1.98291585183)
+        self.assertAlmostEqual(loopdata_pkt['trend.dewpoint.raw'], 1.9829159, 7)
         self.assertEqual(loopdata_pkt['trend.dewpoint.formatted'], '2.0')
 
         self.assertEqual(loopdata_pkt['day.rain.sum'], '0.00 in')
@@ -2436,10 +2436,63 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt.get('day.wind.vecdir.formatted'), '332')
         self.assertEqual(loopdata_pkt.get('day.wind.vecdir'), '332°')
 
+    def test_custom_time_delta(self):
+        pkts = vantagepro2_packets.VantagePro2Packets._get_batch_one_packets()
+
+        payload = ProcessPacketTests._get_payload('us', 600, 6, ProcessPacketTests._get_specified_fields(), pkts[0])
+
+        # Batch One
+
+        for pkt in pkts:
+            loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+
+        self.maxDiff = None
+
+        self.assertEqual(loopdata_pkt['trend.barometer'], '0.009 inHg')
+        self.assertAlmostEqual(loopdata_pkt['trend.barometer.raw'], 0.0093264, 7)
+        self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '0.009')
+        self.assertEqual(loopdata_pkt['trend.barometer.code'], 3)
+        self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Rising Quickly')
+
+        self.assertEqual(loopdata_pkt['trend.outTemp'], '-0.8°F')
+        self.assertAlmostEqual(loopdata_pkt['trend.outTemp.raw'], -0.7772021, 7)
+        self.assertEqual(loopdata_pkt['trend.outTemp.formatted'], '-0.8')
+
+        # seconds = 1665797353 - 1665796967 = 386s
+        # 10800 / 386 = 27.9792746114
+        # 56.828520137147834 - 56.828520137147834 = 0.19734268078
+        # 0.19734268078 * 27.9792746114 = 5.52150505809
+        self.assertEqual(loopdata_pkt['trend.dewpoint'], '0.3°F')
+        self.assertAlmostEqual(loopdata_pkt['trend.dewpoint.raw'], 0.3067503, 7)
+        self.assertEqual(loopdata_pkt['trend.dewpoint.formatted'], '0.3')
+
+        # Batch Two
+
+        pkts = vantagepro2_packets.VantagePro2Packets._get_batch_two_packets()
+
+        for pkt in pkts:
+            loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
+
+        self.maxDiff = None
+
+        self.assertEqual(loopdata_pkt['trend.barometer'], '0.002 inHg')
+        self.assertAlmostEqual(loopdata_pkt['trend.barometer.raw'], 0.0023136, 7)
+        self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '0.002')
+        self.assertEqual(loopdata_pkt['trend.barometer.code'], 1)
+        self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Rising Slowly')
+
+        self.assertEqual(loopdata_pkt['trend.outTemp'], '-0.7°F')
+        self.assertAlmostEqual(loopdata_pkt['trend.outTemp.raw'],-0.6940874, 7)
+        self.assertEqual(loopdata_pkt['trend.outTemp.formatted'], '-0.7')
+
+        self.assertEqual(loopdata_pkt['trend.dewpoint'], '0.1°F')
+        self.assertAlmostEqual(loopdata_pkt['trend.dewpoint.raw'], 0.110162, 7)
+        self.assertEqual(loopdata_pkt['trend.dewpoint.formatted'], '0.1')
+
     def test_cc3000_packet_processing(self):
         pkts = cc3000_packets.CC3000Packets._get_packets()
 
-        payload = ProcessPacketTests._get_payload('us', 6, ProcessPacketTests._get_specified_fields(), pkts[0])
+        payload = ProcessPacketTests._get_payload('us', 10800, 6, ProcessPacketTests._get_specified_fields(), pkts[0])
 
         for pkt in pkts:
             loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
@@ -2485,18 +2538,18 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['current.windDir.ordinal_compass'], 'NE')
 
         self.assertEqual(loopdata_pkt['trend.barometer'], '-0.310 inHg')
-        self.assertTrue(loopdata_pkt['trend.barometer.raw'] > -0.30970339516 and loopdata_pkt['trend.barometer.raw'] < -0.30970339515)
+        self.assertAlmostEqual(loopdata_pkt['trend.barometer.raw'], -0.3097034, 7)
         self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '-0.310')
         self.assertEqual(loopdata_pkt['trend.barometer.code'], -4)
         self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Falling Very Rapidly')
 
         self.assertEqual(loopdata_pkt['trend.outTemp'], '-22.5°F')
-        self.assertTrue(loopdata_pkt['trend.outTemp.raw'] > -22.5 and loopdata_pkt['trend.outTemp.raw'] < -22.4999999999)
+        self.assertAlmostEqual(loopdata_pkt['trend.outTemp.raw'], -22.5, 7)
         self.assertEqual(loopdata_pkt['trend.outTemp.formatted'], '-22.5')
 
         # 56.53264564000546 - 54.73645937493746
         self.assertEqual(loopdata_pkt['trend.dewpoint'], '57.7°F')
-        self.assertTrue(loopdata_pkt['trend.dewpoint.raw'] > 57.7345585200 and loopdata_pkt['trend.dewpoint.raw'] < 57.7345585202)
+        self.assertAlmostEqual(loopdata_pkt['trend.dewpoint.raw'], 57.7345585, 7)
         self.assertEqual(loopdata_pkt['trend.dewpoint.formatted'], '57.7')
 
         self.assertEqual(loopdata_pkt['day.rain.sum'], '0.00 in')
@@ -2552,7 +2605,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         pkts = cc3000_packets.CC3000Packets._get_packets()
 
-        payload = ProcessPacketTests._get_payload('db-us.report-metric', 6, ProcessPacketTests._get_specified_fields(), pkts[0])
+        payload = ProcessPacketTests._get_payload('db-us.report-metric', 10800, 6, ProcessPacketTests._get_specified_fields(), pkts[0])
 
         for pkt in pkts:
             loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
@@ -2569,13 +2622,13 @@ class ProcessPacketTests(unittest.TestCase):
 
         self.assertEqual(loopdata_pkt['10m.windGust.max'], '12 km/h')
         self.assertEqual(loopdata_pkt['10m.windGust.max.formatted'], '12')
-        self.assertTrue(loopdata_pkt['10m.windGust.max.raw'] > 11.5872 and loopdata_pkt['10m.windGust.max.raw'] < 11.5873)
+        self.assertAlmostEqual(loopdata_pkt['10m.windGust.max.raw'], 11.5872768, 7)
         self.assertEqual(loopdata_pkt['10m.windGust.maxtime'], '07/05/20 11:50:30')
         self.assertEqual(loopdata_pkt['10m.windGust.maxtime.raw'], 1593975030)
 
         self.assertEqual(loopdata_pkt['10m.outTemp.max'], '24.6°C')
         self.assertEqual(loopdata_pkt['10m.outTemp.max.formatted'], '24.6')
-        self.assertTrue(loopdata_pkt['10m.outTemp.max.raw'] > 24.611 and loopdata_pkt['10m.outTemp.max.raw'] < 24.612)
+        self.assertAlmostEqual(loopdata_pkt['10m.outTemp.max.raw'], 24.6111111, 7)
         self.assertEqual(loopdata_pkt['10m.outTemp.maxtime'], '07/05/20 11:50:34')
         self.assertEqual(loopdata_pkt['10m.outTemp.maxtime.raw'], 1593975034)
 
@@ -2587,18 +2640,18 @@ class ProcessPacketTests(unittest.TestCase):
 
         # 30.005222168998216 - 30.014857385736513
         self.assertEqual(loopdata_pkt['trend.barometer'], '-10.5 mbar')
-        self.assertTrue(loopdata_pkt['trend.barometer.raw'] > -10.4877591012 and loopdata_pkt['trend.barometer.raw'] < -10.4877591010)
+        self.assertAlmostEqual(loopdata_pkt['trend.barometer.raw'], -10.4877591, 7)
         self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '-10.5')
         self.assertEqual(loopdata_pkt['trend.barometer.code'], -4)
         self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Falling Very Rapidly')
 
         self.assertEqual(loopdata_pkt['trend.outTemp'], '-12.5°C')
-        self.assertTrue(loopdata_pkt['trend.outTemp.raw'] > -12.5 and loopdata_pkt['trend.outTemp.raw'] < -12.4999999999)
+        self.assertAlmostEqual(loopdata_pkt['trend.outTemp.raw'], -12.5, 7)
         self.assertEqual(loopdata_pkt['trend.outTemp.formatted'], '-12.5')
 
         # 56.53264564000546 - 54.73645937493746
         self.assertEqual(loopdata_pkt['trend.dewpoint'], '32.1°C')
-        self.assertTrue(loopdata_pkt['trend.dewpoint.raw'] > 32.074754733 and loopdata_pkt['trend.dewpoint.raw'] < 32.074754734)
+        self.assertAlmostEqual(loopdata_pkt['trend.dewpoint.raw'], 32.0747547, 7)
         self.assertEqual(loopdata_pkt['trend.dewpoint.formatted'], '32.1')
 
         self.assertEqual(loopdata_pkt['day.rain.sum'], '0.0 mm')
@@ -2653,7 +2706,7 @@ class ProcessPacketTests(unittest.TestCase):
     def test_cc3000_cross_midnight_packet_processing(self):
         pkts = cc3000_cross_midnight_packets.CC3000CrossMidnightPackets._get_pre_midnight_packets()
 
-        payload = ProcessPacketTests._get_payload('us', 6, ProcessPacketTests._get_specified_fields(), pkts[0])
+        payload = ProcessPacketTests._get_payload('us', 10800, 6, ProcessPacketTests._get_specified_fields(), pkts[0])
 
         # Pre Midnight
 
@@ -2713,17 +2766,17 @@ class ProcessPacketTests(unittest.TestCase):
 
         self.assertEqual(loopdata_pkt['trend.barometer'], '0.000 inHg')
         # 0.000060348662600517855
-        self.assertTrue(loopdata_pkt['trend.barometer.raw'] > 0.000060347 and loopdata_pkt['trend.barometer.raw'] < 0.000060349)
+        self.assertAlmostEqual(loopdata_pkt['trend.barometer.raw'], 0.0000603, 7)
         self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '0.000')
         self.assertEqual(loopdata_pkt['trend.barometer.code'], 0)
         self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Steady')
 
         self.assertEqual(loopdata_pkt['trend.outTemp'], '-1.2°F')
-        self.assertTrue(loopdata_pkt['trend.outTemp.raw'] > -1.20001 and loopdata_pkt['trend.outTemp.raw'] < -1.19999)
+        self.assertAlmostEqual(loopdata_pkt['trend.outTemp.raw'], -1.2, 7)
         self.assertEqual(loopdata_pkt['trend.outTemp.formatted'], '-1.2')
 
         self.assertEqual(loopdata_pkt['trend.dewpoint'], '6.3°F')
-        self.assertTrue(loopdata_pkt['trend.dewpoint.raw'] > 6.282497261 and loopdata_pkt['trend.dewpoint.raw'] < 6.282497263)
+        self.assertAlmostEqual(loopdata_pkt['trend.dewpoint.raw'], 6.2824973, 7)
         self.assertEqual(loopdata_pkt['trend.dewpoint.formatted'], '6.3')
 
         self.assertEqual(loopdata_pkt['day.rain.sum'], '0.00 in')
@@ -2822,17 +2875,17 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['current.windDir.ordinal_compass'], 'NE')
 
         self.assertEqual(loopdata_pkt['trend.barometer'], '-0.000 inHg')
-        self.assertTrue(loopdata_pkt['trend.barometer.raw'] > -0.000241and loopdata_pkt['trend.barometer.raw'] < -0.000240)
+        self.assertAlmostEqual(loopdata_pkt['trend.barometer.raw'], -0.000241, 7)
         self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '-0.000')
         self.assertEqual(loopdata_pkt['trend.barometer.code'], 0)
         self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Steady')
 
         self.assertEqual(loopdata_pkt['trend.outTemp'], '4.8°F')
-        self.assertTrue(loopdata_pkt['trend.outTemp.raw'] >  4.8000000000 and loopdata_pkt['trend.outTemp.raw'] <  4.8000000001)
+        self.assertAlmostEqual(loopdata_pkt['trend.outTemp.raw'], 4.8, 7)
         self.assertEqual(loopdata_pkt['trend.outTemp.formatted'], '4.8')
 
         self.assertEqual(loopdata_pkt['trend.dewpoint'], '10.3°F')
-        self.assertTrue(loopdata_pkt['trend.dewpoint.raw'] > 10.3100937860 and loopdata_pkt['trend.dewpoint.raw'] < 10.3100937862)
+        self.assertAlmostEqual(loopdata_pkt['trend.dewpoint.raw'], 10.3100938, 7)
         self.assertEqual(loopdata_pkt['trend.dewpoint.formatted'], '10.3')
 
         self.assertEqual(loopdata_pkt['day.rain.sum'], '0.00 in')
@@ -2888,7 +2941,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         pkts = simulator_packets.SimulatorPackets._get_packets()
 
-        payload = ProcessPacketTests._get_payload('metric', 6, ProcessPacketTests._get_specified_fields(), pkts[0])
+        payload = ProcessPacketTests._get_payload('metric', 10800, 6, ProcessPacketTests._get_specified_fields(), pkts[0])
 
         for pkt in pkts:
             loopdata_pkt = ProcessPacketTests._generate_loopdata(payload, pkt)
@@ -2905,13 +2958,13 @@ class ProcessPacketTests(unittest.TestCase):
 
         self.assertEqual(loopdata_pkt['10m.windGust.max'], '0 km/h')
         self.assertEqual(loopdata_pkt['10m.windGust.max.formatted'], '0')
-        self.assertTrue(loopdata_pkt['10m.windGust.max.raw'] > 0.0052 and loopdata_pkt['10m.windGust.max.raw'] < 0.0053)
+        self.assertAlmostEqual(loopdata_pkt['10m.windGust.max.raw'], 0.0052507, 7)
         self.assertEqual(loopdata_pkt['10m.windGust.maxtime'], '07/05/20 12:33:35')
         self.assertEqual(loopdata_pkt['10m.windGust.maxtime.raw'], 1593977615)
 
         self.assertEqual(loopdata_pkt['10m.outTemp.max'], '1.4°C')
         self.assertEqual(loopdata_pkt['10m.outTemp.max.formatted'], '1.4')
-        self.assertTrue(loopdata_pkt['10m.outTemp.max.raw'] > 1.357893759375 and loopdata_pkt['10m.outTemp.max.raw'] < 1.357893759376)
+        self.assertAlmostEqual(loopdata_pkt['10m.outTemp.max.raw'], 1.3578938, 7)
         self.assertEqual(loopdata_pkt['10m.outTemp.maxtime'], '07/05/20 12:33:19')
         self.assertEqual(loopdata_pkt['10m.outTemp.maxtime.raw'], 1593977599)
 
@@ -2923,19 +2976,19 @@ class ProcessPacketTests(unittest.TestCase):
 
         # 1053.1483031344253 - 1053.1667173695532
         self.assertEqual(loopdata_pkt['trend.barometer'], '-0.2 mbar')
-        self.assertTrue(loopdata_pkt['trend.barometer.raw'] > -0.219507438611 and loopdata_pkt['trend.barometer.raw'] < -0.21950743861)
+        self.assertAlmostEqual(loopdata_pkt['trend.barometer.raw'], -0.2195074, 7)
         self.assertEqual(loopdata_pkt['trend.barometer.formatted'], '-0.2')
         self.assertEqual(loopdata_pkt['trend.barometer.code'], -1)
         self.assertEqual(loopdata_pkt['trend.barometer.desc'], 'Falling Slowly')
 
         # 0.032246952164187964 - 0.3770915275499615
         self.assertEqual(loopdata_pkt['trend.outTemp'], '-4.1°C')
-        self.assertTrue(loopdata_pkt['trend.outTemp.raw'] > -4.1107300378 and loopdata_pkt['trend.outTemp.raw'] < -4.1107300377)
+        self.assertAlmostEqual(loopdata_pkt['trend.outTemp.raw'], -4.11073, 7)
         self.assertEqual(loopdata_pkt['trend.outTemp.formatted'], '-4.1')
 
         # -3.003421962855377 - -2.6645899102645934
         self.assertEqual(loopdata_pkt['trend.dewpoint'], '-4.0°C')
-        self.assertTrue(loopdata_pkt['trend.dewpoint.raw'] > -4.0390575806 and loopdata_pkt['trend.dewpoint.raw'] < -4.0390575805)
+        self.assertAlmostEqual(loopdata_pkt['trend.dewpoint.raw'], -4.0390576, 7)
         self.assertEqual(loopdata_pkt['trend.dewpoint.formatted'], '-4.0')
 
         self.assertEqual(loopdata_pkt['day.rain.sum'], '0.0 mm')
@@ -3043,7 +3096,7 @@ class ProcessPacketTests(unittest.TestCase):
         return converter, formatter
 
     @staticmethod
-    def _get_payload(config_dict_kind, week_start, specified_fields, pkt):
+    def _get_payload(config_dict_kind, time_delta, week_start, specified_fields, pkt):
         config_dict = ProcessPacketTests._get_config_dict(config_dict_kind)
         config_dict['Station']['week_start'] = week_start
         unit_system = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
@@ -3062,7 +3115,6 @@ class ProcessPacketTests(unittest.TestCase):
             year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
             twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(specified_fields)
 
-        time_delta = 10800
         loop_frequency = 2.0
         baro_trend_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
         return Payload(
