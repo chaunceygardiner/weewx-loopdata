@@ -206,12 +206,12 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
 1. Install the `python3-sortedcontainers` package.
    * On debian: `sudo apt install python3-sortedcontainers`
 
-1. Download the lastest release, weewx-loopdata-3.1.zip, from the
+1. Download the lastest release, weewx-loopdata-3.2.zip, from the
    [GitHub Repository](https://github.com/chaunceygardiner/weewx-loopdata).
 
 1. Run the following command.
 
-   `sudo /home/weewx/bin/wee_extension --install weewx-loopdata-3.0.1.zip`
+   `sudo /home/weewx/bin/wee_extension --install weewx-loopdata-3.2.zip`
 
    Note: this command assumes weewx is installed in /home/weewx.  If it's installed
    elsewhere, adjust the path of wee_extension accordingly.

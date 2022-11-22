@@ -15,7 +15,7 @@ import weewx.accum
 from weeutil.weeutil import to_int
 from weeutil.weeutil import timestamp_to_string
 
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional, Set
 
 import weeutil.logger
 
@@ -33,10 +33,11 @@ weeutil.logger.setup('test_config', {})
 
 class ProcessPacketTests(unittest.TestCase):
 
-    def test_parse_cname(self):
+    def test_parse_cname(self) -> None:
         self.maxDiff = None
 
-        cname = user.loopdata.LoopData.parse_cname('unit.label.outTemp')
+        cname: Optional[user.loopdata.CheetahName] = user.loopdata.LoopData.parse_cname('unit.label.outTemp')
+        assert cname is not None
         self.assertEqual(cname.field, 'unit.label.outTemp')
         self.assertEqual(cname.prefix, 'unit')
         self.assertEqual(cname.prefix2, 'label')
@@ -46,6 +47,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
         cname = user.loopdata.LoopData.parse_cname('2m.windGust.max.raw')
+        assert cname is not None
         self.assertEqual(cname.field, '2m.windGust.max.raw')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -64,6 +66,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname, None)
 
         cname = user.loopdata.LoopData.parse_cname('10m.windGust.max.raw')
+        assert cname is not None
         self.assertEqual(cname.field, '10m.windGust.max.raw')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -145,6 +148,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname, None)
 
         cname = user.loopdata.LoopData.parse_cname('week.outTemp.avg')
+        assert cname is not None
         self.assertEqual(cname.field, 'week.outTemp.avg')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -154,6 +158,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
         cname = user.loopdata.LoopData.parse_cname('month.outTemp.avg')
+        assert cname is not None
         self.assertEqual(cname.field, 'month.outTemp.avg')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -163,6 +168,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
         cname = user.loopdata.LoopData.parse_cname('year.outTemp.avg')
+        assert cname is not None
         self.assertEqual(cname.field, 'year.outTemp.avg')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -172,6 +178,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
         cname = user.loopdata.LoopData.parse_cname('rainyear.outTemp.avg')
+        assert cname is not None
         self.assertEqual(cname.field, 'rainyear.outTemp.avg')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -181,6 +188,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
         cname = user.loopdata.LoopData.parse_cname('alltime.outTemp.avg')
+        assert cname is not None
         self.assertEqual(cname.field, 'alltime.outTemp.avg')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -190,6 +198,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
         cname = user.loopdata.LoopData.parse_cname('week.windGust.max.formatted')
+        assert cname is not None
         self.assertEqual(cname.field, 'week.windGust.max.formatted')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -199,6 +208,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, 'formatted')
 
         cname = user.loopdata.LoopData.parse_cname('month.windGust.max.formatted')
+        assert cname is not None
         self.assertEqual(cname.field, 'month.windGust.max.formatted')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -208,6 +218,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, 'formatted')
 
         cname = user.loopdata.LoopData.parse_cname('year.windGust.max.formatted')
+        assert cname is not None
         self.assertEqual(cname.field, 'year.windGust.max.formatted')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -217,6 +228,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, 'formatted')
 
         cname = user.loopdata.LoopData.parse_cname('rainyear.windGust.max.formatted')
+        assert cname is not None
         self.assertEqual(cname.field, 'rainyear.windGust.max.formatted')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -226,6 +238,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, 'formatted')
 
         cname = user.loopdata.LoopData.parse_cname('alltime.windGust.max.formatted')
+        assert cname is not None
         self.assertEqual(cname.field, 'alltime.windGust.max.formatted')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -235,6 +248,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, 'formatted')
 
         cname = user.loopdata.LoopData.parse_cname('2m.windGust.max.formatted')
+        assert cname is not None
         self.assertEqual(cname.field, '2m.windGust.max.formatted')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -244,6 +258,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, 'formatted')
 
         cname = user.loopdata.LoopData.parse_cname('10m.windGust.max.formatted')
+        assert cname is not None
         self.assertEqual(cname.field, '10m.windGust.max.formatted')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -253,6 +268,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, 'formatted')
 
         cname = user.loopdata.LoopData.parse_cname('10m.windGust.maxtime')
+        assert cname is not None
         self.assertEqual(cname.field, '10m.windGust.maxtime')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -262,6 +278,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
         cname = user.loopdata.LoopData.parse_cname('10m.outTemp.max.raw')
+        assert cname is not None
         self.assertEqual(cname.field, '10m.outTemp.max.raw')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -271,6 +288,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, 'raw')
 
         cname = user.loopdata.LoopData.parse_cname('10m.outTemp.max.formatted')
+        assert cname is not None
         self.assertEqual(cname.field, '10m.outTemp.max.formatted')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -280,6 +298,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, 'formatted')
 
         cname = user.loopdata.LoopData.parse_cname('10m.outTemp.maxtime')
+        assert cname is not None
         self.assertEqual(cname.field, '10m.outTemp.maxtime')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -289,6 +308,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
         cname = user.loopdata.LoopData.parse_cname('unit.label.wind')
+        assert cname is not None
         self.assertEqual(cname.field, 'unit.label.wind')
         self.assertEqual(cname.prefix, 'unit')
         self.assertEqual(cname.prefix2, 'label')
@@ -298,6 +318,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
         cname = user.loopdata.LoopData.parse_cname('trend.barometer')
+        assert cname is not None
         self.assertEqual(cname.field, 'trend.barometer')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -307,6 +328,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
         cname = user.loopdata.LoopData.parse_cname('trend.barometer.formatted')
+        assert cname is not None
         self.assertEqual(cname.field, 'trend.barometer.formatted')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -316,6 +338,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, 'formatted')
 
         cname = user.loopdata.LoopData.parse_cname('trend.barometer.code')
+        assert cname is not None
         self.assertEqual(cname.field, 'trend.barometer.code')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -325,6 +348,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, 'code')
 
         cname = user.loopdata.LoopData.parse_cname('trend.barometer.desc')
+        assert cname is not None
         self.assertEqual(cname.field, 'trend.barometer.desc')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -334,6 +358,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, 'desc')
 
         cname = user.loopdata.LoopData.parse_cname('trend.outTemp')
+        assert cname is not None
         self.assertEqual(cname.field, 'trend.outTemp')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -343,6 +368,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
         cname = user.loopdata.LoopData.parse_cname('trend.outTemp.formatted')
+        assert cname is not None
         self.assertEqual(cname.field, 'trend.outTemp.formatted')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -352,6 +378,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, 'formatted')
 
         cname = user.loopdata.LoopData.parse_cname('trend.dewpoint')
+        assert cname is not None
         self.assertEqual(cname.field, 'trend.dewpoint')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -361,6 +388,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
         cname = user.loopdata.LoopData.parse_cname('trend.dewpoint.formatted')
+        assert cname is not None
         self.assertEqual(cname.field, 'trend.dewpoint.formatted')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -370,6 +398,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, 'formatted')
 
         cname = user.loopdata.LoopData.parse_cname('current.outTemp')
+        assert cname is not None
         self.assertEqual(cname.field, 'current.outTemp')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -379,6 +408,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
         cname = user.loopdata.LoopData.parse_cname('current.dateTime')
+        assert cname is not None
         self.assertEqual(cname.field, 'current.dateTime')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -388,6 +418,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
         cname = user.loopdata.LoopData.parse_cname('current.dateTime.raw')
+        assert cname is not None
         self.assertEqual(cname.field, 'current.dateTime.raw')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -397,6 +428,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, 'raw')
 
         cname = user.loopdata.LoopData.parse_cname('current.windSpeed')
+        assert cname is not None
         self.assertEqual(cname.field, 'current.windSpeed')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -406,6 +438,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
         cname = user.loopdata.LoopData.parse_cname('current.windSpeed.ordinal_compass')
+        assert cname is not None
         self.assertEqual(cname.field, 'current.windSpeed.ordinal_compass')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -415,6 +448,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, 'ordinal_compass')
 
         cname = user.loopdata.LoopData.parse_cname('day.rain.sum')
+        assert cname is not None
         self.assertEqual(cname.field, 'day.rain.sum')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -424,6 +458,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
         cname = user.loopdata.LoopData.parse_cname('hour.rain.sum')
+        assert cname is not None
         self.assertEqual(cname.field, 'hour.rain.sum')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -433,6 +468,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
         cname = user.loopdata.LoopData.parse_cname('day.rain.sum.raw')
+        assert cname is not None
         self.assertEqual(cname.field, 'day.rain.sum.raw')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -442,6 +478,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, 'raw')
 
         cname = user.loopdata.LoopData.parse_cname('hour.rain.sum.raw')
+        assert cname is not None
         self.assertEqual(cname.field, 'hour.rain.sum.raw')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -451,6 +488,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, 'raw')
 
         cname = user.loopdata.LoopData.parse_cname('24h.rain.sum.raw')
+        assert cname is not None
         self.assertEqual(cname.field, '24h.rain.sum.raw')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -463,6 +501,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname, None)
 
         cname = user.loopdata.LoopData.parse_cname('day.windGust.max')
+        assert cname is not None
         self.assertEqual(cname.field, 'day.windGust.max')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -472,6 +511,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
         cname = user.loopdata.LoopData.parse_cname('day.windDir.max')
+        assert cname is not None
         self.assertEqual(cname.field, 'day.windDir.max')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -481,6 +521,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
         cname = user.loopdata.LoopData.parse_cname('day.wind.maxtime')
+        assert cname is not None
         self.assertEqual(cname.field, 'day.wind.maxtime')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -490,6 +531,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
         cname = user.loopdata.LoopData.parse_cname('day.wind.max')
+        assert cname is not None
         self.assertEqual(cname.field, 'day.wind.max')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -499,6 +541,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
         cname = user.loopdata.LoopData.parse_cname('day.wind.gustdir')
+        assert cname is not None
         self.assertEqual(cname.field, 'day.wind.gustdir')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -508,6 +551,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
         cname = user.loopdata.LoopData.parse_cname('day.wind.vecavg')
+        assert cname is not None
         self.assertEqual(cname.field, 'day.wind.vecavg')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -517,6 +561,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
         cname = user.loopdata.LoopData.parse_cname('day.wind.vecdir')
+        assert cname is not None
         self.assertEqual(cname.field, 'day.wind.vecdir')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -526,6 +571,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
         cname = user.loopdata.LoopData.parse_cname('day.wind.rms')
+        assert cname is not None
         self.assertEqual(cname.field, 'day.wind.rms')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -536,6 +582,7 @@ class ProcessPacketTests(unittest.TestCase):
 
 
         cname = user.loopdata.LoopData.parse_cname('day.wind.avg')
+        assert cname is not None
         self.assertEqual(cname.field, 'day.wind.avg')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -545,6 +592,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, None)
 
         cname = user.loopdata.LoopData.parse_cname('year.windrun.sum.formatted')
+        assert cname is not None
         self.assertEqual(cname.field, 'year.windrun.sum.formatted')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -554,6 +602,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, 'formatted')
 
         cname = user.loopdata.LoopData.parse_cname('hour.windrun_ENE.sum.formatted')
+        assert cname is not None
         self.assertEqual(cname.field, 'hour.windrun_ENE.sum.formatted')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -563,6 +612,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.format_spec, 'formatted')
 
         cname = user.loopdata.LoopData.parse_cname('day.windrun_W.sum')
+        assert cname is not None
         self.assertEqual(cname.field, 'day.windrun_W.sum')
         self.assertEqual(cname.prefix, None)
         self.assertEqual(cname.prefix2, None)
@@ -571,7 +621,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(cname.agg_type, 'sum')
         self.assertEqual(cname.format_spec, None)
 
-    def test_compose_loop_data_dir(self):
+    def test_compose_loop_data_dir(self) -> None:
         config_dict       : Dict[str, Any] = { 'WEEWX_ROOT'   : '/etc/weewx' }
         target_report_dict: Dict[str, Any] = { 'HTML_ROOT'    : 'public_html/weatherboard'}
         file_spec_dict    : Dict[str, Any] = { 'loop_data_dir': '.'}
@@ -588,15 +638,14 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(user.loopdata.LoopData.compose_loop_data_dir(
             config_dict, target_report_dict, {'loop_data_dir':'foobar'}), '/etc/weewx/public_html/weatherboard/foobar')
 
-    def test_get_fields_to_include(self):
+    def test_get_fields_to_include(self) -> None:
 
-        specified_fields = [ 'current.dateTime.raw', 'current.outTemp', 'trend.barometer.code',
-            'trend.barometer.desc', '2m.wind.max', '2m.wind.gustdir', '10m.wind.max', '10m.wind.gustdir', '10m.windSpeed.max', '10m.windDir.max', '24h.rain.sum', 'hour.inTemp.min', 'hour.inTemp.mintime',
-            'day.barometer.min', 'day.barometer.max', 'day.wind.max', 'day.wind.gustdir', 'day.wind.maxtime' ]
+        specified_fields: Set[str] = {'current.dateTime.raw', 'current.outTemp', 'trend.barometer.code',
+            'trend.barometer.desc', '2m.wind.max', '2m.wind.gustdir', '10m.wind.max', '10m.wind.gustdir',
+            '10m.windSpeed.max', '10m.windDir.max', '24h.rain.sum', 'hour.inTemp.min', 'hour.inTemp.mintime',
+            'day.barometer.min', 'day.barometer.max', 'day.wind.max', 'day.wind.gustdir', 'day.wind.maxtime'}
 
-        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
-            year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(specified_fields)
+        (fields_to_include, obstypes) = user.loopdata.LoopData.get_fields_to_include(specified_fields)
 
         self.assertEqual(len(fields_to_include), 18)
         self.assertTrue(user.loopdata.CheetahName(
@@ -636,48 +685,48 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertTrue(user.loopdata.CheetahName(
             'day.wind.maxtime', None, None, 'day', 'wind', 'maxtime', None) in fields_to_include)
 
-        self.assertEqual(len(current_obstypes), 10)
-        self.assertTrue('inTemp' in current_obstypes)
-        self.assertTrue('outTemp' in current_obstypes)
-        self.assertTrue('barometer' in current_obstypes)
-        self.assertTrue('wind' in current_obstypes)
-        self.assertTrue('windDir' in current_obstypes)
-        self.assertTrue('windGust' in current_obstypes)
-        self.assertTrue('windGustDir' in current_obstypes)
-        self.assertTrue('windSpeed' in current_obstypes)
+        self.assertEqual(len(obstypes.current), 10)
+        self.assertTrue('inTemp' in obstypes.current)
+        self.assertTrue('outTemp' in obstypes.current)
+        self.assertTrue('barometer' in obstypes.current)
+        self.assertTrue('wind' in obstypes.current)
+        self.assertTrue('windDir' in obstypes.current)
+        self.assertTrue('windGust' in obstypes.current)
+        self.assertTrue('windGustDir' in obstypes.current)
+        self.assertTrue('windSpeed' in obstypes.current)
 
-        self.assertEqual(len(trend_obstypes), 1)
-        self.assertTrue('barometer' in trend_obstypes)
+        self.assertEqual(len(obstypes.trend), 1)
+        self.assertTrue('barometer' in obstypes.trend)
 
-        self.assertEqual(len(ten_min_obstypes), 5)
-        self.assertTrue('wind' in ten_min_obstypes)
-        self.assertTrue('windDir' in ten_min_obstypes)
-        self.assertTrue('windGust' in ten_min_obstypes)
-        self.assertTrue('windGustDir' in ten_min_obstypes)
-        self.assertTrue('windSpeed' in ten_min_obstypes)
+        self.assertEqual(len(obstypes.ten_min), 5)
+        self.assertTrue('wind' in obstypes.ten_min)
+        self.assertTrue('windDir' in obstypes.ten_min)
+        self.assertTrue('windGust' in obstypes.ten_min)
+        self.assertTrue('windGustDir' in obstypes.ten_min)
+        self.assertTrue('windSpeed' in obstypes.ten_min)
 
-        self.assertEqual(len(twentyfour_hour_obstypes), 1)
-        self.assertTrue('rain' in twentyfour_hour_obstypes)
+        self.assertEqual(len(obstypes.twentyfour_hour), 1)
+        self.assertTrue('rain' in obstypes.twentyfour_hour)
 
-        self.assertEqual(len(hour_obstypes), 1)
-        self.assertTrue('inTemp' in hour_obstypes)
+        self.assertEqual(len(obstypes.hour), 1)
+        self.assertTrue('inTemp' in obstypes.hour)
 
-        self.assertEqual(len(day_obstypes), 6)
-        self.assertTrue('barometer' in day_obstypes)
-        self.assertTrue('wind' in day_obstypes)
-        self.assertTrue('windDir' in day_obstypes)
-        self.assertTrue('windGust' in day_obstypes)
-        self.assertTrue('windGustDir' in day_obstypes)
-        self.assertTrue('windSpeed' in day_obstypes)
+        self.assertEqual(len(obstypes.day), 6)
+        self.assertTrue('barometer' in obstypes.day)
+        self.assertTrue('wind' in obstypes.day)
+        self.assertTrue('windDir' in obstypes.day)
+        self.assertTrue('windGust' in obstypes.day)
+        self.assertTrue('windGustDir' in obstypes.day)
+        self.assertTrue('windSpeed' in obstypes.day)
 
-    def test_get_barometer_trend_mbar(self):
+    def test_get_barometer_trend_mbar(self) -> None:
         # Forecast descriptions for the 3 hour change in barometer readings.
         # Falling (or rising) slowly: 0.1 - 1.5mb in 3 hours
         # Falling (or rising): 1.6 - 3.5mb in 3 hours
         # Falling (or rising) quickly: 3.6 - 6.0mb in 3 hours
         # Falling (or rising) very rapidly: More than 6.0mb in 3 hours
 
-        baroTrend = user.loopdata.LoopProcessor.get_barometer_trend(9.0, 'mbar', 'group_pressure', 10800)
+        baroTrend: user.loopdata.BarometerTrend = user.loopdata.LoopProcessor.get_barometer_trend(9.0, 'mbar', 'group_pressure', 10800)
         self.assertEqual(baroTrend, user.loopdata.BarometerTrend.RISING_VERY_RAPIDLY)
 
         baroTrend = user.loopdata.LoopProcessor.get_barometer_trend(6.1, 'mbar', 'group_pressure', 10800)
@@ -734,7 +783,7 @@ class ProcessPacketTests(unittest.TestCase):
         baroTrend = user.loopdata.LoopProcessor.get_barometer_trend(-9.0, 'mbar', 'group_pressure', 10800)
         self.assertEqual(baroTrend, user.loopdata.BarometerTrend.FALLING_VERY_RAPIDLY)
 
-    def test_get_barometer_trend_inHg(self):
+    def test_get_barometer_trend_inHg(self) -> None:
         # Forecast descriptions for the 3 hour change in barometer readings.
         # These are approximations (converted from mbars)
         # Falling (or rising) slowly: 0.002953 - 0.044294 inHg in 3 hours
@@ -799,18 +848,18 @@ class ProcessPacketTests(unittest.TestCase):
         baroTrend = user.loopdata.LoopProcessor.get_barometer_trend(-0.26577, 'inHg', 'group_pressure', 10800)
         self.assertEqual(baroTrend, user.loopdata.BarometerTrend.FALLING_VERY_RAPIDLY)
 
-    def test_prune_period_packet(self):
+    def test_prune_period_packet(self) -> None:
         """ test that packet is pruned to just the observations needed. """
 
-        pkt = { 'dateTime': 123456789, 'usUnits': 1, 'windSpeed': 10, 'windDir': 27 }
-        in_use_obstypes = { 'barometer' }
-        new_pkt = user.loopdata.LoopProcessor.prune_period_packet(pkt, in_use_obstypes)
+        pkt: Dict[str, Any] = { 'dateTime': 123456789, 'usUnits': 1, 'windSpeed': 10, 'windDir': 27 }
+        in_use_obstypes = {'barometer'}
+        new_pkt: Dict[str, Any] = user.loopdata.LoopProcessor.prune_period_packet(pkt, in_use_obstypes)
         self.assertEqual(len(new_pkt), 2)
         self.assertEqual(new_pkt['dateTime'], 123456789)
         self.assertEqual(new_pkt['usUnits'], 1)
 
         pkt = { 'dateTime': 123456789, 'usUnits': 1, 'windSpeed': 10, 'windDir': 27 }
-        in_use_obstypes = { 'windSpeed' }
+        in_use_obstypes = {'windSpeed'}
         new_pkt = user.loopdata.LoopProcessor.prune_period_packet(pkt, in_use_obstypes)
         self.assertEqual(len(new_pkt), 3)
         self.assertEqual(new_pkt['dateTime'], 123456789)
@@ -818,7 +867,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(new_pkt['windSpeed'], 10)
 
         pkt = { 'dateTime': 123456789, 'usUnits': 1, 'windSpeed': 10, 'windDir': 27, 'barometer': 1035.01 }
-        in_use_obstypes = { 'windSpeed', 'barometer', 'windDir' }
+        in_use_obstypes = {'windSpeed', 'barometer', 'windDir'}
         new_pkt = user.loopdata.LoopProcessor.prune_period_packet(pkt, in_use_obstypes)
         self.assertEqual(len(new_pkt), 5)
         self.assertEqual(new_pkt['dateTime'], 123456789)
@@ -826,7 +875,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(new_pkt['windSpeed'], 10)
         self.assertEqual(new_pkt['barometer'], 1035.01)
 
-    def test_changing_periods(self):
+    def test_changing_periods(self) -> None:
         specified_fields = [ 'current.outTemp', 'trend.outTemp',
                              '2m.outTemp.max', '2m.outTemp.min', '2m.outTemp.avg',
                              '10m.outTemp.max', '10m.outTemp.min', '10m.outTemp.avg',
@@ -838,12 +887,12 @@ class ProcessPacketTests(unittest.TestCase):
                              'year.outTemp.max', 'year.outTemp.min', 'year.outTemp.avg',
                              'rainyear.outTemp.max', 'rainyear.outTemp.min', 'rainyear.outTemp.avg',
                              'alltime.outTemp.max', 'alltime.outTemp.min', 'alltime.outTemp.avg']
-        cfg = ProcessPacketTests._get_config('us', 10800, 10, 6, specified_fields)
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, specified_fields)
 
         # July 1, 2020 Noon PDT
-        pkt = {'dateTime': 1593630000, 'usUnits': 1, 'outTemp': 77.4, 'rain': 0.01}
+        pkt: Dict[str, Any] = {'dateTime': 1593630000, 'usUnits': 1, 'outTemp': 77.4, 'rain': 0.01}
 
-        accums = ProcessPacketTests._get_accums(cfg, pkt['dateTime'])
+        accums: user.loopdata.Accumulators = ProcessPacketTests._get_accums(cfg, pkt['dateTime'])
 
         # First packet.
         loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
@@ -1107,11 +1156,12 @@ class ProcessPacketTests(unittest.TestCase):
         loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # Make sure we have a new week accumulator that starts this Sunday 2021-10-24.
+        assert accums.week_accum is not None
         self.assertEqual(timestamp_to_string(accums.week_accum.timespan.start), '2021-10-24 00:00:00 PDT (1635058800)')
         self.assertEqual(accums.week_accum['outTemp'].max, 85.0)
         self.assertEqual(loopdata_pkt['week.outTemp.max'], '85.0°F')
 
-    def test_changing_periods_rainyear_start_1(self):
+    def test_changing_periods_rainyear_start_1(self) -> None:
         specified_fields = [ 'current.outTemp', 'trend.outTemp',
                              '2m.outTemp.max', '2m.outTemp.min', '2m.outTemp.avg',
                              '10m.outTemp.max', '10m.outTemp.min', '10m.outTemp.avg',
@@ -1123,12 +1173,12 @@ class ProcessPacketTests(unittest.TestCase):
                              'year.outTemp.max', 'year.outTemp.min', 'year.outTemp.avg',
                              'rainyear.outTemp.max', 'rainyear.outTemp.min', 'rainyear.outTemp.avg',
                              'alltime.outTemp.max', 'alltime.outTemp.min', 'alltime.outTemp.avg']
-        cfg = ProcessPacketTests._get_config('us', 10800, 1, 6, specified_fields)
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 1, 6, specified_fields)
 
         # July 1, 2020 Noon PDT
-        pkt = {'dateTime': 1593630000, 'usUnits': 1, 'outTemp': 77.4, 'rain': 0.01}
+        pkt: Dict[str, Any] = {'dateTime': 1593630000, 'usUnits': 1, 'outTemp': 77.4, 'rain': 0.01}
 
-        accums = ProcessPacketTests._get_accums(cfg, pkt['dateTime'])
+        accums: user.loopdata.Accumulators = ProcessPacketTests._get_accums(cfg, pkt['dateTime'])
 
         # First packet.
         loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
@@ -1392,6 +1442,7 @@ class ProcessPacketTests(unittest.TestCase):
         loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # Make sure we have a new week accumulator that starts this Sunday 2021-10-24.
+        assert accums.week_accum is not None
         self.assertEqual(timestamp_to_string(accums.week_accum.timespan.start), '2021-10-24 00:00:00 PDT (1635058800)')
         self.assertEqual(accums.week_accum['outTemp'].max, 85.0)
         self.assertEqual(loopdata_pkt['week.outTemp.max'], '85.0°F')
@@ -1410,7 +1461,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['rainyear.outTemp.max'],  '60.0°F')
         self.assertEqual(loopdata_pkt['rainyear.outTemp.avg'],  '57.5°F')
 
-    def test_changing_periods_week_start_0(self):
+    def test_changing_periods_week_start_0(self) -> None:
         specified_fields = [ 'current.outTemp', 'trend.outTemp',
                              '10m.outTemp.max', '10m.outTemp.min', '10m.outTemp.avg',
                              'day.outTemp.max', 'day.outTemp.min', 'day.outTemp.avg',
@@ -1419,10 +1470,10 @@ class ProcessPacketTests(unittest.TestCase):
                              'year.outTemp.max', 'year.outTemp.min', 'year.outTemp.avg',
                              'rainyear.outTemp.max', 'rainyear.outTemp.min', 'rainyear.outTemp.avg',
                              'alltime.outTemp.max', 'alltime.outTemp.min', 'alltime.outTemp.avg']
-        cfg = ProcessPacketTests._get_config('us', 10800, 10, 0, specified_fields)
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 0, specified_fields)
         # July 1, 2020 Noon PDT
-        pkt = {'dateTime': 1593630000, 'usUnits': 1, 'outTemp': 77.4}
-        accums = ProcessPacketTests._get_accums(cfg, pkt['dateTime'])
+        pkt: Dict[str, Any] = {'dateTime': 1593630000, 'usUnits': 1, 'outTemp': 77.4}
+        accums: user.loopdata.Accumulators = ProcessPacketTests._get_accums(cfg, pkt['dateTime'])
         self.assertEqual(cfg.week_start, 0)
 
         # First packet.
@@ -1629,6 +1680,7 @@ class ProcessPacketTests(unittest.TestCase):
         loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # Make sure we still have the old accumulator that started Monday 2021-10-11.
+        assert accums.week_accum is not None
         self.assertEqual(timestamp_to_string(accums.week_accum.timespan.start), '2021-10-11 00:00:00 PDT (1633935600)')
 
         # Next day, Monday, October 18, 2021 04:24:27 PM PDT
@@ -1636,6 +1688,7 @@ class ProcessPacketTests(unittest.TestCase):
         loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # Make sure we still have a new accumulator that started Monday 2021-10-18.
+        assert accums.week_accum is not None
         self.assertEqual(timestamp_to_string(accums.week_accum.timespan.start), '2021-10-18 00:00:00 PDT (1634540400)')
 
         # 6 days later, Saturday, October 23, 2021 04:24:27 PM PDT
@@ -1648,13 +1701,14 @@ class ProcessPacketTests(unittest.TestCase):
         loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # Make sure we still have the accumulator that started Monday 2021-10-18.
+        assert accums.week_accum is not None
         self.assertEqual(timestamp_to_string(accums.week_accum.timespan.start), '2021-10-18 00:00:00 PDT (1634540400)')
         self.assertEqual(accums.week_accum['outTemp'].max, 87.5)
         self.assertEqual(loopdata_pkt['week.outTemp.max'], '87.5°F')
 
-    def test_new_db_startup(self):
+    def test_new_db_startup(self) -> None:
 
-        pkts = [ {'dateTime': 1665796967, 'usUnits': 1, 'windDir': 355.0, 'windSpeed': 4.0, 'outTemp': 69.1},
+        pkts: List[Dict[str, Any]] = [ {'dateTime': 1665796967, 'usUnits': 1, 'windDir': 355.0, 'windSpeed': 4.0, 'outTemp': 69.1},
                  {'dateTime': 1665796969, 'usUnits': 1, 'windDir':   5.0, 'windSpeed': 3.0, 'outTemp': 69.2},
                  {'dateTime': 1665796971, 'usUnits': 1, 'windDir':  10.0, 'windSpeed': 2.0, 'outTemp': 69.3}]
 
@@ -1705,13 +1759,13 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windDir',
             'unit.label.windSpeed']
 
-        cfg = ProcessPacketTests._get_config('us', 10800, 10, 6, wind_fields)
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, wind_fields)
 
         self.maxDiff = None
 
         # Test when adding very first packet.
-        pkt = pkts[0]
-        accums = ProcessPacketTests._get_accums(cfg, pkt['dateTime'])
+        pkt: Dict[str, Any] = pkts[0]
+        accums: user.loopdata.Accumulators = ProcessPacketTests._get_accums(cfg, pkt['dateTime'])
         loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # {'dateTime': 1665796967, 'usUnits': 1, 'windDir': 355.0, 'windSpeed': 4.0, 'outTemp': 69.1}
@@ -1881,9 +1935,9 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.windSpeed.max'], '4 mph')
         self.assertEqual(loopdata_pkt['day.windSpeed.maxtime.raw'], 1665796967)
 
-    def test_wind(self):
+    def test_wind(self) -> None:
 
-        pkts = [ {'dateTime': 1665796967, 'usUnits': 1, 'windDir': 355.0, 'windGust': 4.0, 'windGustDir': 355.0, 'windrun': None, 'windSpeed': 4.0},
+        pkts: List[Dict[str, Any]] = [ {'dateTime': 1665796967, 'usUnits': 1, 'windDir': 355.0, 'windGust': 4.0, 'windGustDir': 355.0, 'windrun': None, 'windSpeed': 4.0},
                  {'dateTime': 1665796969, 'usUnits': 1, 'windDir':   5.0, 'windGust': 3.0, 'windGustDir':   5.0, 'windrun': None, 'windSpeed': 3.0},
                  {'dateTime': 1665796971, 'usUnits': 1, 'windDir':  10.0, 'windGust': 2.0, 'windGustDir':  10.0, 'windrun': None, 'windSpeed': 2.0}]
 
@@ -1933,9 +1987,9 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windDir',
             'unit.label.windSpeed']
 
-        cfg = ProcessPacketTests._get_config('us', 10800, 10, 6, wind_fields)
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, wind_fields)
 
-        accums = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
+        accums: user.loopdata.Accumulators = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
         for pkt in pkts:
             loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
@@ -1979,9 +2033,9 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.windSpeed.max'], '4 mph')
         self.assertEqual(loopdata_pkt['day.windSpeed.maxtime.raw'], 1665796967)
 
-    def test_wind2(self):
+    def test_wind2(self) -> None:
 
-        pkts = [ {'dateTime': 1665796967, 'usUnits': 1, 'windDir': 355.0, 'windGust': 4.0, 'windGustDir': 355.0, 'windrun': None, 'windSpeed': 4.0},
+        pkts: List[Dict[str, Any]] = [ {'dateTime': 1665796967, 'usUnits': 1, 'windDir': 355.0, 'windGust': 4.0, 'windGustDir': 355.0, 'windrun': None, 'windSpeed': 4.0},
                  {'dateTime': 1665796969, 'usUnits': 1, 'windDir':   5.0, 'windGust': 100.0, 'windGustDir':   5.0, 'windrun': None, 'windSpeed': 100.0}]
 
         wind_fields = [
@@ -2030,9 +2084,9 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windDir',
             'unit.label.windSpeed']
 
-        cfg = ProcessPacketTests._get_config('us', 10800, 10, 6, wind_fields)
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, wind_fields)
 
-        accums = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
+        accums: user.loopdata.Accumulators = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
         for pkt in pkts:
             loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
@@ -2076,9 +2130,9 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.windSpeed.max'], '100 mph')
         self.assertEqual(loopdata_pkt['day.windSpeed.maxtime.raw'], 1665796969)
 
-    def test_wind_rms(self):
+    def test_wind_rms(self) -> None:
 
-        pkts = [ {'dateTime': 1665796967, 'usUnits': 1, 'windGust': 0.0, 'windSpeed': 0.0},
+        pkts: List[Dict[str, Any]] = [ {'dateTime': 1665796967, 'usUnits': 1, 'windGust': 0.0, 'windSpeed': 0.0},
                  {'dateTime': 1665796969, 'usUnits': 1, 'windDir':   5.0, 'windGust': 200.0, 'windGustDir':   5.0, 'windrun': None, 'windSpeed': 200.0}]
 
         wind_fields = [
@@ -2127,11 +2181,11 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windDir',
             'unit.label.windSpeed']
 
-        cfg = ProcessPacketTests._get_config('us', 10800, 10, 6, wind_fields)
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, wind_fields)
 
-        pkt = pkts[0]
-        accums = ProcessPacketTests._get_accums(cfg, pkt['dateTime'])
-        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
+        pkt: Dict[str, Any] = pkts[0]
+        accums: user.loopdata.Accumulators = ProcessPacketTests._get_accums(cfg, pkt['dateTime'])
+        loopdata_pkt: Dict[str, Any] = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         self.maxDiff = None
 
@@ -2217,12 +2271,12 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.windSpeed.max'], '200 mph')
         self.assertEqual(loopdata_pkt['day.windSpeed.maxtime.raw'], 1665796969)
 
-    def test_ip100_packet_processing(self):
-        pkts = ip100_packets.IP100Packets._get_packets()
+    def test_ip100_packet_processing(self) -> None:
+        pkts: List[Dict[str, Any]] = ip100_packets.IP100Packets._get_packets()
 
-        cfg = ProcessPacketTests._get_config('us', 10800, 10, 6, ProcessPacketTests._get_specified_fields())
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, ProcessPacketTests._get_specified_fields())
 
-        accums = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
+        accums: user.loopdata.Accumulators = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
         for pkt in pkts:
             loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
@@ -2333,12 +2387,12 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.wind.vecdir.formatted'], '26')
         self.assertEqual(loopdata_pkt['day.wind.vecdir'], '26°')
 
-    def test_ip100_us_packets_to_metric_db_to_us_report_processing(self):
-        pkts = ip100_packets.IP100Packets._get_packets()
+    def test_ip100_us_packets_to_metric_db_to_us_report_processing(self) -> None:
+        pkts: List[Dict[str, Any]] = ip100_packets.IP100Packets._get_packets()
 
-        cfg = ProcessPacketTests._get_config('db-metric.report-us', 10800, 10, 6, ProcessPacketTests._get_specified_fields())
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('db-metric.report-us', 10800, 10, 6, ProcessPacketTests._get_specified_fields())
 
-        accums = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
+        accums: user.loopdata.Accumulators = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
         for pkt in pkts:
             loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
@@ -2437,12 +2491,12 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.wind.vecdir.formatted'], '26')
         self.assertEqual(loopdata_pkt['day.wind.vecdir'], '26°')
 
-    def test_vantage_pro2_packet_processing(self):
-        pkts = vantagepro2_packets.VantagePro2Packets._get_batch_one_packets()
+    def test_vantage_pro2_packet_processing(self) -> None:
+        pkts: List[Dict[str, Any]] = vantagepro2_packets.VantagePro2Packets._get_batch_one_packets()
 
-        cfg = ProcessPacketTests._get_config('us', 10800, 10, 6, ProcessPacketTests._get_specified_fields())
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, ProcessPacketTests._get_specified_fields())
 
-        accums = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
+        accums: user.loopdata.Accumulators = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
 
         # Batch One
         for pkt in pkts:
@@ -2710,12 +2764,12 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt.get('day.wind.vecdir.formatted'), '332')
         self.assertEqual(loopdata_pkt.get('day.wind.vecdir'), '332°')
 
-    def test_custom_time_delta(self):
-        pkts = vantagepro2_packets.VantagePro2Packets._get_batch_one_packets()
+    def test_custom_time_delta(self) -> None:
+        pkts: List[Dict[str, Any]] = vantagepro2_packets.VantagePro2Packets._get_batch_one_packets()
 
-        cfg = ProcessPacketTests._get_config('us', 600, 10, 6, ProcessPacketTests._get_specified_fields())
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 600, 10, 6, ProcessPacketTests._get_specified_fields())
 
-        accums = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
+        accums: user.loopdata.Accumulators = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
 
         # Batch One
         for pkt in pkts:
@@ -2764,12 +2818,12 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertAlmostEqual(loopdata_pkt['trend.dewpoint.raw'], 0.110162, 7)
         self.assertEqual(loopdata_pkt['trend.dewpoint.formatted'], '0.1')
 
-    def test_cc3000_packet_processing(self):
-        pkts = cc3000_packets.CC3000Packets._get_packets()
+    def test_cc3000_packet_processing(self) -> None:
+        pkts: List[Dict[str, Any]] = cc3000_packets.CC3000Packets._get_packets()
 
-        cfg = ProcessPacketTests._get_config('us', 10800, 10, 6, ProcessPacketTests._get_specified_fields())
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, ProcessPacketTests._get_specified_fields())
 
-        accums = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
+        accums: user.loopdata.Accumulators = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
 
         for pkt in pkts:
             loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
@@ -2878,13 +2932,13 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.wind.vecdir.formatted'], '22')
         self.assertEqual(loopdata_pkt['day.wind.vecdir'], '22°')
 
-    def test_cc3000_packet_processing_us_device_us_database_metric_report(self):
+    def test_cc3000_packet_processing_us_device_us_database_metric_report(self) -> None:
 
-        pkts = cc3000_packets.CC3000Packets._get_packets()
+        pkts: List[Dict[str, Any]] = cc3000_packets.CC3000Packets._get_packets()
 
-        cfg = ProcessPacketTests._get_config('db-us.report-metric', 10800, 10, 6, ProcessPacketTests._get_specified_fields())
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('db-us.report-metric', 10800, 10, 6, ProcessPacketTests._get_specified_fields())
 
-        accums = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
+        accums: user.loopdata.Accumulators = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
 
         for pkt in pkts:
             loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
@@ -2982,12 +3036,12 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.wind.vecdir.formatted'], '22')
         self.assertEqual(loopdata_pkt['day.wind.vecdir'], '22°')
 
-    def test_cc3000_cross_midnight_packet_processing(self):
-        pkts = cc3000_cross_midnight_packets.CC3000CrossMidnightPackets._get_pre_midnight_packets()
+    def test_cc3000_cross_midnight_packet_processing(self) -> None:
+        pkts: List[Dict[str, Any]] = cc3000_cross_midnight_packets.CC3000CrossMidnightPackets._get_pre_midnight_packets()
 
-        cfg = ProcessPacketTests._get_config('us', 10800, 10, 6, ProcessPacketTests._get_specified_fields())
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, ProcessPacketTests._get_specified_fields())
 
-        accums = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
+        accums: user.loopdata.Accumulators = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
 
         # Pre Midnight
         for pkt in pkts:
@@ -3217,15 +3271,15 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.wind.vecdir.formatted'], '45')
         self.assertEqual(loopdata_pkt['day.wind.vecdir'], '45°')
 
-    def test_simulator_packet_processing(self):
-        cfg = ProcessPacketTests._get_config('metric', 10800, 10, 6, ProcessPacketTests._get_specified_fields())
+    def test_simulator_packet_processing(self) -> None:
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('metric', 10800, 10, 6, ProcessPacketTests._get_specified_fields())
 
-        pkts = simulator_packets.SimulatorPackets._get_packets()
+        pkts: List[Dict[str, Any]] = simulator_packets.SimulatorPackets._get_packets()
 
-        accums = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
+        accums: user.loopdata.Accumulators = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
 
         for pkt in pkts:
-            loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
+            loopdata_pkt: Dict[str, Any] = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
 
         # {'dateTime': 1593976709, 'outTemp': 0.3770915275499615,  'barometer': 1053.1667173695532, 'dewpoint': -2.6645899102645934
         # {'dateTime': 1593977615, 'outTemp': 0.032246952164187964,'barometer': 1053.1483031344253, 'dewpoint': -3.003421962855377
@@ -3342,18 +3396,16 @@ class ProcessPacketTests(unittest.TestCase):
     @staticmethod
     def _get_config(config_dict_kind, time_delta, rainyear_start, week_start, specified_fields) -> user.loopdata.Configuration:
         os.environ['TZ'] = 'America/Los_Angeles'
-        config_dict         = configobj.ConfigObj('bin/user/tests/weewx.conf.%s' % config_dict_kind, encoding='utf-8')
-        unit_system         = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
-        std_archive_dict    = config_dict.get('StdArchive', {})
-        (fields_to_include, current_obstypes, trend_obstypes, alltime_obstypes, rainyear_obstypes,
-            year_obstypes, month_obstypes, week_obstypes, day_obstypes, hour_obstypes,
-            twentyfour_hour_obstypes, ten_min_obstypes, two_min_obstypes) = user.loopdata.LoopData.get_fields_to_include(specified_fields)
+        config_dict: Dict[str, Any] = configobj.ConfigObj('bin/user/tests/weewx.conf.%s' % config_dict_kind, encoding='utf-8')
+        unit_system: int = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
+        std_archive_dict: Dict[str, Any] = config_dict.get('StdArchive', {})
+        (fields_to_include, obstypes) = user.loopdata.LoopData.get_fields_to_include(specified_fields)
 
         # Get converter and formatter fr SeasonsReport.
-        target_report_dict = user.loopdata.LoopData.get_target_report_dict(config_dict, 'SeasonsReport')
-        converter = weewx.units.Converter.fromSkinDict(target_report_dict)
+        target_report_dict: Dict[str, Any] = user.loopdata.LoopData.get_target_report_dict(config_dict, 'SeasonsReport')
+        converter: weewx.units.Converter = weewx.units.Converter.fromSkinDict(target_report_dict)
         assert type(converter) == weewx.units.Converter
-        formatter = weewx.units.Formatter.fromSkinDict(target_report_dict)
+        formatter: weewx.units.Formatter = weewx.units.Formatter.fromSkinDict(target_report_dict)
         assert type(formatter) == weewx.units.Formatter
 
         return user.loopdata.Configuration(
@@ -3383,22 +3435,11 @@ class ProcessPacketTests(unittest.TestCase):
             time_delta               = time_delta,
             week_start               = week_start,
             rainyear_start           = rainyear_start,
-            current_obstypes         = current_obstypes,
-            trend_obstypes           = trend_obstypes,
-            alltime_obstypes         = alltime_obstypes,
-            rainyear_obstypes        = rainyear_obstypes,
-            year_obstypes            = year_obstypes,
-            month_obstypes           = month_obstypes,
-            week_obstypes            = week_obstypes,
-            day_obstypes             = day_obstypes,
-            hour_obstypes            = hour_obstypes,
-            twentyfour_hour_obstypes = twentyfour_hour_obstypes,
-            ten_min_obstypes         = ten_min_obstypes,
-            two_min_obstypes         = two_min_obstypes,
+            obstypes                 = obstypes,
             baro_trend_descs         = user.loopdata.LoopData.construct_baro_trend_descs({}))
 
     @staticmethod
-    def _get_specified_fields():
+    def _get_specified_fields() -> List[str]:
         return [
             '2m.windGust.max',
             '2m.windGust.max.formatted',
