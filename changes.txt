@@ -1,6 +1,15 @@
 loopdata change history
 -----------------------
 
+3.3 Release 2022/11/23
+----------------------
+1. Rather than just being able to use the 2m, 10m and 24h rolling
+   time period tags, one can now use arbitrary minute tags from
+   1m to 1440m; and also arbitrary hour tags from 1h to 24h.
+   For example, the maximum windspeed in the last 15 minutes
+   is specified as 15m.wind.max.  In the last 17 minutes, it is
+   specified as 17m.wind.max.
+
 3.2 Release 2022/11/22
 ----------------------
 1. Lots of code refactoring.

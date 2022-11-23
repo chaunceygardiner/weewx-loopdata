@@ -32,9 +32,8 @@ it can be found at `<weewx-url>/loopdata/`.
 
 The json file will contain any specified values for:
 * observations in the loop packet (e.g., `current.outTemp`)
-* rolling 2 min. aggregate values (e.g., `2m.outTemp.max`, `2m.wind.gustdir`)
-* rolling 10 min. aggregate values (e.g., `10m.outTemp.max`, `10m.wind.gustdir`)
-* rolling 24 hour aggregate values (e.g., `24h.outTemp.max`, `24h.wind.gustdir`)
+* rolling X min. aggregate values where X is 1 through 1440, inclusive (e.g., `2m.outTemp.max`, `30m.wind.gustdir`)
+* rolling X hour aggregate values where X is 1 through 24, inclusive (e.g., `8h.outTemp.max`, `24h.wind.gustdir`)
 * trends (e.g., `trend.barometer`) -- see time_delta below
 * hourly aggregate values (e.g., `hour.outTemp.max`)
 * daily aggregate values (e.g., `day.rain.sum`)
@@ -47,7 +46,7 @@ The json file will contain any specified values for:
 
 In addition to the usual observation types (which includes `windrun`), there
 are special `windrun_<direction>` observation types that can be used with `current`,
-`2m`, `10m`, `24h`, `trend`, `hour` and `day` periods.  These report the distance for each of sixteen
+`1m` through `1440m`, `1h` through `24h`, `trend`, `hour` and `day` periods.  These report the distance for each of sixteen
 directions; and can be used to make a windrose.  Note: `windrun_<direction>` observations
 are NOT supported for `week`, `month`, `year`, `rainyear` and `alltime` periods.
 
@@ -118,6 +117,18 @@ For example, the current outside temperature can be included as:
 * `current.outTemp`           which might yeild `79.2°F`
 * `current.outTemp.raw`       which might yeild `79.175`
 
+The maximum wind in the last 30m can be included as:
+
+* `30m.wind.max.formatted` which might yeild `7.1`
+* `30m.wind.max`           which might yeild `7.1 mph`
+* `30m.wind.max.raw`       which might yeild `7.12`
+
+The minimum outside temperature in the last 3 hours can be included as:
+
+* `3h.outTemp.avg.formatted` which might yeild `32.4`
+* `3h.outTemp.avg`           which might yeild `32.4°`
+* `3h.outTemp.avg.raw`       which might yeild `32.41`
+
 The inTemp average inside temperature this hour can be included as:
 
 * `hour.inTemp.avg.formatted` which might yeild `68.1`
@@ -158,7 +169,7 @@ The alltime hight outside temperature can be included as:
 * `alltime.outTemp`           which might yeild `107.3°`
 * `alltime.outTemp.raw`       which might yeild `107.29`
 
-If a field is requested, but the data is missing, it will not be present
+If a field is requested, but the data is missing, the field will not be present
 in loop-data.txt.  Your JavaScript should expect this and react
 accordingly.
 
@@ -169,23 +180,28 @@ separate thread.  The information gathered is only that which is needed
 for LoopData to prime it's accumulators.  For example, if a week field is
 included in the weewx.conf fields line (week.rain.sum), daily summaries
 for the week will be read to prime the week accumulator.  If no week field
-is included, no work will be done.  Ditto for alltime, rainyear, year, month, 24h, 10m
-and 2m accumulators.  They are populated only if they are used.  Lastly, only the
+is included, no work will be done.  Ditto for alltime, rainyear, year, month, 1h-24h
+and 1m-1440m accumulators.  They are populated only if they are used.  Lastly, only the
 necessary observation types are tracked in the accumulators.  For example,
-if no form of monthy.barometer is specified on the fields line, the monthly
+if no form of monthly.barometer is specified on the fields line, the monthly
 accumulator will not accumulate baromter readings.
 
 Once LoopData's thread starts and the accumulators are built, LoopData is
-never touches touches the database.  It's only connection to the WeeWX
-main thread is that NEW_LOOP_PACKET is bound to queue each loop packet.
+never touches touches the database and never consults WeeWX's accumulators.
+It's only connection to the WeeWX main thread is that NEW_LOOP_PACKET is bound
+to queue each loop packet.
 
 ### Period Aggregates implemented via xtypes are not currently supported by loopdata
 
 Currently, if an aggregate is impemented via xtypes, it will be ignored by loopdata.
 For example, the weewx-purple extension implements `pm2_5_aqi` via xtypes.  If,
 say, `week.pm2_5_aqi.max` was specified as one of the fields on the fields line, it
-would be ignored.  This is because there is not database from which to look up
+would be ignored.  This is because there is no database entry from which to look up
 the weekly high for `pm2_5_aqi`.
+
+The rule is, if an observation is not stored in the database, you can't specify
+aggregates.  Of course, loopdata will still report current values if you specify
+them.
 
 
 ### Example of LoopData in Action
@@ -206,12 +222,12 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
 1. Install the `python3-sortedcontainers` package.
    * On debian: `sudo apt install python3-sortedcontainers`
 
-1. Download the lastest release, weewx-loopdata-3.2.zip, from the
+1. Download the lastest release, weewx-loopdata-3.3.zip, from the
    [GitHub Repository](https://github.com/chaunceygardiner/weewx-loopdata).
 
 1. Run the following command.
 
-   `sudo /home/weewx/bin/wee_extension --install weewx-loopdata-3.2.zip`
+   `sudo /home/weewx/bin/wee_extension --install weewx-loopdata-3.3.zip`
 
    Note: this command assumes weewx is installed in /home/weewx.  If it's installed
    elsewhere, adjust the path of wee_extension accordingly.
