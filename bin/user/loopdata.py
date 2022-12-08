@@ -465,12 +465,12 @@ class ContinuousVecStats(object):
 
     @property
     def rms(self):
-        return math.sqrt(self.wsquaresum / self.sumtime) if self.count else None
+        return math.sqrt(LoopData.massage_near_zero(self.wsquaresum) / LoopData.massage_near_zero(self.sumtime)) if self.count else None
 
     @property
     def vec_avg(self):
         if self.count:
-            return math.sqrt((self.xsum ** 2 + self.ysum ** 2) / self.sumtime ** 2)
+            return math.sqrt(LoopData.massage_near_zero(self.xsum ** 2 + self.ysum ** 2) / LoopData.massage_near_zero(self.sumtime) ** 2)
 
     @property
     def vec_dir(self):
