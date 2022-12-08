@@ -1,6 +1,12 @@
 loopdata change history
 -----------------------
 
+3.3.1 Release 2022/12/08
+----------------------
+Fix for Issue #10.  Due to foloating point errors, one could
+get math domain error for calling sqrt on a negative number.
+Thanks https://github.com/hoetzgit for reporting this.
+
 3.3 Release 2022/11/23
 ----------------------
 1. Rather than just being able to use the 2m, 10m and 24h rolling

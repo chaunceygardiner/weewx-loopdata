@@ -50,7 +50,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '3.3'
+LOOP_DATA_VERSION = '3.3.1'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -465,12 +465,12 @@ class ContinuousVecStats(object):
 
     @property
     def rms(self):
-        return math.sqrt(LoopData.massage_near_zero(self.wsquaresum) / LoopData.massage_near_zero(self.sumtime)) if self.count else None
+        return math.sqrt(abs(self.wsquaresum / self.sumtime)) if self.count else None
 
     @property
     def vec_avg(self):
         if self.count:
-            return math.sqrt(LoopData.massage_near_zero(self.xsum ** 2 + self.ysum ** 2) / LoopData.massage_near_zero(self.sumtime) ** 2)
+            return math.sqrt(abs((self.xsum ** 2 + self.ysum ** 2) / self.sumtime ** 2))
 
     @property
     def vec_dir(self):
