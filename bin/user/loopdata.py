@@ -50,7 +50,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '3.3.1'
+LOOP_DATA_VERSION = '3.3.2'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -1725,7 +1725,10 @@ class LoopProcessor:
             loopdata_pkt[cname.field] = value
             return
 
-        loopdata_pkt[cname.field] = formatter.toString((value, unit_type, group_type))
+        if type(value) == str:
+            loopdata_pkt[cname.field] = value
+        else:
+            loopdata_pkt[cname.field] = formatter.toString((value, unit_type, group_type))
 
     @staticmethod
     def add_period_obstype(cname: CheetahName, period_accum: Union[weewx.accum.Accum, ContinuousAccum],
