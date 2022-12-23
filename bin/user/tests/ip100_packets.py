@@ -1,4 +1,4 @@
-#    Copyright (c) 2020 John A Kline <john@johnkline.com>
+#    Copyright (c) 2022 John A Kline <john@johnkline.com>
 #
 #    See the file LICENSE.txt for your full rights.
 #

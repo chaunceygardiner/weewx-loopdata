@@ -1,4 +1,4 @@
-## Copyright (C)2020 by John A Kline (john@johnkline.com)
+## Copyright (C)2022 by John A Kline (john@johnkline.com)
 ## Distributed under the terms of the GNU Public License (GPLv3)
 ## See LICENSE for your rights.
 
