@@ -1,9 +1,9 @@
 # weewx-loopdata
 *Open source plugin for WeeWX software.
 
-Copyright (C)2022 by John A Kline (john@johnkline.com)
+Copyright (C)2022-2024 by John A Kline (john@johnkline.com)
 
-**This extension requires Python 3.7 or later and WeeWX 4.**
+**This extension requires Python 3.7 or later and WeeWX 4 or 5.**
 
 ## Description
 
@@ -219,6 +219,41 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
 
 # Installation Instructions
 
+## WeeWX 5 Installation Instructions
+
+1. Activate the virtual environment (actual syntax varies by type of WeeWX install):
+   `/home/weewx/weewx-venv/bin/activate`
+
+1. Install the sortedcontainers package.
+
+   `pip install sortedcontainers`
+
+1. Download the lastest release, weewx-loopdata-3.3.2.zip, from the
+   [GitHub Repository](https://github.com/chaunceygardiner/weewx-loopdata).
+
+1. Install the loopdata extension.
+
+   `weectl extension install weewx-loopdata-3.3.2.zip`
+
+1. The install creates a LoopData section in weewx.conf as shown below.  Adjust
+   the values accordingly.  In particular:
+   * Specify `seconds` with how often your device writes loopdata records
+     (e.g., `2.0` for Davis Vantage Pro 2 and RainWise CC3000).
+   * Specify the `target_report` for the report you wish to use for formatting and units
+   * Specify the `loop_data_dir` where the loop-data.txt file should be writen.
+     If `loop_data_dir` is a relative path, it will be interpreted as being relative to
+     the target_report directory.
+   * You will eventually need  to update the fields line with the fields you actually
+     need for the report you are targetting.  Change this line later after you are sure
+     LoopData is running correctly.
+   * If you need the loop-data.txt file pushed to a remote webserver,
+     you will also need to fill in the `RsyncSpec` fields; but one can fill
+     that in later, after LoopData is up and running.
+
+1. Restart WeeWX.
+
+## WeeWX 4 Installation Instructions
+
 1. Install the `python3-sortedcontainers` package.
    * On debian: `sudo apt install python3-sortedcontainers`
 
@@ -235,7 +270,7 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
 1. The install creates a LoopData section in weewx.conf as shown below.  Adjust
    the values accordingly.  In particular:
    * Specify `seconds` with how often your device writes loopdata records
-     (e.g., `2.5` for Davis Vantage Pro 2, `2.0` for RainWise CC3000).
+     (e.g., `2.0` for Davis Vantage Pro 2 and RainWise CC3000).
    * Specify the `target_report` for the report you wish to use for formatting and units
    * Specify the `loop_data_dir` where the loop-data.txt file should be writen.
      If `loop_data_dir` is a relative path, it will be interpreted as being relative to
@@ -249,7 +284,9 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
 
 1. Restart WeeWX.
 
-1. After a reporting cycle runs, check navigate to `<weewx-url>/loopdata/ in your browser
+## Checking for a Properly Running Installation
+
+1. After a reporting cycle runs, navigate to `<weewx-url>/loopdata/ in your browser
    to see the default loopdata report. (Reports typcially run every 5 minutes.)
 
 ```
