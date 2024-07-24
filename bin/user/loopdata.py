@@ -356,7 +356,7 @@ class ContinuousVecStats(object):
         self.sum = 0.0
         self.count = 0
         self.wsum = 0.0
-        self.sumtime = 0
+        self.sumtime = 0.0
         self.xsum = 0.0
         self.ysum = 0.0
         self.dirsumtime = 0
@@ -616,9 +616,8 @@ class ContinuousAccum(dict):
     def getRecord(self):
         """Extract a record out of the results in the accumulator."""
 
-        # All records have a timestamp and unit type
-        record = {'dateTime': self.timespan.stop,
-                  'usUnits': self.unit_system}
+        # All records have a unit type
+        record = {'usUnits': self.unit_system}
 
         return self.augmentRecord(record)
 
@@ -1252,8 +1251,10 @@ class LoopData(StdService):
                 elif LoopData.is_minute_period(per):
                     timelength = int(per[:-1])*60
 
-                continuous_accums[per], self.cfg.obstypes.continuous[per]  = LoopData.create_continuous_accum(
+                cont_accum, obstypes = LoopData.create_continuous_accum(
                     per, self.cfg.unit_system, self.cfg.archive_interval, obstypes, timelength, day_accum, dbm)
+                if cont_accum:
+                    continuous_accums[per], self.cfg.obstypes.continuous[per]  = cont_accum, obstypes
 
             self.cfg.queue.put(Accumulators(
                 alltime_accum  = alltime_accum,
