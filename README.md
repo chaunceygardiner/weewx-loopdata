@@ -221,12 +221,15 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
 
 ## WeeWX 5 Installation Instructions
 
-1. Activate the virtual environment (actual syntax varies by type of WeeWX install):
+1. If pip install,
+   Activate the virtual environment (actual syntax varies by type of WeeWX install):
    `/home/weewx/weewx-venv/bin/activate`
-
-1. Install the sortedcontainers package.
-
+   Install the sortedcontainers package.
    `pip install sortedcontainers`
+
+1. If package install:
+   Install the `python3-sortedcontainers` package.
+   * On debian: `sudo apt install python3-sortedcontainers`
 
 1. Download the lastest release, weewx-loopdata-3.3.2.zip, from the
    [GitHub Repository](https://github.com/chaunceygardiner/weewx-loopdata).
