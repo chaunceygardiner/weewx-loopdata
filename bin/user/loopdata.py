@@ -1961,6 +1961,7 @@ class LoopProcessor:
         log.info('time_delta              : %d' % cfg.time_delta)
         log.info('week_start              : %d' % cfg.week_start)
         log.info('rainyear_start          : %d' % cfg.rainyear_start)
+        log.info('obstypes.current        : %s' % cfg.obstypes.current)
         log.info('obstypes.alltime        : %s' % cfg.obstypes.alltime)
         log.info('obstypes.rainyear       : %s' % cfg.obstypes.rainyear)
         log.info('obstypes.year           : %s' % cfg.obstypes.year)
