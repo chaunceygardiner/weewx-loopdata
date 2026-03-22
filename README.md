@@ -255,6 +255,22 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
 
 1. Restart WeeWX.
 
+1. Optional: Implement SSH control master multiplexing.
+   If you are ryncC'ing loopdata to another machine every 2 seconds; inevitably
+   some of these rsync's will fail.  Perhpas in the order of 3 to 10 per day on the author's
+   systems.  This is totally fine and is not noticeable, but there is an easy way to make the
+   rsync's lightweight and have none of them fail.  Just create the `.ssh/config` file in the
+   under the home directory of the user running WeeWX, witt the contents listed below.
+   The Host entered must match exactly the `remove_server` value entered in the `RSyncSpec`
+   section of `LoopData` in `weewx.conf`
+   ```
+   Host www.paloaltoweather.com   # <-- CHANGE TO YOUR remote_server!
+       ControlMaster auto
+       ControlPath ~/.ssh/control-%r@%h:%p
+       ControlPersist 10m
+
+   ```
+
 ## WeeWX 4 Installation Instructions
 
 1. Install the `python3-sortedcontainers` package.
@@ -286,6 +302,22 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
      that in later, after LoopData is up and running.
 
 1. Restart WeeWX.
+
+1. Optional: Implement SSH control master multiplexing.
+   If you are ryncC'ing loopdata to another machine every 2 seconds; inevitably
+   some of these rsync's will fail.  Perhpas in the order of 3 to 10 per day on the author's
+   systems.  This is totally fine and is not noticeable, but there is an easy way to make the
+   rsync's lightweight and have none of them fail.  Just create the `.ssh/config` file in the
+   under the home directory of the user running WeeWX, witt the contents listed below.
+   The Host entered must match exactly the `remove_server` value entered in the `RSyncSpec`
+   section of `LoopData` in `weewx.conf`
+   ```
+   Host www.paloaltoweather.com   # <-- CHANGE TO YOUR remote_server!
+       ControlMaster auto
+       ControlPath ~/.ssh/control-%r@%h:%p
+       ControlPersist 10m
+
+   ```
 
 ## Checking for a Properly Running Installation
 
@@ -412,6 +444,7 @@ You don't *have* to sync to a remote server; but if you want to sync to a remote
 rsync is the *only* mechanism provided.
 
 ## What about those rsync errors in the log?
+Note: See the installation instructions above on how to implement SSH control master multiplexing and the timeouts will go away.
 If one is using rsync, especially if the loop interval is short (e.g., 2s), it is expected that
 there will be log entries for connection timeouts, transmit timeouts, write errors and skipped
 packets.  By default only one second is allowed to connect or transmit the data.  Also, by
