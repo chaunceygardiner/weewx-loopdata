@@ -256,7 +256,7 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
 1. Restart WeeWX.
 
 1. Optional: Implement SSH control master multiplexing.
-   If you are ryncC'ing loopdata to another machine every 2 seconds; inevitably
+   If you are rsync'ing loopdata to another machine every 2 seconds; inevitably
    some of these rsync's will fail.  Perhpas in the order of 3 to 10 per day on the author's
    systems.  This is totally fine and is not noticeable, but there is an easy way to make the
    rsync's lightweight and have none of them fail.  Just create the `.ssh/config` file in the
@@ -304,7 +304,7 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
 1. Restart WeeWX.
 
 1. Optional: Implement SSH control master multiplexing.
-   If you are ryncC'ing loopdata to another machine every 2 seconds; inevitably
+   If you are rsync'ing loopdata to another machine every 2 seconds; inevitably
    some of these rsync's will fail.  Perhpas in the order of 3 to 10 per day on the author's
    systems.  This is totally fine and is not noticeable, but there is an easy way to make the
    rsync's lightweight and have none of them fail.  Just create the `.ssh/config` file in the
