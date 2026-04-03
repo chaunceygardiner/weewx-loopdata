@@ -268,7 +268,8 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
        ControlMaster auto
        ControlPath ~/.ssh/control-%r@%h:%p
        ControlPersist 10m
-
+       ServerAliveInterval 15
+       ServerAliveCountMax 3
    ```
 
 ## WeeWX 4 Installation Instructions
@@ -316,7 +317,8 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
        ControlMaster auto
        ControlPath ~/.ssh/control-%r@%h:%p
        ControlPersist 10m
-
+       ServerAliveInterval 15
+       ServerAliveCountMax 3
    ```
 
 ## Checking for a Properly Running Installation
