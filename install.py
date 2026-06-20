@@ -1,4 +1,4 @@
-# Copyright 2022 by John A Kline <john@johnkline.com>
+# Copyright 20222-2026 by John A Kline <john@johnkline.com>
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -31,7 +31,7 @@ def loader():
 class LoopDataInstaller(ExtensionInstaller):
     def __init__(self):
         super(LoopDataInstaller, self).__init__(
-            version = "3.3.2",
+            version = "3.4",
             name = 'loopdata',
             description = 'Loop statistics for real time reporting.',
             author = "John A Kline",

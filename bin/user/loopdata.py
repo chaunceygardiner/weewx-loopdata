@@ -1,7 +1,7 @@
 """
 loopdata.py
 
-Copyright (C)2022 by John A Kline (john@johnkline.com)
+Copyright (C)2022-2026 by John A Kline (john@johnkline.com)
 Distributed under the terms of the GNU Public License (GPLv3)
 
 LoopData is a WeeWX service that generates a json file (loop-data.txt)
@@ -18,7 +18,6 @@ import logging
 import math
 import os
 import queue
-import shutil
 import sys
 import tempfile
 import threading
@@ -50,7 +49,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '3.3.2'
+LOOP_DATA_VERSION = '3.4'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -833,10 +832,6 @@ class LoopData(StdService):
         # Get the column names of the archive table.
         self.archive_columns: List[str] = dbm.connection.columnsOf('archive')
 
-        # Get a temporay file in which to write data before renaming.
-        tmp = tempfile.NamedTemporaryFile(prefix='LoopData', delete=False)
-        tmp.close()
-
         # Get a target report dictionary we can use for converting units and formatting.
         target_report = formatting_spec_dict.get('target_report', 'LoopDataReport')
         try:
@@ -847,6 +842,11 @@ class LoopData(StdService):
             return
 
         loop_data_dir = LoopData.compose_loop_data_dir(config_dict, target_report_dict, file_spec_dict)
+        os.makedirs(loop_data_dir, exist_ok=True)
+
+        # Get a temporay file in which to write data before renaming.
+        tmp = tempfile.NamedTemporaryFile(prefix='LoopData', dir=loop_data_dir, delete=False)
+        tmp.close()
 
         # Get the loop frequency seconds to be passed as the weight to accumulators.
         loop_frequency = to_float(loop_frequency_spec_dict.get('seconds', '2.0'))
@@ -909,9 +909,6 @@ class LoopData(StdService):
             rainyear_start           = rainyear_start,
             obstypes                 = obstypes,
             baro_trend_descs         = baro_trend_descs)
-
-        if not os.path.exists(self.cfg.loop_data_dir):
-            os.makedirs(self.cfg.loop_data_dir)
 
         log.info('LoopData file is: %s' % os.path.join(self.cfg.loop_data_dir, self.cfg.filename))
 
@@ -1929,9 +1926,9 @@ class LoopProcessor:
             f.flush()
             os.fsync(f.fileno())
         log.debug('Wrote to %s' % tmpname)
-        # move it to filename
-        shutil.move(tmpname, os.path.join(loop_data_dir, filename))
-        log.debug('Moved to %s' % os.path.join(loop_data_dir, filename))
+        # rename it to filename
+        os.replace(tmpname, os.path.join(loop_data_dir, filename))
+        log.debug('Renamed to %s' % os.path.join(loop_data_dir, filename))
 
     @staticmethod
     def log_configuration(cfg: Configuration) -> None:

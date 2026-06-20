@@ -1,6 +1,10 @@
 loopdata change history
 -----------------------
 
+3.4 Release 2026/06/20
+----------------------
+Ensure temporary loop data file to actual is atomic.
+
 3.3.2 Release 2022/12/19
 ------------------------
 Don't try to convert string observations to string.

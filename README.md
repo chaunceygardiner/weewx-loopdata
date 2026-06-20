@@ -1,7 +1,7 @@
 # weewx-loopdata
 *Open source plugin for WeeWX software.
 
-Copyright (C)2022-2024 by John A Kline (john@johnkline.com)
+Copyright (C)2022-2026 by John A Kline (john@johnkline.com)
 
 **This extension requires Python 3.7 or later and WeeWX 4 or 5.**
 
@@ -231,12 +231,11 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
    Install the `python3-sortedcontainers` package.
    * On debian: `sudo apt install python3-sortedcontainers`
 
-1. Download the lastest release, weewx-loopdata-3.3.2.zip, from the
-   [GitHub Repository](https://github.com/chaunceygardiner/weewx-loopdata).
+1. Download the release from the [github](https://github.com/chaunceygardiner/weewx-loopdata/releases/download/latest/weewx-loopdata.zip).
 
 1. Install the loopdata extension.
 
-   `weectl extension install weewx-loopdata-3.3.2.zip`
+   `weectl extension install weewx-loopdata.zip`
 
 1. The install creates a LoopData section in weewx.conf as shown below.  Adjust
    the values accordingly.  In particular:
@@ -277,12 +276,12 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
 1. Install the `python3-sortedcontainers` package.
    * On debian: `sudo apt install python3-sortedcontainers`
 
-1. Download the lastest release, weewx-loopdata-3.3.2.zip, from the
+1. Download the lastest release, weewx-loopdata.zip, from the
    [GitHub Repository](https://github.com/chaunceygardiner/weewx-loopdata).
 
 1. Run the following command.
 
-   `sudo /home/weewx/bin/wee_extension --install weewx-loopdata-3.3.2.zip`
+   `sudo /home/weewx/bin/wee_extension --install weewx-loopdata.zip`
 
    Note: this command assumes weewx is installed in /home/weewx.  If it's installed
    elsewhere, adjust the path of wee_extension accordingly.
