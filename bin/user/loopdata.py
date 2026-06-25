@@ -49,7 +49,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '3.5'
+LOOP_DATA_VERSION = '3.6'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -378,7 +378,7 @@ class ContinuousVecStats(object):
             max, time_dirn_list_max = self.speed_dict.peekitem(-1)
             maxtime, maxdir = time_dirn_list_max[-1]
         else:
-            min, mintime, max, maxtime = None, None, None, None
+            min, mintime, max, maxtime, maxdir = None, None, None, None, None
 
         sum  = LoopData.massage_near_zero(self.sum)
         wsum = LoopData.massage_near_zero(self.wsum)
@@ -492,7 +492,7 @@ class ContinuousVecStats(object):
     @property
     def first(self):
         if len(self.future_debits) != 0:
-            return self.future_debits[0].speed, self.future_debits[-1].dirN
+            return self.future_debits[0].speed, self.future_debits[0].dirN
         else:
             return None
 
