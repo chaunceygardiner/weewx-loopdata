@@ -2252,6 +2252,272 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['day.windSpeed.max'], '200 mph')
         self.assertEqual(loopdata_pkt['day.windSpeed.maxtime.raw'], 1665796969)
 
+    def test_day_wind_vecdir_vecavg(self) -> None:
+        # Validate that the day accumulator's vector direction and vector
+        # average are computed correctly (true vector math), independent of
+        # any continuous/rolling accumulator.  The expected values are computed
+        # by hand from the textbook formula and asserted against loopdata's
+        # output, so this test catches any regression in the vector sum:
+        #
+        #   For each obs (speed, dirN), with math angle theta = radians(90 - dirN):
+        #       xsum += weight * speed * cos(theta)
+        #       ysum += weight * speed * sin(theta)
+        #   vec_dir = (90 - degrees(atan2(ysum, xsum))) mod 360
+        #   vec_avg = sqrt(xsum^2 + ysum^2) / sumtime
+        #
+        # The chosen sequence has a vec_dir (~10.29 deg) that is wildly
+        # different from the naive scalar average of the directions (144 deg),
+        # and a vec_avg (~13.89 mph) different from the scalar speed average
+        # (15 mph), so a broken implementation cannot pass by coincidence.
+        #
+        # NOTE: weight (loop_frequency) cancels out of both results -- it
+        # scales xsum/ysum equally (vec_dir is the angle, scale-invariant) and
+        # is divided back out of vec_avg via sumtime -- so these expectations
+        # hold regardless of the configured loop_frequency.
+        import math
+
+        pkts: List[Dict[str, Any]] = [
+            {'dateTime': 1665796961, 'usUnits': 1, 'windDir': 350.0, 'windGust': 10.0, 'windGustDir': 350.0, 'windrun': None, 'windSpeed': 10.0},
+            {'dateTime': 1665796963, 'usUnits': 1, 'windDir':  20.0, 'windGust': 20.0, 'windGustDir':  20.0, 'windrun': None, 'windSpeed': 20.0},
+            {'dateTime': 1665796965, 'usUnits': 1, 'windDir':  40.0, 'windGust': 10.0, 'windGustDir':  40.0, 'windrun': None, 'windSpeed': 10.0},
+            {'dateTime': 1665796967, 'usUnits': 1, 'windDir':  10.0, 'windGust': 30.0, 'windGustDir':  10.0, 'windrun': None, 'windSpeed': 30.0},
+            {'dateTime': 1665796969, 'usUnits': 1, 'windDir': 300.0, 'windGust':  5.0, 'windGustDir': 300.0, 'windrun': None, 'windSpeed':  5.0}]
+
+        wind_fields = [
+            'day.wind.vecdir',
+            'day.wind.vecdir.raw',
+            'day.wind.vecavg',
+            'day.wind.vecavg.raw',
+            'day.windDir.avg']
+
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, wind_fields)
+
+        accums: user.loopdata.Accumulators = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
+        for pkt in pkts:
+            loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
+
+        # --- Compute the expected values by hand from the same inputs. ---
+        weight = cfg.loop_frequency  # cancels out, but use the real value for fidelity
+        xsum = ysum = sumtime = 0.0
+        for pkt in pkts:
+            speed = pkt['windSpeed']
+            dirN = pkt['windDir']
+            theta = math.radians(90.0 - dirN)
+            xsum += weight * speed * math.cos(theta)
+            ysum += weight * speed * math.sin(theta)
+            sumtime += weight
+        expected_vecdir = 90.0 - math.degrees(math.atan2(ysum, xsum))
+        if expected_vecdir < 0.0:
+            expected_vecdir += 360.0
+        expected_vecavg = math.sqrt(xsum ** 2 + ysum ** 2) / sumtime
+
+        # Sanity: these expectations are the ones computed offline (~10.29, ~13.89).
+        self.assertAlmostEqual(expected_vecdir, 10.2922352167, places=6)
+        self.assertAlmostEqual(expected_vecavg, 13.8928679139, places=6)
+
+        # --- Assert loopdata's day accumulator matches the hand calculation. ---
+        self.assertAlmostEqual(loopdata_pkt['day.wind.vecdir.raw'], expected_vecdir, places=4)
+        self.assertAlmostEqual(loopdata_pkt['day.wind.vecavg.raw'], expected_vecavg, places=4)
+
+        # The vector direction (~10 deg) must NOT collapse to the bogus scalar
+        # average of directions (144 deg); windDir.avg is the scalar mean and
+        # is exactly why wind.vecdir exists.  Confirm they differ markedly.
+        self.assertEqual(loopdata_pkt['day.wind.vecdir'], '10°')
+        self.assertNotEqual(loopdata_pkt['day.wind.vecdir'], loopdata_pkt['day.windDir.avg'])
+
+        # Formatted vector average rounds to 14 mph (13.89 -> 14).
+        self.assertEqual(loopdata_pkt['day.wind.vecavg'], '14 mph')
+
+    def test_continuous_wind_vecdir_expiry(self) -> None:
+        # Validate the CONTINUOUS (rolling) wind accumulator's vector math
+        # across window expiry.  This is the path that the sign fix in
+        # ContinuousVecStats.trimExpiredEntries (xsum/ysum debit) and the
+        # dirsumtime debit live in: when an observation ages out of the
+        # rolling window, its full vector contribution must be SUBTRACTED.
+        #
+        # A '2m' tag has timelength = 120s.  A packet added at ts expires once
+        # a later packet arrives at ts + 120 or beyond (trim condition is
+        # debit.expiration <= current_ts, expiration = ts + timelength).
+        #
+        # Timeline (ts, windSpeed, windDir):
+        #     1000  10  200   <- expires by ts=1160 (1000+120=1120 <= 1160)
+        #     1030  10  250   <- expires by ts=1160 (1030+120=1150 <= 1160)
+        #     1160  10  350   <- survivor
+        #     1180  10   10   <- survivor
+        #     1200  10   30   <- survivor (last packet)
+        #
+        # The window is walked through fill -> expire -> refill, and vecdir is
+        # asserted at three stages.  The progression 225 -> 350 -> 10 degrees
+        # is only producible if expired contributions are correctly removed.
+        # (With the old '+=' trim bug, the final vecdir would be ~277.5 deg,
+        # a 267-degree error -- so this test discriminates strongly.)
+        import math
+
+        pkts: List[Dict[str, Any]] = [
+            {'dateTime': 1000, 'usUnits': 1, 'windDir': 200.0, 'windGust': 10.0, 'windGustDir': 200.0, 'windrun': None, 'windSpeed': 10.0},
+            {'dateTime': 1030, 'usUnits': 1, 'windDir': 250.0, 'windGust': 10.0, 'windGustDir': 250.0, 'windrun': None, 'windSpeed': 10.0},
+            {'dateTime': 1160, 'usUnits': 1, 'windDir': 350.0, 'windGust': 10.0, 'windGustDir': 350.0, 'windrun': None, 'windSpeed': 10.0},
+            {'dateTime': 1180, 'usUnits': 1, 'windDir':  10.0, 'windGust': 10.0, 'windGustDir':  10.0, 'windrun': None, 'windSpeed': 10.0},
+            {'dateTime': 1200, 'usUnits': 1, 'windDir':  30.0, 'windGust': 10.0, 'windGustDir':  30.0, 'windrun': None, 'windSpeed': 10.0}]
+
+        wind_fields = [
+            '2m.wind.vecdir',
+            '2m.wind.vecdir.raw',
+            '2m.wind.vecavg',
+            '2m.wind.vecavg.raw']
+
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, wind_fields)
+        weight = cfg.loop_frequency
+
+        def hand_vec(survivors):
+            # survivors: list of (windSpeed, windDir)
+            xsum = ysum = sumtime = 0.0
+            for speed, dirN in survivors:
+                theta = math.radians(90.0 - dirN)
+                xsum += weight * speed * math.cos(theta)
+                ysum += weight * speed * math.sin(theta)
+                sumtime += weight
+            vec_dir = 90.0 - math.degrees(math.atan2(ysum, xsum))
+            if vec_dir < 0.0:
+                vec_dir += 360.0
+            vec_avg = math.sqrt(xsum ** 2 + ysum ** 2) / sumtime
+            return vec_dir, vec_avg
+
+        accums: user.loopdata.Accumulators = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
+
+        # Packet 1 (ts=1000): only the 200-degree obs is present.
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkts[0], cfg, accums)
+
+        # Packet 2 (ts=1030): both 200 and 250 live; nothing expired yet.
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkts[1], cfg, accums)
+        vd, va = hand_vec([(10.0, 200.0), (10.0, 250.0)])
+        self.assertAlmostEqual(vd, 225.0, places=4)  # offline-computed checkpoint
+        self.assertAlmostEqual(loopdata_pkt['2m.wind.vecdir.raw'], vd, places=4)
+        self.assertAlmostEqual(loopdata_pkt['2m.wind.vecavg.raw'], va, places=4)
+
+        # Packet 3 (ts=1160): 1000 (exp 1120) and 1030 (exp 1150) have both
+        # expired (<= 1160); only the 350-degree obs survives.
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkts[2], cfg, accums)
+        vd, va = hand_vec([(10.0, 350.0)])
+        self.assertAlmostEqual(vd, 350.0, places=4)
+        self.assertAlmostEqual(loopdata_pkt['2m.wind.vecdir.raw'], vd, places=4)
+        self.assertAlmostEqual(loopdata_pkt['2m.wind.vecavg.raw'], va, places=4)
+
+        # Packets 4 and 5 (ts=1180, 1200): window now holds 350, 10, 30.
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkts[3], cfg, accums)
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkts[4], cfg, accums)
+        vd, va = hand_vec([(10.0, 350.0), (10.0, 10.0), (10.0, 30.0)])
+        self.assertAlmostEqual(vd, 10.0, places=4)  # offline-computed checkpoint
+        self.assertAlmostEqual(va, 9.5979508052, places=6)
+        self.assertAlmostEqual(loopdata_pkt['2m.wind.vecdir.raw'], vd, places=4)
+        self.assertAlmostEqual(loopdata_pkt['2m.wind.vecavg.raw'], va, places=4)
+
+    def test_day_wind_vecdir_loop_vs_quantized_archive(self) -> None:
+        # Document WHY loopdata's day.wind.vecdir legitimately differs from the
+        # WeeWX report's day wind direction on a Davis VP2 using hardware
+        # record generation.
+        #
+        # loopdata vector-averages full-resolution LOOP packets.  The report
+        # aggregates ARCHIVE records whose windDir is a single value per
+        # interval, QUANTIZED to one of 16 compass points (22.5 deg) -- a
+        # documented property of the Davis archive record (Davis spec: wind
+        # direction display resolution is 16 points / 22.5 deg on the compass
+        # rose).  These are different inputs, so the two day-level vecdir
+        # values legitimately differ; neither is "wrong".  loopdata's is the
+        # higher-resolution vector direction.
+        #
+        # IMPORTANT (scope): This test models ONLY the 22.5-degree quantization
+        # of the archive direction, which is documented fact.  It does NOT
+        # replicate the console's bin-SELECTION algorithm, which Davis has
+        # never published and for which community descriptions conflict
+        # (sample-count "mode" vs speed-weighted).  To stay independent of that
+        # unresolved question, every archive interval below contains samples of
+        # a SINGLE true direction, so count-mode and speed-weighted selection
+        # necessarily pick the same bin -- the snapped archive direction is
+        # unambiguous under either theory.
+        #
+        # Construction: four intervals whose true directions each sit 10 deg
+        # clockwise of a compass point, so each snaps the same rotational way
+        # (-10 deg).  The bias therefore accumulates rather than cancels, and
+        # the day-level divergence is a clean 10 deg:
+        #     true 10.0 -> archive 0.0    (N)
+        #     true 32.5 -> archive 22.5   (NNE)
+        #     true 55.0 -> archive 45.0   (NE)
+        #     true 77.5 -> archive 67.5   (ENE)
+        # loopdata (full-res vector avg) -> 43.75 deg
+        # archive  (quantized per-interval) -> 33.75 deg
+        # vecavg is identical in both paths (a control: this is a direction
+        # effect, not a speed effect).
+        import math
+
+        speed = 10.0
+        true_dirs = [10.0, 32.5, 55.0, 77.5]
+        compass_points = [i * 22.5 for i in range(16)]
+
+        def snap_to_compass(deg):
+            deg = deg % 360.0
+            return min(compass_points,
+                       key=lambda c: min(abs(deg - c), 360.0 - abs(deg - c)))
+
+        def vecdir_vecavg(samples, weight):
+            # samples: list of (speed, dirN)
+            xsum = ysum = sumtime = 0.0
+            for s, d in samples:
+                theta = math.radians(90.0 - d)
+                xsum += weight * s * math.cos(theta)
+                ysum += weight * s * math.sin(theta)
+                sumtime += weight
+            vd = 90.0 - math.degrees(math.atan2(ysum, xsum))
+            if vd < 0.0:
+                vd += 360.0
+            return vd, math.sqrt(xsum ** 2 + ysum ** 2) / sumtime
+
+        # Build loop packets: 3 per interval, all within a single local day,
+        # spaced 2s apart (base chosen at midday so no timezone straddles a day
+        # boundary over the 22-second span).
+        base = 1665838800  # 2022-10-15 13:00:00 UTC -> daytime across US zones
+        pkts: List[Dict[str, Any]] = []
+        ts = base
+        for d in true_dirs:
+            for _ in range(3):
+                pkts.append({'dateTime': ts, 'usUnits': 1,
+                             'windDir': d, 'windGust': speed,
+                             'windGustDir': d, 'windrun': None,
+                             'windSpeed': speed})
+                ts += 2
+
+        wind_fields = ['day.wind.vecdir', 'day.wind.vecdir.raw',
+                       'day.wind.vecavg', 'day.wind.vecavg.raw']
+
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, wind_fields)
+        weight = cfg.loop_frequency
+
+        accums: user.loopdata.Accumulators = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
+        for pkt in pkts:
+            loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
+
+        # (1) loopdata's day vecdir = full-resolution vector average of all
+        # loop samples.
+        loop_samples = [(speed, d) for d in true_dirs for _ in range(3)]
+        expected_loop_vecdir, expected_loop_vecavg = vecdir_vecavg(loop_samples, weight)
+        self.assertAlmostEqual(expected_loop_vecdir, 43.75, places=4)
+        self.assertAlmostEqual(loopdata_pkt['day.wind.vecdir.raw'], expected_loop_vecdir, places=4)
+        self.assertAlmostEqual(loopdata_pkt['day.wind.vecavg.raw'], expected_loop_vecavg, places=4)
+
+        # (2) The report's path: one quantized record per interval.  Computed
+        # here as the reference -- loopdata does not produce this; it is what
+        # the archive-based report aggregates.
+        archive_records = [(speed, snap_to_compass(d)) for d in true_dirs]
+        archive_vecdir, archive_vecavg = vecdir_vecavg(archive_records, weight)
+        self.assertAlmostEqual(archive_vecdir, 33.75, places=4)
+
+        # (3) The point of the test: the two legitimately diverge in direction
+        # (here by a full 10 deg), while vecavg is identical -- confirming the
+        # divergence is purely the direction-quantization effect.
+        divergence = abs(((expected_loop_vecdir - archive_vecdir) + 180.0) % 360.0 - 180.0)
+        self.assertAlmostEqual(divergence, 10.0, places=4)
+        self.assertAlmostEqual(expected_loop_vecavg, archive_vecavg, places=6)
+
     def test_ip100_packet_processing(self) -> None:
         pkts: List[Dict[str, Any]] = ip100_packets.IP100Packets._get_packets()
 
