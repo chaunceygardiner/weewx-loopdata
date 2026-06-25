@@ -1,6 +1,32 @@
-#    Copyright (c) 2022 John A Kline <john@johnkline.com>
+#    Copyright (c) 2022-2026 John A Kline <john@johnkline.com>
 #
 #    See the file LICENSE.txt for your full rights.
+#
+#    HOW TO RUN THESE TESTS
+#    ----------------------
+#    Run from the repository root (~/software/weewx-loopdata), NOT from the
+#    tests directory.  The harness loads its config files via paths relative
+#    to the current directory (e.g. 'bin/user/tests/weewx.conf.us'), so the
+#    working directory must be the repo root or every config-loading test
+#    fails with KeyError: 'StdConvert' (an empty config from a missing file).
+#
+#    Activate the weewx venv first so weewx/weeutil/sortedcontainers import.
+#
+#    Both 'bin' and 'bin/user/tests' must be on PYTHONPATH:
+#      - bin             -> resolves 'import user.loopdata'
+#      - bin/user/tests  -> resolves the packet-data modules
+#                           (cc3000_packets, ip100_packets, etc.)
+#
+#    Command (uses Python's built-in unittest runner; pytest not required):
+#
+#      cd ~/software/weewx-loopdata
+#      PYTHONPATH=bin:bin/user/tests python3 bin/user/tests/test_process_packet.py
+#
+#    Add -v for per-test names, or append a test name to run just one, e.g.:
+#
+#      PYTHONPATH=bin:bin/user/tests python3 bin/user/tests/test_process_packet.py -v
+#      PYTHONPATH=bin:bin/user/tests python3 bin/user/tests/test_process_packet.py \
+#          ProcessPacketTests.test_wind
 #
 """Test processing packets."""
 

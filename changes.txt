@@ -1,6 +1,11 @@
 loopdata change history
 -----------------------
 
+3.5 Release 2026/06/24
+----------------------
+Bug fix for continuous vector accumulator.
+Code cleanup.
+
 3.4 Release 2026/06/20
 ----------------------
 Ensure temporary loop data file to actual is atomic.
