@@ -1,6 +1,11 @@
 loopdata change history
 -----------------------
 
+3.8 Release 2026/07/27
+----------------------
+Many tests added after mutation testing.
+Support .count which was mistakenly not allowed by the parser
+
 3.6 Release 2026/06/25
 ----------------------
 Fix three potential latent bugs.

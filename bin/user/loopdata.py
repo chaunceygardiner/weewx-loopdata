@@ -49,7 +49,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '3.6'
+LOOP_DATA_VERSION = '3.8'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -96,6 +96,7 @@ class Configuration:
     config_dict              : Dict[str, Any]
     unit_system              : int
     archive_interval         : int
+    archive_delay            : int
     loop_data_dir            : str
     filename                 : str
     target_report            : str
@@ -837,6 +838,7 @@ class LoopData(StdService):
             config_dict              = config_dict,
             unit_system              = unit_system,
             archive_interval         = to_int(std_archive_dict.get('archive_interval')),
+            archive_delay            = to_int(std_archive_dict.get('archive_delay', 15)),
             loop_data_dir            = loop_data_dir,
             filename                 = file_spec_dict.get('filename', 'loop-data.txt'),
             target_report            = target_report,
@@ -1118,12 +1120,25 @@ class LoopData(StdService):
             weeutil.logger.log_traceback(log.error, "    ****  ")
 
     @staticmethod
-    def day_summary_records_generator(dbm, obstype: str, earliest_time: int
+    def day_summary_records_generator(dbm, obstype: str, earliest_time: int,
+            latest_time: Optional[int] = None
             ) -> Generator[Dict[str, Any], None, None]:
+        # Day-summary inclusion follows weewx's DailySummaries convention
+        # (weewx.xtypes.DailySummaries): dateTime >= start AND dateTime < stop
+        # -- inclusive on the left, EXCLUSIVE on the right.  Note this is the
+        # opposite right-edge convention from archive-record queries
+        # (start < t <= stop); day-summary rows are keyed by day-start, so the
+        # row at exactly 'start' is included and the row at exactly 'stop' is
+        # not.  latest_time should be the period span's stop.
         table_name = 'archive_day_%s' % obstype
         cols: List[str] = dbm.connection.columnsOf(table_name)
-        for row in dbm.genSql('SELECT * FROM %s' \
-                ' WHERE dateTime >= %d ORDER BY dateTime ASC' % (table_name, earliest_time)):
+        if latest_time is None:
+            sql = 'SELECT * FROM %s WHERE dateTime >= %d ORDER BY dateTime ASC' % (
+                table_name, earliest_time)
+        else:
+            sql = 'SELECT * FROM %s WHERE dateTime >= %d AND dateTime < %d ORDER BY dateTime ASC' % (
+                table_name, earliest_time, latest_time)
+        for row in dbm.genSql(sql):
             record: Dict[str, Any] = {}
             for i in range(len(cols)):
                 record[cols[i]] = row[i]
@@ -1187,7 +1202,8 @@ class LoopData(StdService):
             week_accum, self.cfg.obstypes.week = LoopData.create_week_accum(
                 self.cfg.unit_system, self.cfg.archive_interval, self.cfg.obstypes.week, pkt_time, self.cfg.week_start, day_accum, dbm)
             hour_accum, self.cfg.obstypes.hour = LoopData.create_hour_accum(
-                self.cfg.unit_system, self.cfg.archive_interval, self.cfg.obstypes.hour, pkt_time, day_accum, dbm)
+                self.cfg.unit_system, self.cfg.archive_interval, self.cfg.obstypes.hour, pkt_time, day_accum, dbm,
+                archive_delay=self.cfg.archive_delay)
 
             # Create continuous accums
             continuous_accums: Dict[str, ContinuousAccum] = {}
@@ -1200,7 +1216,8 @@ class LoopData(StdService):
                     timelength = int(per[:-1])*60
 
                 cont_accum, obstypes = LoopData.create_continuous_accum(
-                    per, self.cfg.unit_system, self.cfg.archive_interval, obstypes, timelength, day_accum, dbm)
+                    per, self.cfg.unit_system, self.cfg.archive_interval, obstypes, timelength, day_accum, dbm,
+                    archive_delay=self.cfg.archive_delay)
                 if cont_accum:
                     continuous_accums[per], self.cfg.obstypes.continuous[per]  = cont_accum, obstypes
 
@@ -1253,21 +1270,23 @@ class LoopData(StdService):
         return LoopData.create_period_accum('week', unit_system, archive_interval, obstypes, span, day_accum, dbm)
 
     @staticmethod
-    def create_hour_accum(unit_system: int, archive_interval: int, obstypes: Set[str], pkt_time: int, day_accum: weewx.accum.Accum, dbm
-            ) -> Tuple[Optional[weewx.accum.Accum], Set[str]]:
+    def create_hour_accum(unit_system: int, archive_interval: int, obstypes: Set[str], pkt_time: int, day_accum: weewx.accum.Accum, dbm,
+            archive_delay: int = 15) -> Tuple[Optional[weewx.accum.Accum], Set[str]]:
         log.debug('Creating initial hour_accum')
         span = weeutil.weeutil.archiveHoursAgoSpan(pkt_time)
-        return LoopData.create_period_accum('hour', unit_system, archive_interval, obstypes, span, day_accum, dbm)
+        return LoopData.create_period_accum('hour', unit_system, archive_interval, obstypes, span, day_accum, dbm, archive_delay=archive_delay)
 
     @staticmethod
     def create_period_accum(name: str, unit_system: int, archive_interval: int, obstypes: Set[str],
-            span: weeutil.weeutil.TimeSpan, day_accum: weewx.accum.Accum, dbm) -> Tuple[Optional[weewx.accum.Accum], Set[str]]:
+            span: weeutil.weeutil.TimeSpan, day_accum: weewx.accum.Accum, dbm,
+            archive_delay: int = 15) -> Tuple[Optional[weewx.accum.Accum], Set[str]]:
         """return period accumulator and (possibly trimmed) obstypes"""
 
         if len(obstypes) == 0:
             return None, set()
 
         start = time.time()
+        record_count = 0
         accum = weewx.accum.Accum(span, unit_system)
 
         # valid observation types will be returned
@@ -1295,7 +1314,7 @@ class LoopData(StdService):
             # For periods > day, accumulate from day summary records.
             # hour accumulator is handled by reading archive records (see below).
             if  name != 'hour':
-                for record in LoopData.day_summary_records_generator(dbm, obstype, span.start):
+                for record in LoopData.day_summary_records_generator(dbm, obstype, span.start, latest_time=span.stop):
                     record_count += 1
                     if type(stats) == weewx.accum.ScalarStats:
                         sstat = weewx.accum.ScalarStats((record['min'], record['mintime'],
@@ -1332,6 +1351,13 @@ class LoopData(StdService):
             archive_pkts: List[Dict[str, Any]] = LoopData.get_archive_packets(
                 dbm, archive_columns, earliest_time)
             for pkt in archive_pkts:
+                # Reject future-dated records, mirroring weewx's _catchup
+                # (engine.StdArchive): accept only ts < now + archive_delay,
+                # where archive_delay provides lenience for clock drift.
+                if pkt['dateTime'] >= time.time() + archive_delay:
+                    log.warning('Ignoring future-dated archive record: %s'
+                        % timestamp_to_string(pkt['dateTime']))
+                    continue
                 pkt['usUnits'] = unit_system
                 pruned_pkt = LoopProcessor.prune_period_packet(pkt, obstypes)
                 accum.addRecord(pruned_pkt, weight=archive_interval * 60)
@@ -1343,7 +1369,8 @@ class LoopData(StdService):
 
     @staticmethod
     def create_continuous_accum(name: str, unit_system: int, archive_interval: int, obstypes: Set[str],
-            timelength, day_accum: weewx.accum.Accum, dbm) -> Tuple[Optional[ContinuousAccum], Set[str]]:
+            timelength, day_accum: weewx.accum.Accum, dbm,
+            archive_delay: int = 15) -> Tuple[Optional[ContinuousAccum], Set[str]]:
         """return continuously accumulator and (possibly trimmed) obstypes"""
 
         if len(obstypes) == 0:
@@ -1382,6 +1409,13 @@ class LoopData(StdService):
         archive_pkts: List[Dict[str, Any]] = LoopData.get_archive_packets(
             dbm, archive_columns, earliest_time)
         for pkt in archive_pkts:
+            # Reject future-dated records, mirroring weewx's _catchup
+            # (engine.StdArchive): accept only ts < now + archive_delay,
+            # where archive_delay provides lenience for clock drift.
+            if pkt['dateTime'] >= start + archive_delay:
+                log.warning('Ignoring future-dated archive record: %s'
+                    % timestamp_to_string(pkt['dateTime']))
+                continue
             pkt['usUnits'] = unit_system
             pruned_pkt = LoopProcessor.prune_period_packet(pkt, obstypes)
             accum.addRecord(pruned_pkt, weight=archive_interval * 60)
@@ -1396,8 +1430,8 @@ class LoopData(StdService):
         valid_prefixes    : List[str] = [ 'unit' ]
         valid_prefixes2   : List[str] = [ 'label' ]
         valid_agg_types   : List[str] = [ 'max', 'min', 'maxtime', 'mintime',
-                                          'gustdir', 'avg', 'sum', 'vecavg',
-                                          'vecdir', 'rms' ]
+                                          'gustdir', 'avg', 'sum', 'count',
+                                          'vecavg', 'vecdir', 'rms' ]
         valid_format_specs: List[str] = [ 'formatted', 'raw', 'ordinal_compass',
                                           'desc', 'code' ]
 
@@ -1690,6 +1724,8 @@ class LoopProcessor:
                 src_value = maxtime
             elif cname.agg_type == 'sum':
                 src_value = sum
+            elif cname.agg_type == 'count':
+                src_value = count
             elif cname.agg_type == 'avg':
                 src_value = stats.avg
             else:
