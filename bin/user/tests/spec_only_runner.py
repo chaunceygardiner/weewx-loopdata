@@ -43,6 +43,8 @@ SPEC_TESTS = [
     'test_create_period_accum_from_database',
     'test_create_period_accum_empty_obstypes',
     'test_create_period_accum_day_summary_upper_bound',
+    'test_continuous_firstlast_accum_empty',
+    'test_firstlast_obstype_end_to_end',
     'test_period_accum_wrappers_distinct_spans',
     'test_period_accum_wrappers_use_correct_spans',
     'test_create_hour_accum_from_database',

@@ -3297,6 +3297,100 @@ class ProcessPacketTests(unittest.TestCase):
         pairs = [(a.start, a.stop) for a in spans.values()]
         self.assertEqual(len(set(pairs)), len(pairs), msg='period spans not all distinct')
 
+    def test_continuous_firstlast_accum_empty(self) -> None:
+        # A fresh (empty) ContinuousFirstLastAccum must return None from every
+        # accessor rather than indexing an empty list.  This pins the empty
+        # guards on first/firsttime/last/lasttime and getStatsTuple -- the
+        # guards added specifically to prevent the IndexError that an unguarded
+        # getStatsTuple would raise.
+        fl = user.loopdata.ContinuousFirstLastAccum(timelength=100)
+        self.assertIsNone(fl.first)
+        self.assertIsNone(fl.firsttime)
+        self.assertIsNone(fl.last)
+        self.assertIsNone(fl.lasttime)
+        self.assertEqual(fl.getStatsTuple(), (None, None, None, None))
+
+    def test_firstlast_obstype_end_to_end(self) -> None:
+        # Exercises the newly-implemented firstlast support end to end, mirroring
+        # weewx's own test_Accum_with_string approach: register a string obstype
+        # as a firstlast accumulator, feed it through a ContinuousAccum, then
+        # dispatch first/last/firsttime/lasttime through add_period_obstype.
+        # Verifies (1) type preservation (no str() coercion) and (2) correct
+        # first/last selection.
+        import weewx.units, weewx.accum
+        US = weewx.units.unit_constants['US']
+        converter = weewx.units.Converter(weewx.units.USUnits)
+        formatter = weewx.units.Formatter()
+
+        # Register a firstlast string obstype (cleaned up in finally).
+        weewx.accum.accum_dict.extend(
+            {'stringType': {'accumulator': 'firstlast', 'extractor': 'last'}})
+        try:
+            accum = user.loopdata.ContinuousAccum(100000, US)
+            accum.addRecord({'dateTime': 1000, 'usUnits': 1, 'stringType': 'alpha'})
+            accum.addRecord({'dateTime': 1500, 'usUnits': 1, 'stringType': 'beta'})
+            accum.addRecord({'dateTime': 2000, 'usUnits': 1, 'stringType': 'gamma'})
+
+            self.assertIn('stringType', accum)
+            stats = accum['stringType']
+            self.assertIsInstance(stats, user.loopdata.ContinuousFirstLastAccum)
+            # Type preserved (strings stored as-is, not via str() of something).
+            self.assertEqual(stats.first, 'alpha')
+            self.assertEqual(stats.last, 'gamma')
+            self.assertEqual(stats.firsttime, 1000)
+            self.assertEqual(stats.lasttime, 2000)
+
+            def field(agg):
+                cname = user.loopdata.LoopData.parse_cname('day.stringType.%s' % agg)
+                self.assertIsNotNone(cname, msg='parse failed for %s' % agg)
+                out = {}
+                user.loopdata.LoopProcessor.add_period_obstype(
+                    cname, accum, out, converter, formatter)
+                return out.get(cname.field)
+
+            # first/last emit the string value as-is (string bypass).
+            self.assertEqual(field('first'), 'alpha')
+            self.assertEqual(field('last'), 'gamma')
+            # firsttime/lasttime are timestamps (numeric, routed/formatted).
+            # The raw form pins the exact value.
+            cname_ft = user.loopdata.LoopData.parse_cname('day.stringType.firsttime.raw')
+            out_ft = {}
+            user.loopdata.LoopProcessor.add_period_obstype(
+                cname_ft, accum, out_ft, converter, formatter)
+            self.assertEqual(out_ft.get('day.stringType.firsttime.raw'), 1000)
+
+            cname_lt = user.loopdata.LoopData.parse_cname('day.stringType.lasttime.raw')
+            out_lt = {}
+            user.loopdata.LoopProcessor.add_period_obstype(
+                cname_lt, accum, out_lt, converter, formatter)
+            self.assertEqual(out_lt.get('day.stringType.lasttime.raw'), 2000)
+
+            # Rolling-window correctness: as the oldest entries expire off the
+            # front, 'first' must advance to the next survivor (this is why the
+            # full values_list is kept, not just two endpoints).
+            # Nothing expired yet at a ts well within the window:
+            stats.trimExpiredEntries(50000)
+            self.assertEqual(stats.first, 'alpha')
+            self.assertEqual(stats.last, 'gamma')
+            # Expire alpha (added at 1000, timelength 100000): the FirstLast trim
+            # condition is dateTime + timelength <= ts, so ts = 1000 + 100000
+            # ages alpha out and 'first' advances to beta.
+            stats.trimExpiredEntries(1000 + 100000)
+            self.assertEqual(stats.first, 'beta')
+            self.assertEqual(stats.firsttime, 1500)
+            self.assertEqual(stats.last, 'gamma')   # last unchanged
+        finally:
+            # Remove the synthetic obstype so other tests are unaffected.
+            # accum_dict is a ChainMap; the entry added by extend() may live in
+            # a layer that does not support del by key, so guard it.
+            try:
+                maps = getattr(weewx.accum.accum_dict, 'maps', [weewx.accum.accum_dict])
+                for m in maps:
+                    if 'stringType' in m:
+                        del m['stringType']
+            except Exception:
+                pass
+
     def test_continuous_firstlast_accum_basic(self) -> None:
         # ContinuousFirstLastAccum: collects first/last string observations over
         # a rolling window.  (Note: this accumulator type is registered but the

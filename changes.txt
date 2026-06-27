@@ -1,6 +1,10 @@
 loopdata change history
 -----------------------
 
+3.9 Release 2026/06/27
+----------------------
+Add plumbing for first/last observation types (in case WeeWX fully supports thenm in the future)
+
 3.8 Release 2026/07/27
 ----------------------
 Many tests added after mutation testing.

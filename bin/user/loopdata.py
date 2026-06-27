@@ -49,7 +49,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '3.8'
+LOOP_DATA_VERSION = '3.9'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -563,15 +563,46 @@ class ContinuousFirstLastAccum(object):
 
     def getStatsTuple(self):
         """Return a stats-tuple. That is, a tuple containing the gathered statistics."""
-        return self.values_list[0].value, self.values_list[0].dateTime, self.values_list[-1].value, self.values_list[-1].dateTime,
+        if len(self.values_list) == 0:
+            return (None, None, None, None)
+        return (self.values_list[0].value, self.values_list[0].dateTime,
+                self.values_list[-1].value, self.values_list[-1].dateTime)
+
+    @property
+    def first(self):
+        """The first value seen (None if empty)."""
+        if len(self.values_list) == 0:
+            return None
+        return self.values_list[0].value
+
+    @property
+    def firsttime(self):
+        """The timestamp of the first value seen (None if empty)."""
+        if len(self.values_list) == 0:
+            return None
+        return self.values_list[0].dateTime
+
+    @property
+    def last(self):
+        """The last value seen (None if empty)."""
+        if len(self.values_list) == 0:
+            return None
+        return self.values_list[-1].value
+
+    @property
+    def lasttime(self):
+        """The timestamp of the last value seen (None if empty)."""
+        if len(self.values_list) == 0:
+            return None
+        return self.values_list[-1].dateTime
 
     def addSum(self, ts, val, weight=1):
-        """Add a scalar value to my running count."""
+        """Add a value, preserving its type.  weewx's FirstLastAccum stores the
+        value as-is (it may be of almost any type), so we do NOT coerce to str."""
         if val is not None:
-            string_val = str(val)
             self.values_list.append(FirstLastEntry(
                 dateTime = ts,
-                value = string_val))
+                value = val))
 
     def trimExpiredEntries(self, ts):
         # Remove any expired entries
@@ -1431,6 +1462,7 @@ class LoopData(StdService):
         valid_prefixes2   : List[str] = [ 'label' ]
         valid_agg_types   : List[str] = [ 'max', 'min', 'maxtime', 'mintime',
                                           'gustdir', 'avg', 'sum', 'count',
+                                          'first', 'last', 'firsttime', 'lasttime',
                                           'vecavg', 'vecdir', 'rms' ]
         valid_format_specs: List[str] = [ 'formatted', 'raw', 'ordinal_compass',
                                           'desc', 'code' ]
@@ -1758,8 +1790,24 @@ class LoopProcessor:
             else:
                 return
 
+        elif isinstance(stats, ContinuousFirstLastAccum) and stats.firsttime is not None:
+            # FirstLastAccum may hold values of almost any type (weewx uses it
+            # for string obstypes, but the value's native type is preserved).
+            # Route through the shared convert/format block below; the default
+            # branch handles strings (emit as-is) vs numerics (format).
+            if cname.agg_type == 'first':
+                src_value = stats.first
+            elif cname.agg_type == 'last':
+                src_value = stats.last
+            elif cname.agg_type == 'firsttime':
+                src_value = stats.firsttime
+            elif cname.agg_type == 'lasttime':
+                src_value = stats.lasttime
+            else:
+                return
+
         else:
-            # firstlast not currently supported
+            # No stats available (e.g. empty accumulator).
             return
 
         if src_value is None:
@@ -1787,7 +1835,12 @@ class LoopProcessor:
             loopdata_pkt[cname.field] = tgt_value
             return
 
-        loopdata_pkt[cname.field] = formatter.toString((tgt_value, tgt_type, tgt_group))
+        if type(tgt_value) == str:
+            # String values (e.g. a firstlast string obstype) are emitted as-is;
+            # they have no numeric format.  Mirrors add_current_obstype.
+            loopdata_pkt[cname.field] = tgt_value
+        else:
+            loopdata_pkt[cname.field] = formatter.toString((tgt_value, tgt_type, tgt_group))
 
     @staticmethod
     def add_trend_obstype(cname: CheetahName, accum: ContinuousAccum,
