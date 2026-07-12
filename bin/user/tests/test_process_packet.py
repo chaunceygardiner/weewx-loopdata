@@ -10,7 +10,7 @@
 #    working directory must be the repo root or every config-loading test
 #    fails with KeyError: 'StdConvert' (an empty config from a missing file).
 #
-#    Activate the weewx venv first so weewx/weeutil/sortedcontainers import.
+#    Activate the weewx venv first so weewx/weeutil import.
 #
 #    Both 'bin' and 'bin/user/tests' must be on PYTHONPATH:
 #      - bin             -> resolves 'import user.loopdata'
@@ -34,6 +34,7 @@ import configobj
 import logging
 import os
 import queue
+import random
 import shutil
 import tempfile
 import unittest
@@ -2659,6 +2660,108 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertAlmostEqual(va, 9.5979508052, places=6)
         self.assertAlmostEqual(loopdata_pkt['2m.wind.vecdir.raw'], vd, places=4)
         self.assertAlmostEqual(loopdata_pkt['2m.wind.vecavg.raw'], va, places=4)
+
+    def test_min_max_dict(self) -> None:
+        # Direct unit tests for MinMaxDict, the two-heap lazy-deletion mapping
+        # behind the continuous accumulators.  Expected values are computed
+        # from first principles (a shadow dict with min()/max() as the
+        # oracle), not from loopdata output.
+        MMD = user.loopdata.MinMaxDict
+
+        # --- Empty: peekitem raises IndexError, like any empty container. ---
+        d = MMD()
+        self.assertEqual(len(d), 0)
+        self.assertNotIn(1.0, d)
+        with self.assertRaises(IndexError):
+            d.peekitem(0)
+        with self.assertRaises(IndexError):
+            d.peekitem(-1)
+
+        # --- Only the two end indexes are supported. ---
+        d[1.0] = 'one'
+        with self.assertRaises(IndexError):
+            d.peekitem(1)
+        with self.assertRaises(IndexError):
+            d.peekitem(-2)
+
+        # --- Basic get/set/pop; overwriting an existing key is not a new key. ---
+        self.assertIn(1.0, d)
+        self.assertEqual(d[1.0], 'one')
+        d[1.0] = 'uno'
+        self.assertEqual(d[1.0], 'uno')
+        self.assertEqual(len(d), 1)
+        self.assertEqual(d.peekitem(0), (1.0, 'uno'))
+        self.assertEqual(d.peekitem(-1), (1.0, 'uno'))
+        self.assertEqual(d.pop(1.0), 'uno')
+        self.assertEqual(len(d), 0)
+        with self.assertRaises(IndexError):
+            d.peekitem(0)
+
+        # --- Long stale chains: peekitem must skim dead heap entries.  Kill
+        #     the 999 smallest keys, so the min-heap top is 999 dead entries
+        #     deep; then the symmetric case for the max-heap. ---
+        d = MMD()
+        for i in range(1000):
+            d[float(i)] = i
+        for i in range(999):
+            d.pop(float(i))
+        self.assertEqual(d.peekitem(0), (999.0, 999))
+        self.assertEqual(d.peekitem(-1), (999.0, 999))
+        d = MMD()
+        for i in range(1000):
+            d[float(i)] = i
+        for i in range(1, 1000):
+            d.pop(float(i))
+        self.assertEqual(d.peekitem(-1), (0.0, 0))
+        self.assertEqual(d.peekitem(0), (0.0, 0))
+
+        # --- Re-adding a dead key leaves duplicate heap entries; peeks must
+        #     stay correct through kill/revive cycles and after final death. ---
+        d = MMD()
+        d[5.0] = 'a'
+        for marker in ('b', 'c', 'd'):
+            d.pop(5.0)
+            d[5.0] = marker
+            self.assertEqual(d.peekitem(0), (5.0, marker))
+            self.assertEqual(d.peekitem(-1), (5.0, marker))
+        d[7.0] = 'hi'
+        d.pop(5.0)
+        self.assertEqual(d.peekitem(0), (7.0, 'hi'))
+        self.assertEqual(d.peekitem(-1), (7.0, 'hi'))
+
+        # --- Randomized differential fuzz against the shadow dict.  Narrow
+        #     key ranges force constant key death and revival (duplicate heap
+        #     entries); wide ranges force churn and compaction.  Values are
+        #     mutable lists appended to in place, mirroring how the
+        #     accumulators use the timestamp deques. ---
+        rand = random.Random(20260711)
+        for key_range, n_ops in ((5, 20000), (40, 20000), (1000, 12000)):
+            d = MMD()
+            shadow: Dict[float, List[int]] = {}
+            for op in range(n_ops):
+                key = float(rand.randrange(key_range))
+                r = rand.random()
+                if r < 0.50:
+                    if key not in d:
+                        self.assertNotIn(key, shadow)
+                        d[key] = []
+                        shadow[key] = d[key]  # same object in both
+                    d[key].append(op)
+                elif shadow:
+                    victim = rand.choice(list(shadow))
+                    self.assertIs(d.pop(victim), shadow.pop(victim))
+                self.assertEqual(len(d), len(shadow))
+                if shadow:
+                    mn, mx = min(shadow), max(shadow)
+                    self.assertEqual(d.peekitem(0), (mn, shadow[mn]))
+                    self.assertEqual(d.peekitem(-1), (mx, shadow[mx]))
+            # The heaps are rebuilt whenever an insert leaves them holding
+            # more than twice the live keys, so right after an insert they
+            # are bounded.  (Pops don't shrink them, so insert one key to
+            # re-establish the bound before checking.)
+            d[float(key_range)] = []
+            self.assertLessEqual(len(d._min_heap), 2 * len(d) + 16)
+            self.assertLessEqual(len(d._max_heap), 2 * len(d) + 16)
 
     def test_continuous_scalar_stats_edge_cases(self) -> None:
         # Direct unit tests for ContinuousScalarStats accessors, focused on the

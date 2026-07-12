@@ -1,11 +1,20 @@
 loopdata change history
 -----------------------
 
-3.10 Release TBD
-----------------
-Installer now checks that the sortedcontainers package is available and, if not,
-exits with pip (venv) and debian package instructions.
-README: clarify that pip-installed WeeWX needs sortedcontainers pip installed in the venv.
+4.0 Release TBD
+---------------
+No configuration changes are required; this is a drop-in upgrade.
+The sortedcontainers package is no longer required.  Its SortedDict is replaced
+by MinMaxDict, a minimal min/max-tracking mapping (two heaps with lazy deletion)
+tailored to the continuous accumulators — faster than SortedDict at every key
+count, with no pathological worst case.  The upstream project has had no
+release since 2021, and dropping it simplifies installation (no more pip/apt
+prerequisite step).
+Continuous accumulators are ~5x faster per packet: the future-debit and
+per-value timestamp lists are now deques, making the once-per-packet
+front-removal O(1) instead of an O(window-length) list shift.
+README: new "Using LoopData in Your Own Skin" section; corrected field
+examples, config option names and defaults; many typo fixes.
 
 3.9 Release 2026/06/27
 ----------------------

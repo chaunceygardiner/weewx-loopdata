@@ -1,5 +1,5 @@
 # weewx-loopdata
-*Open source plugin for WeeWX software.
+Open source plugin for WeeWX software.
 
 Copyright (C)2022-2026 by John A Kline (john@johnkline.com)
 
@@ -10,14 +10,13 @@ Copyright (C)2022-2026 by John A Kline (john@johnkline.com)
 LoopData is a WeeWX service that generates a json file (loop-data.txt)
 on every loop (e.g., every 2s).
 
-Note: If you are upgrading to 3.0 or later, you must install `sortedcontainers`.
-* If WeeWX is pip installed: activate the WeeWX virtual environment, then `pip install sortedcontainers`
-* If WeeWX is a debian package install: `sudo apt install python3-sortedcontainers`
+Note: As of version 4.0, the `sortedcontainers` package is no longer required
+(it was required by versions 3.0 through 3.9).
 
-**IMPORTANT**: This extension has been tested with the WeeWX's vantage and cc3000 drivers.
+**IMPORTANT**: This extension has been tested with the WeeWX vantage and cc3000 drivers.
 It will likely also work with other drivers that, like the two drivers tested, report
 loop packets on a regular basis and report all observations on every loop packet.
-Use loopdata with driver's that report loop packets on an irregular basis and/or report
+Use loopdata with drivers that report loop packets on an irregular basis and/or report
 partial observations, at your own risk.
 
 **IMPORTANT**: It is crucial to specify the correct loop frequency in the LoopData section
@@ -66,7 +65,7 @@ separate plugin (and available to loopdata).
 * `windrun_SSW`
 * `windrun_SW`
 * `windrun_WSW`
-* `windrun_W``
+* `windrun_W`
 * `windrun_WNW`
 * `windrun_NW`
 * `windrun_NNW`
@@ -87,7 +86,7 @@ The json file will only include observations that are specified on the
 `fields` line in the `LoopData` section of the weewx.conf file.
 
 Typically, the loop-data.txt file is read by JavaScript on an HTML page
-to update the values on the page on every loop packet.  This is demostrated
+to update the values on the page on every loop packet.  This is demonstrated
 by the skin/report included with this extension.
 
 A WeeWX report is specified in the LoopData configuration (e.g.,
@@ -115,86 +114,140 @@ in the json file.  They are specified using WeeWX Cheetah syntax.
 For example, the current outside temperature can be included as:
 
 * `current.outTemp.formatted` which might yield `79.2`
-* `current.outTemp`           which might yeild `79.2°F`
-* `current.outTemp.raw`       which might yeild `79.175`
+* `current.outTemp`           which might yield `79.2°F`
+* `current.outTemp.raw`       which might yield `79.175`
 
 The maximum wind in the last 30m can be included as:
 
-* `30m.wind.max.formatted` which might yeild `7.1`
-* `30m.wind.max`           which might yeild `7.1 mph`
-* `30m.wind.max.raw`       which might yeild `7.12`
+* `30m.wind.max.formatted` which might yield `7.1`
+* `30m.wind.max`           which might yield `7.1 mph`
+* `30m.wind.max.raw`       which might yield `7.12`
 
-The minimum outside temperature in the last 3 hours can be included as:
+The average outside temperature over the last 3 hours can be included as:
 
-* `3h.outTemp.avg.formatted` which might yeild `32.4`
-* `3h.outTemp.avg`           which might yeild `32.4°`
-* `3h.outTemp.avg.raw`       which might yeild `32.41`
+* `3h.outTemp.avg.formatted` which might yield `32.4`
+* `3h.outTemp.avg`           which might yield `32.4°`
+* `3h.outTemp.avg.raw`       which might yield `32.41`
 
-The inTemp average inside temperature this hour can be included as:
+The average inside temperature this hour can be included as:
 
-* `hour.inTemp.avg.formatted` which might yeild `68.1`
-* `hour.inTemp.avg`           which might yeild `68.1°`
-* `hour.inTemp.avg.raw`       which might yeild `68.12`
+* `hour.inTemp.avg.formatted` which might yield `68.1`
+* `hour.inTemp.avg`           which might yield `68.1°`
+* `hour.inTemp.avg.raw`       which might yield `68.12`
 
 The day average of outside temperature can be included as:
 
-* `day.outTemp.avg.formatted` which might yeild `64.7`
-* `day.outTemp.avg`           which might yeild `64.7°`
-* `day.outTemp.avg.raw`       which might yeild `64.711`
+* `day.outTemp.avg.formatted` which might yield `64.7`
+* `day.outTemp.avg`           which might yield `64.7°`
+* `day.outTemp.avg.raw`       which might yield `64.711`
 
 The wind speed average for this week can be included as:
 
-* `week.windSpeed.avg.formatted` which might yeild `2.7`
-* `week.windSpeed.avg`           which might yeild `2.7 mph`
-* `week.windSpeed.raw`           which might yeild `2.74`
+* `week.windSpeed.avg.formatted` which might yield `2.7`
+* `week.windSpeed.avg`           which might yield `2.7 mph`
+* `week.windSpeed.avg.raw`       which might yield `2.74`
 
-The minimum dewpoint this month the time of that event can be included as:
+The minimum dewpoint this month and the time of that event can be included as:
 
 * `month.dewpoint.min`     which might yield `43.7°`
-* `month.dewpoint.mintime` which might yeild `08/01/2020 03:27:00 AM`
+* `month.dewpoint.mintime` which might yield `08/01/2020 03:27:00 AM`
 
 The maximum wind speed this year and the time of that event can be included as:
 
 * `year.wind.max`     which might yield `29.6 mph`
-* `year.wind.maxtime` which might yeild `02/26/2020 07:40:00 PM`
+* `year.wind.maxtime` which might yield `02/26/2020 07:40:00 PM`
 
 The total rain for this rain year can be included as:
 
-* `rainyear.rain.formatted` which might yeild `7.1`
-* `rainyear.rain`           which might yeild `7.1 in`
-* `rainyear.rain.raw`       which might yeild `7.13`
+* `rainyear.rain.sum.formatted` which might yield `7.1`
+* `rainyear.rain.sum`           which might yield `7.1 in`
+* `rainyear.rain.sum.raw`       which might yield `7.13`
 
-The alltime hight outside temperature can be included as:
+The alltime high outside temperature can be included as:
 
-* `alltime.outTemp.formatted` which might yeild `107.3`
-* `alltime.outTemp`           which might yeild `107.3°`
-* `alltime.outTemp.raw`       which might yeild `107.29`
+* `alltime.outTemp.max.formatted` which might yield `107.3`
+* `alltime.outTemp.max`           which might yield `107.3°`
+* `alltime.outTemp.max.raw`       which might yield `107.29`
 
 If a field is requested, but the data is missing, the field will not be present
 in loop-data.txt.  Your JavaScript should expect this and react
 accordingly.
 
+### Using LoopData in Your Own Skin
+
+The recipe, demonstrated in full by the included sample skin (`skins/LoopData`),
+is:
+
+1. List every field your page needs on the `fields` line of
+   `[LoopData] [[Include]]` in weewx.conf.
+
+1. Set `target_report` to your report, so values arrive already in that
+   report's units and formatting, and set `loop_data_dir`/`filename` so the
+   json file lands somewhere your web server serves.  By default,
+   `loop_data_dir` is relative to the target report's HTML directory, so the
+   page can fetch the file with a relative URL.
+
+1. In your page, give an id to each HTML element that should show a value.
+   The simplest convention, used by the sample skin, is to make the id the
+   json key itself:
+
+   ```html
+   Outside Temperature: <span id="current.outTemp"></span>
+   Today's High: <span id="day.outTemp.max"></span>
+   ```
+
+1. Add JavaScript that fetches loop-data.txt on an interval matching your
+   loop frequency and fills in the elements.  A minimal version:
+
+   ```html
+   <script>
+     async function updateLoopData() {
+       try {
+         const response = await fetch('loop-data.txt', {cache: 'no-store'});
+         const data = await response.json();
+         for (const key in data) {
+           const element = document.getElementById(key);
+           if (element) element.innerHTML = data[key];
+         }
+       } catch (e) {
+         // File unreachable or mid-write; try again next interval.
+       }
+     }
+     updateLoopData();
+     setInterval(updateLoopData, 2000);  // match your loop frequency
+   </script>
+   ```
+
+1. Remember that a field missing from the packet is missing from the json
+   (see above).  The loop above simply leaves the old value in place; the
+   sample skin instead blanks the element — choose what suits your page.
+
+The sample skin's `realtime_updater.inc` shows the production niceties:
+a LIVE/age indicator driven by `current.dateTime.raw`, and a page-expiration
+timer (Extras `expiration_time`, in hours) that stops polling in abandoned
+browser tabs unless the page was loaded with `?pageUpdate=<page_update_pwd>`.
+
 ### How LoopData Works
 
 LoopData gathers all of the necessary information at startup and then spawns a
 separate thread.  The information gathered is only that which is needed
-for LoopData to prime it's accumulators.  For example, if a week field is
+for LoopData to prime its accumulators.  For example, if a week field is
 included in the weewx.conf fields line (week.rain.sum), daily summaries
 for the week will be read to prime the week accumulator.  If no week field
 is included, no work will be done.  Ditto for alltime, rainyear, year, month, 1h-24h
 and 1m-1440m accumulators.  They are populated only if they are used.  Lastly, only the
 necessary observation types are tracked in the accumulators.  For example,
-if no form of monthly.barometer is specified on the fields line, the monthly
-accumulator will not accumulate baromter readings.
+if no form of month.barometer is specified on the fields line, the month
+accumulator will not accumulate barometer readings.
 
-Once LoopData's thread starts and the accumulators are built, LoopData is
-never touches touches the database and never consults WeeWX's accumulators.
-It's only connection to the WeeWX main thread is that NEW_LOOP_PACKET is bound
+Once LoopData's thread starts and the accumulators are built, LoopData
+never touches the database and never consults WeeWX's accumulators.
+Its only connection to the WeeWX main thread is that NEW_LOOP_PACKET is bound
 to queue each loop packet.
 
 ### Period Aggregates implemented via xtypes are not currently supported by loopdata
 
-Currently, if an aggregate is impemented via xtypes, it will be ignored by loopdata.
+Currently, if an aggregate is implemented via xtypes, it will be ignored by loopdata.
 For example, the weewx-purple extension implements `pm2_5_aqi` via xtypes.  If,
 say, `week.pm2_5_aqi.max` was specified as one of the fields on the fields line, it
 would be ignored.  This is because there is no database entry from which to look up
@@ -214,23 +267,14 @@ and in a "LiveSeasons" skin at
 
 A WeatherBoard&trade; screenshot is below.
 
-![Weatherbaord&trade; Report](WeatherBoard.png)
+![WeatherBoard&trade; Report](WeatherBoard.png)
 
-This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gjr80/weewx-realtime_gauge-data).
+This extension was inspired by Gary Roderick's weewx-realtime_gauge_data
+extension (its GitHub repository is no longer available).
 
 # Installation Instructions
 
 ## WeeWX 5 Installation Instructions
-
-1. If pip install,
-   Activate the virtual environment (actual path varies by type of WeeWX install):
-   `source /home/weewx/weewx-venv/bin/activate`
-   Install the sortedcontainers package.
-   `pip install sortedcontainers`
-
-1. If package install:
-   Install the `python3-sortedcontainers` package.
-   * On debian: `sudo apt install python3-sortedcontainers`
 
 1. Download the release from the [github](https://github.com/chaunceygardiner/weewx-loopdata/releases/download/latest/weewx-loopdata.zip).
 
@@ -243,11 +287,11 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
    * Specify `seconds` with how often your device writes loopdata records
      (e.g., `2.0` for Davis Vantage Pro 2 and RainWise CC3000).
    * Specify the `target_report` for the report you wish to use for formatting and units
-   * Specify the `loop_data_dir` where the loop-data.txt file should be writen.
+   * Specify the `loop_data_dir` where the loop-data.txt file should be written.
      If `loop_data_dir` is a relative path, it will be interpreted as being relative to
      the target_report directory.
    * You will eventually need  to update the fields line with the fields you actually
-     need for the report you are targetting.  Change this line later after you are sure
+     need for the report you are targeting.  Change this line later after you are sure
      LoopData is running correctly.
    * If you need the loop-data.txt file pushed to a remote webserver,
      you will also need to fill in the `RsyncSpec` fields; but one can fill
@@ -257,11 +301,11 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
 
 1. Optional: Implement SSH control master multiplexing.
    If you are rsync'ing loopdata to another machine every 2 seconds; inevitably
-   some of these rsync's will fail.  Perhpas in the order of 3 to 10 per day on the author's
+   some of these rsync's will fail.  Perhaps in the order of 3 to 10 per day on the author's
    systems.  This is totally fine and is not noticeable, but there is an easy way to make the
-   rsync's lightweight and have none of them fail.  Just create the `.ssh/config` file in the
-   under the home directory of the user running WeeWX, witt the contents listed below.
-   The Host entered must match exactly the `remove_server` value entered in the `RSyncSpec`
+   rsync's lightweight and have none of them fail.  Just create the `.ssh/config` file
+   under the home directory of the user running WeeWX, with the contents listed below.
+   The Host entered must match exactly the `remote_server` value entered in the `RsyncSpec`
    section of `LoopData` in `weewx.conf`
    ```
    Host www.paloaltoweather.com   # <-- CHANGE TO YOUR remote_server!
@@ -274,10 +318,7 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
 
 ## WeeWX 4 Installation Instructions
 
-1. Install the `python3-sortedcontainers` package.
-   * On debian: `sudo apt install python3-sortedcontainers`
-
-1. Download the lastest release, weewx-loopdata.zip, from the
+1. Download the latest release, weewx-loopdata.zip, from the
    [GitHub Repository](https://github.com/chaunceygardiner/weewx-loopdata).
 
 1. Run the following command.
@@ -292,11 +333,11 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
    * Specify `seconds` with how often your device writes loopdata records
      (e.g., `2.0` for Davis Vantage Pro 2 and RainWise CC3000).
    * Specify the `target_report` for the report you wish to use for formatting and units
-   * Specify the `loop_data_dir` where the loop-data.txt file should be writen.
+   * Specify the `loop_data_dir` where the loop-data.txt file should be written.
      If `loop_data_dir` is a relative path, it will be interpreted as being relative to
      the target_report directory.
    * You will eventually need  to update the fields line with the fields you actually
-     need for the report you are targetting.  Change this line later after you are sure
+     need for the report you are targeting.  Change this line later after you are sure
      LoopData is running correctly.
    * If you need the loop-data.txt file pushed to a remote webserver,
      you will also need to fill in the `RsyncSpec` fields; but one can fill
@@ -306,11 +347,11 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
 
 1. Optional: Implement SSH control master multiplexing.
    If you are rsync'ing loopdata to another machine every 2 seconds; inevitably
-   some of these rsync's will fail.  Perhpas in the order of 3 to 10 per day on the author's
+   some of these rsync's will fail.  Perhaps in the order of 3 to 10 per day on the author's
    systems.  This is totally fine and is not noticeable, but there is an easy way to make the
-   rsync's lightweight and have none of them fail.  Just create the `.ssh/config` file in the
-   under the home directory of the user running WeeWX, witt the contents listed below.
-   The Host entered must match exactly the `remove_server` value entered in the `RSyncSpec`
+   rsync's lightweight and have none of them fail.  Just create the `.ssh/config` file
+   under the home directory of the user running WeeWX, with the contents listed below.
+   The Host entered must match exactly the `remote_server` value entered in the `RsyncSpec`
    section of `LoopData` in `weewx.conf`
    ```
    Host www.paloaltoweather.com   # <-- CHANGE TO YOUR remote_server!
@@ -323,8 +364,8 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
 
 ## Checking for a Properly Running Installation
 
-1. After a reporting cycle runs, navigate to `<weewx-url>/loopdata/ in your browser
-   to see the default loopdata report. (Reports typcially run every 5 minutes.)
+1. After a reporting cycle runs, navigate to `<weewx-url>/loopdata/` in your browser
+   to see the default loopdata report. (Reports typically run every 5 minutes.)
 
 ```
 [LoopData]
@@ -367,54 +408,56 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
  * `target_report`     : The WeeWX report to target.  LoopData will use this report to
                          determine the units to use and the formatting to apply.  Also,
                          if `loop_data_dir` is a relative path, it will be relative to
-                         the directory of the directory of `target report `.  When
+                         the directory of `target_report`.  When
                          LoopData is first installed, target_report is set to
                          the sample report included with this skin: `LoopDataReport`.
  * `seconds`           : The frequency of loop packets emitted by your device.  This is
                          needed to give the proper weight to accumulator entries.  For
-                         example, this value is `2.5` for Vantage Pro 2 devices and
-                         `2.0` for RainWise CC3000 devices.
+                         example, this value is `2.0` for Vantage Pro 2 and
+                         RainWise CC3000 devices.
  * `enable`            : Set to true to rsync the loop data file to `remote_server`.
- * `remote_server`     : The server to which gauge-data.txt will be copied.
+ * `remote_server`     : The server to which the loop data file will be copied.
                          To use rsync to sync loop-data.txt to a remote computer, passwordless ssh
                          using public/private key must be configured for authentication from the user
                          account that weewx runs under on this computer to the user account on the
                          remote machine with write access to the destination directory (remote_dir).
- * `remote_user`       : The userid on remote_server with write permission to remote_server_dir.
- * `remote_directory`  : The directory on remote_server where filename will be copied.
+ * `remote_user`       : The userid on remote_server with write permission to remote_dir.
+ * `remote_dir`        : The directory on remote_server where filename will be copied.
  * `compress`          : True to compress the file before sending.  Default is False.
  * `log_success`       : True to write success with timing messages to the log (for debugging).
                          Default is False.
  * `ssh_options`       : ssh options Default is '-o ConnectTimeout=1' (When connecting, time out in
                          1 second.)
  * `timeout`           : I/O timeout. Default is 1.  (When sending, timeout in 1 second.)
- * `skip_if_older_than`: Don't bother to rsync if greater than this number of seconds.  Default is 4.
-                         (Skip this and move on to the next if this data is older than 4 seconds.
+ * `skip_if_older_than`: Don't bother to rsync if greater than this number of seconds.  Default is 3.
+                         (Skip this and move on to the next if this data is older than 3 seconds.)
  * `fields`            : Used to specify which fields to include in the file.
  * `BarometerTrendDescriptions` : The descriptions associated with trend.barometer.desc.  Localize as necessary.
 
 ## What fields are available.
 
-Generally, if you can specify a field in a Cheetah template, and that field begins with $current,
-`$trend`, `$day`, `$week`, `$month`, `$year`, or `$rainyear`, you can specify it here (but don't
-include the dollar sign).  For all time, you can use `alltime`.  Also, you can use a `2m`, `10m`,
-or `24h` prefix to get aggregate values for a rolling two, ten minutes, or 24 hours respectively.
-`2m`, `10m` and `24h` act just like `day`, `week`, `month`, `year` `rainyear` and `alltime`.
+Generally, if you can specify a field in a Cheetah template, and that field begins with `$current`,
+`$trend`, `$hour`, `$day`, `$week`, `$month`, `$year`, or `$rainyear`, you can specify it here (but
+don't include the dollar sign).  For all time, you can use `alltime`.  Also, rolling-window periods
+are available: any number of minutes from `1m` through `1440m` and any number of hours from `1h`
+through `24h` (e.g., `2m`, `10m`, `90m`, `8h`, `24h`).  These rolling periods act just like `day`,
+`week`, `month`, `year`, `rainyear` and `alltime`.
 
-For example, just like in a report, one can add the following extenstions to specialize the fields:
+For example, just like in a report, one can add the following extensions to specialize the fields:
 * `No extension`: Field is converted and formatted per the report and a label is added.
 * `.raw`: field is converted per the report, but not formatted.
 * `.formatted`: Field is converted and formatted per the report and no label is added.
 * `.ordinal_compass`: for directional observations, the value is converted to text.
 
-Note: `unit.label.<obs>` is also supported (e.g., `unit.label.<obs>`).
+Note: `unit.label.<obs>` is also supported (e.g., `unit.label.outTemp`, which
+might yield `°F`).
 
 Lastly, `trend.barometer.desc` and `trend.barometer.code` are also supported.  `trend.barometer.desc`
-provides a text version of the baromter rate (e.g., `Falling Slowly`).  Barometer trend descriptions
-can be localized in the `LoopData` section of weewx.conf.  `trend.barometer.code` provides a integer
-of value `-4`, `-3`, `-2`, `-1`, `0`, `1`, `2`, `3` or `4`.  These values correspond to `Falling Rapidly`, `
+provides a text version of the barometer rate (e.g., `Falling Slowly`).  Barometer trend descriptions
+can be localized in the `LoopData` section of weewx.conf.  `trend.barometer.code` provides an integer
+of value `-4`, `-3`, `-2`, `-1`, `0`, `1`, `2`, `3` or `4`.  These values correspond to `Falling Very Rapidly`,
 `Falling Quickly`, `Falling`, `Falling Slowly`, `Steady`, `Rising Slowly`, `Rising`, `Rising Quickly`
-and `Rising Rapidly`, respectively.
+and `Rising Very Rapidly`, respectively.
 ```
 [LoopData]
     [[BarometerTrendDescriptions]]
@@ -430,13 +473,13 @@ and `Rising Rapidly`, respectively.
 ```
 
 ## Rsync isn't Working for me, help!
-LoopData's uses WeeWX's `weeutil.rsyncupload.RsyncUpload` utility.  If you have rsync working
+LoopData uses WeeWX's `weeutil.rsyncupload.RsyncUpload` utility.  If you have rsync working
 for WeeWX to push your web pages to a remote server, loopdata's rsync is likely to work too.
 First get WeeWX working with rsync before you try to get loopdata working with rsync.
 
-By the way, it's probably better  to put loop-data.txt outside of WeeWX's html tree so that
+By the way, it's probably better to put loop-data.txt outside of WeeWX's html tree so that
 WeeWX's rsync and loopdata's rsync don't both write the loop-data.txt file.  If you're up
-for configuring your websever to move it elsewhere (e.g., /home/weewx/loopdata/loop-data.txt),
+for configuring your webserver to move it elsewhere (e.g., /home/weewx/loopdata/loop-data.txt),
 you should do so.  If not, it's probably OK.  There just *might* be the rare complaint in the
 log because the WeeWX main thread and the LoopData thread both tried to sync the same file at
 the same time.
@@ -466,7 +509,7 @@ Jun 27 23:15:53 charlemagne weewx[10156] INFO user.loopdata: skipping packet (20
 
 ## Why require Python 3.7 or later?
 
-LoopData code includes type annotation which do not work with Python 2, nor in
+LoopData code includes type annotations which do not work with Python 2, nor in
 earlier versions of Python 3.
 
 ## Licensing

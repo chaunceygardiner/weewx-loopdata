@@ -23,6 +23,7 @@ SPEC_TESTS = [
     'test_prune_period_packet',
     'test_day_wind_vecdir_vecavg',
     'test_continuous_wind_vecdir_expiry',
+    'test_min_max_dict',
     'test_continuous_scalar_stats_edge_cases',
     'test_continuous_vec_stats_edge_cases',
     'test_continuous_vec_stats_trim_debits_every_field',
