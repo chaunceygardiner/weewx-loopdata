@@ -10,8 +10,9 @@ Copyright (C)2022-2026 by John A Kline (john@johnkline.com)
 LoopData is a WeeWX service that generates a json file (loop-data.txt)
 on every loop (e.g., every 2s).
 
-Not: If you are upgrading to 3.0, you must install `python3-sortedcontainers`.
-On debian, you can do this with: `apt install python3-sortedcontainers`
+Note: If you are upgrading to 3.0 or later, you must install `sortedcontainers`.
+* If WeeWX is pip installed: activate the WeeWX virtual environment, then `pip install sortedcontainers`
+* If WeeWX is a debian package install: `sudo apt install python3-sortedcontainers`
 
 **IMPORTANT**: This extension has been tested with the WeeWX's vantage and cc3000 drivers.
 It will likely also work with other drivers that, like the two drivers tested, report
@@ -222,8 +223,8 @@ This extension was inspired by [weewx-realtime_gauge_data](https://github.com/gj
 ## WeeWX 5 Installation Instructions
 
 1. If pip install,
-   Activate the virtual environment (actual syntax varies by type of WeeWX install):
-   `/home/weewx/weewx-venv/bin/activate`
+   Activate the virtual environment (actual path varies by type of WeeWX install):
+   `source /home/weewx/weewx-venv/bin/activate`
    Install the sortedcontainers package.
    `pip install sortedcontainers`
 

@@ -1,6 +1,12 @@
 loopdata change history
 -----------------------
 
+3.10 Release TBD
+----------------
+Installer now checks that the sortedcontainers package is available and, if not,
+exits with pip (venv) and debian package instructions.
+README: clarify that pip-installed WeeWX needs sortedcontainers pip installed in the venv.
+
 3.9 Release 2026/06/27
 ----------------------
 Add plumbing for first/last observation types (in case WeeWX fully supports thenm in the future)

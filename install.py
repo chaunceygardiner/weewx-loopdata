@@ -26,6 +26,12 @@ def loader():
     if weewx.__version__ < "4":
         sys.exit("weewx-loopdata requires WeeWX 4, found %s" % weewx.__version__)
 
+    import importlib.util
+    if importlib.util.find_spec('sortedcontainers') is None:
+        sys.exit("weewx-loopdata requires the sortedcontainers package.\n"
+                 "  pip install of WeeWX: activate the venv, then 'pip install sortedcontainers'\n"
+                 "  Debian package install of WeeWX: 'sudo apt install python3-sortedcontainers'")
+
     return LoopDataInstaller()
 
 class LoopDataInstaller(ExtensionInstaller):
