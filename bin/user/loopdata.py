@@ -50,7 +50,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '4.0'
+LOOP_DATA_VERSION = '4.1'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -66,6 +66,16 @@ windrun_bucket_suffixes: List[str] = [ 'N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE'
 # Set up windrun_<dir> observation types.
 for suffix in windrun_bucket_suffixes:
     weewx.units.obs_group_dict['windrun_%s' % suffix] = 'group_distance'
+
+def reraise_if_terminate(e: BaseException) -> None:
+    """weewxd stops by raising Terminate from its SIGTERM signal handler --
+    inside whatever the main thread is executing at that instant.  Every
+    broad exception handler on a main-thread path must call this first and
+    hand the exception back, or weewx cannot shut down.  weewxd runs as
+    __main__, so its Terminate class cannot be imported here and is
+    recognized by name."""
+    if type(e).__name__ == 'Terminate':
+        raise e
 
 @dataclass
 class CheetahName:
@@ -905,6 +915,7 @@ class LoopData(StdService):
             target_report_dict = LoopData.get_target_report_dict(
                 config_dict, target_report)
         except Exception as e:
+            reraise_if_terminate(e)
             log.error('Could not find target_report: %s.  LoopData is exiting. Exception: %s' % (target_report, e))
             return
 
@@ -1140,7 +1151,8 @@ class LoopData(StdService):
             pass # Load the report dict the old fashioned way below
         try:
             skin_dict = weeutil.config.deep_copy(weewx.defaults.defaults)
-        except Exception:
+        except Exception as e:
+            reraise_if_terminate(e)
             # Fall back to copy.deepcopy for earlier than weewx 4.1.2 installs.
             skin_dict = copy.deepcopy(weewx.defaults.defaults)
         skin_dict['REPORT_NAME'] = report
@@ -1168,7 +1180,8 @@ class LoopData(StdService):
             # section.
             try:
                 merge_dict = weeutil.config.deep_copy(config_dict['StdReport']['Defaults'])
-            except Exception:
+            except Exception as e:
+                reraise_if_terminate(e)
                 # Fall back to copy.deepcopy for earlier weewx 4 installs.
                 merge_dict = copy.deepcopy(config_dict['StdReport']['Defaults'])
             weeutil.config.merge_config(skin_dict, merge_dict)
@@ -1228,6 +1241,7 @@ class LoopData(StdService):
             t: threading.Thread = threading.Thread(target=lp.process_queue, name='LoopData', daemon=True)
             t.start()
         except Exception as e:
+            reraise_if_terminate(e)
             # Print problem to log and give up.
             log.error('Error in LoopData setup.  LoopData is exiting. Exception: %s' % e)
             weeutil.logger.log_traceback(log.error, "    ****  ")

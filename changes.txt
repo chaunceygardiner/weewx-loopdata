@@ -1,8 +1,15 @@
 loopdata change history
 -----------------------
 
-4.0 Release TBD
----------------
+4.1 Release 2026/07/12
+----------------------
+Fix: weewx could fail to shut down if SIGTERM landed while LoopData was
+starting up or priming its accumulators from the database on the first loop
+cycle (the broad error handlers there swallowed weewxd's Terminate exception;
+they now pass it through).
+
+4.0 Release 2026/07/11
+----------------------
 No configuration changes are required; this is a drop-in upgrade.
 The sortedcontainers package is no longer required.  Its SortedDict is replaced
 by MinMaxDict, a minimal min/max-tracking mapping (two heaps with lazy deletion)
