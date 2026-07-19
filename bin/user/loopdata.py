@@ -18,18 +18,21 @@ import logging
 import math
 import os
 import queue
+import re
 import sys
 import tempfile
 import threading
 import time
 
 from collections import deque
+from datetime import date, datetime, timedelta
 from heapq import heapify, heappop, heappush
-from dataclasses import dataclass
+from dataclasses import dataclass, field as dataclass_field
 from typing import Any, Deque, Dict, Generator, Generic, List, Optional, Set, Tuple, TypeVar, Union
 from enum import Enum
 
 import weewx
+import weewx.almanac
 import weewx.defaults
 import weewx.manager
 import weewx.reportengine
@@ -50,7 +53,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '4.1'
+LOOP_DATA_VERSION = '5.0'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -86,6 +89,33 @@ class CheetahName:
     obstype    : str           # e.g,. outTemp
     agg_type   : Optional[str] # avg, sum, etc. (required if period, other than current, is specified, else None)
     format_spec: Optional[str] # formatted (formatted value sans label), raw or ordinal_compass (could be on direction), or None
+    def __hash__(self):
+        return hash(self.field)
+
+@dataclass
+class AlmanacSegment:
+    """One dotted segment of an almanac field's attribute chain, e.g. the
+    'sun(use_center=1)' in almanac(horizon=-6).sun(use_center=1).rise.
+    kwargs is None for a plain attribute, a (possibly empty) dict when the
+    segment carries a call suffix."""
+    name  : str
+    kwargs: Optional[Dict[str, float]]
+
+@dataclass
+class AlmanacField:
+    """A parsed almanac entry from the fields line.  The grammar is a WeeWX
+    report almanac tag with the $ removed (almanac.sunrise.raw,
+    almanac(horizon=-6).sun(use_center=1).rise, ...), plus the loopdata
+    extension almanac(days=±N) meaning "same wall-clock time N local calendar
+    days away".  tier drives the evaluator's caching: 'continuous' fields are
+    recomputed every packet, 'day' fields once per local day, 'event' fields
+    are kept until the local day advances past the cached event."""
+    field         : str                  # almanac(horizon=-6).sun(use_center=1).rise.raw
+    almanac_kwargs: Dict[str, float]     # kwargs of the leading almanac segment (days removed)
+    days          : int                  # local calendar-day shift (almanac(days=±N))
+    chain         : List[AlmanacSegment] # attribute chain after the leading almanac segment
+    format_spec   : Optional[str]        # formatted, raw, ordinal_compass or None
+    tier          : str                  # continuous, day or event
     def __hash__(self):
         return hash(self.field)
 
@@ -132,6 +162,11 @@ class Configuration:
     rainyear_start           : int
     obstypes                 : ObsTypes
     baro_trend_descs         : Any # Dict[BarometerTrend, str]
+    almanac_fields           : List[AlmanacField] = dataclass_field(default_factory=list)
+    latitude                 : float = 0.0 # station latitude in decimal degrees
+    longitude                : float = 0.0 # station longitude in decimal degrees
+    altitude_m               : float = 0.0 # station altitude in meters
+    almanac_texts            : Dict[str, Any] = dataclass_field(default_factory=dict) # target report's [Almanac] section (moon_phases, ...)
 
 # ===============================================================================
 #                                  MinMaxDict
@@ -936,6 +971,11 @@ class LoopData(StdService):
         specified_fields = include_spec_dict.get('fields', [])
         (fields_to_include, obstypes) = LoopData.get_fields_to_include(specified_fields)
 
+        # Almanac fields (almanac.sunrise, almanac(horizon=-6).sun(use_center=1).rise, ...)
+        # are evaluated against weewx.almanac rather than the loop packet.
+        almanac_fields = LoopData.get_almanac_fields(specified_fields)
+        altitude_m = weewx.units.convert(engine.stn_info.altitude_vt, 'meter')[0]
+
         # Get the time_delta (number of seconds) to use for trend_accum.
         try:
             time_delta: int = to_int(target_report_dict['Units']['Trend']['time_delta'])
@@ -987,7 +1027,12 @@ class LoopData(StdService):
             week_start               = week_start,
             rainyear_start           = rainyear_start,
             obstypes                 = obstypes,
-            baro_trend_descs         = baro_trend_descs)
+            baro_trend_descs         = baro_trend_descs,
+            almanac_fields           = almanac_fields,
+            latitude                 = engine.stn_info.latitude_f,
+            longitude                = engine.stn_info.longitude_f,
+            altitude_m               = altitude_m if altitude_m is not None else 0.0,
+            almanac_texts            = dict(target_report_dict.get('Almanac', {})))
 
         log.info('LoopData file is: %s' % os.path.join(self.cfg.loop_data_dir, self.cfg.filename))
 
@@ -1631,10 +1676,299 @@ class LoopData(StdService):
             agg_type    = agg_type,
             format_spec = format_spec)
 
+    # An almanac field segment: an identifier with an optional call suffix
+    # holding kwargs (no nested parens), e.g. sun(use_center=1).
+    almanac_segment_re = re.compile(r'^([A-Za-z_][A-Za-z0-9_]*)(?:\(([^()]*)\))?$')
+
+    # Attributes whose value depends only on the local day of the almanac's
+    # time (rise/set searches start at local midnight), so one evaluation
+    # serves the whole day.
+    almanac_day_attrs = { 'sunrise', 'sunset', 'rise', 'set', 'transit',
+                          'antitransit', 'visible', 'visible_change' }
+
+    @staticmethod
+    def is_almanac_field(field: str) -> bool:
+        return field == 'almanac' or field.startswith('almanac.') or field.startswith('almanac(')
+
+    @staticmethod
+    def get_almanac_fields(specified_fields: List[str]) -> List[AlmanacField]:
+        almanac_fields: List[AlmanacField] = []
+        seen: Set[str] = set()
+        for field in specified_fields:
+            if not LoopData.is_almanac_field(field):
+                continue
+            almanac_field = LoopData.parse_almanac_field(field)
+            if almanac_field is None:
+                log.error('Ignoring malformed almanac field: %s' % field)
+                continue
+            if almanac_field.field not in seen:
+                seen.add(almanac_field.field)
+                almanac_fields.append(almanac_field)
+        return almanac_fields
+
+    @staticmethod
+    def split_almanac_segments(field: str) -> Optional[List[str]]:
+        """Split on '.' at paren depth zero, so call suffixes keep their
+        contents (almanac(horizon=-6).sun.rise -> 3 segments)."""
+        segments: List[str] = []
+        current = ''
+        depth = 0
+        for ch in field:
+            if ch == '.' and depth == 0:
+                segments.append(current)
+                current = ''
+                continue
+            if ch == '(':
+                depth += 1
+            elif ch == ')':
+                depth -= 1
+                if depth < 0:
+                    return None
+            current += ch
+        if depth != 0:
+            return None
+        segments.append(current)
+        return segments
+
+    @staticmethod
+    def parse_almanac_kwargs(kwargs_str: str) -> Optional[Dict[str, float]]:
+        """Parse 'horizon=-6, use_center=1' into a dict.  Values must be
+        numeric.  Returns None on any malformed part."""
+        kwargs: Dict[str, float] = {}
+        if kwargs_str.strip() == '':
+            return kwargs
+        for part in kwargs_str.split(','):
+            if '=' not in part:
+                return None
+            key, value_str = part.split('=', 1)
+            key = key.strip()
+            value_str = value_str.strip()
+            if not key.isidentifier():
+                return None
+            try:
+                kwargs[key] = int(value_str)
+            except ValueError:
+                try:
+                    kwargs[key] = float(value_str)
+                except ValueError:
+                    return None
+        return kwargs
+
+    @staticmethod
+    def parse_almanac_field(field: str) -> Optional[AlmanacField]:
+        valid_format_specs: List[str] = [ 'formatted', 'raw', 'ordinal_compass' ]
+
+        segments = LoopData.split_almanac_segments(field)
+        if segments is None or len(segments) < 2:
+            return None
+
+        # The leading segment must be almanac, with an optional call suffix.
+        match = LoopData.almanac_segment_re.match(segments[0])
+        if match is None or match.group(1) != 'almanac':
+            return None
+        almanac_kwargs: Dict[str, float] = {}
+        if match.group(2) is not None:
+            parsed_kwargs = LoopData.parse_almanac_kwargs(match.group(2))
+            if parsed_kwargs is None:
+                return None
+            almanac_kwargs = parsed_kwargs
+        days = almanac_kwargs.pop('days', 0)
+        if not isinstance(days, int):
+            return None
+
+        # A trailing bare format spec is loopdata's, not the almanac's.
+        chain_segments = segments[1:]
+        format_spec = None
+        if len(chain_segments) >= 2 and chain_segments[-1] in valid_format_specs:
+            format_spec = chain_segments[-1]
+            chain_segments = chain_segments[:-1]
+
+        chain: List[AlmanacSegment] = []
+        for segment in chain_segments:
+            match = LoopData.almanac_segment_re.match(segment)
+            if match is None:
+                return None
+            seg_kwargs: Optional[Dict[str, float]] = None
+            if match.group(2) is not None:
+                seg_kwargs = LoopData.parse_almanac_kwargs(match.group(2))
+                if seg_kwargs is None:
+                    return None
+            chain.append(AlmanacSegment(name=match.group(1), kwargs=seg_kwargs))
+        if len(chain) == 0:
+            return None
+
+        if any(seg.name.startswith('next_') or seg.name.startswith('previous_') for seg in chain):
+            tier = 'event'
+        elif any(seg.name in LoopData.almanac_day_attrs for seg in chain):
+            tier = 'day'
+        else:
+            tier = 'continuous'
+
+        return AlmanacField(
+            field          = field,
+            almanac_kwargs = almanac_kwargs,
+            days           = days,
+            chain          = chain,
+            format_spec    = format_spec,
+            tier           = tier)
+
+class AlmanacFieldEvaluator:
+    """Evaluates almanac fields against weewx.almanac (whatever AlmanacTypes
+    are registered: weewx-skyfield, PyEphem, or the built-in fallback) and
+    inserts the results into the loopdata packet.  Runs on the LoopProcessor
+    thread.  Caching mirrors weewx-celestial's proven lifetimes: continuous
+    attributes (alt/az/ra/dec/phase/distances) are recomputed every packet;
+    day-scoped attributes (rise/set/transit/visible) once per local day; event
+    attributes (next_*/previous_*) are kept until the local day advances past
+    the cached event, so a page can show today's event for the rest of its day.
+    The local day is compared for EQUALITY, so backfilled packets get their own
+    day, never a newer cache."""
+
+    # Sentinel cached for a field whose evaluation failed, so day/event tiers
+    # don't retry every packet.
+    SKIP = object()
+
+    def __init__(self, cfg: Configuration) -> None:
+        self.fields    = cfg.almanac_fields
+        self.latitude  = cfg.latitude
+        self.longitude = cfg.longitude
+        self.altitude_m = cfg.altitude_m
+        self.texts     = cfg.almanac_texts
+        self.formatter = cfg.formatter
+        self.converter = cfg.converter
+        self.values: Dict[str, Any] = {}          # field -> json value or SKIP
+        self.event_ts: Dict[str, Optional[float]] = {} # field -> cached event's epoch time
+        self.cache_day: Optional[date] = None
+        self.warned: Set[str] = set()
+
+    @staticmethod
+    def shift_days(time_ts: float, days: int) -> float:
+        """The same wall-clock time days local calendar days away (DST-correct,
+        unlike time_ts + days*86400)."""
+        shifted = datetime.fromtimestamp(time_ts) + timedelta(days=days)
+        return shifted.timestamp()
+
+    def build_almanac(self, pkt: Dict[str, Any]) -> weewx.almanac.Almanac:
+        """One base Almanac per packet.  Temperature and pressure feed the
+        refraction model; like WeeWX's Cheetah generator (which uses the
+        archive record closest to report time), take them from the current
+        packet when present."""
+        temperature_c: Optional[float] = None
+        pressure_mbar: Optional[float] = None
+        try:
+            if pkt.get('outTemp') is not None:
+                temperature_c = weewx.units.convert(
+                    weewx.units.as_value_tuple(pkt, 'outTemp'), 'degree_C')[0]
+            if pkt.get('barometer') is not None:
+                pressure_mbar = weewx.units.convert(
+                    weewx.units.as_value_tuple(pkt, 'barometer'), 'mbar')[0]
+        except (KeyError, weewx.UnitError):
+            pass
+        return weewx.almanac.Almanac(
+            pkt['dateTime'],
+            self.latitude,
+            self.longitude,
+            altitude    = self.altitude_m,
+            temperature = temperature_c,
+            pressure    = pressure_mbar,
+            texts       = self.texts,
+            formatter   = self.formatter,
+            converter   = self.converter)
+
+    def evaluate(self, almanac_field: AlmanacField, base_almanac: weewx.almanac.Almanac,
+            pkt_time: int) -> Any:
+        """Walk the attribute chain exactly as Cheetah would walk the report
+        tag, including auto-calling a callable result."""
+        almanac = base_almanac
+        if almanac_field.days != 0:
+            almanac = almanac(almanac_time=AlmanacFieldEvaluator.shift_days(
+                pkt_time, almanac_field.days))
+        if len(almanac_field.almanac_kwargs) > 0:
+            almanac = almanac(**almanac_field.almanac_kwargs)
+        obj: Any = almanac
+        for segment in almanac_field.chain:
+            obj = getattr(obj, segment.name)
+            if segment.kwargs is not None:
+                obj = obj(**segment.kwargs)
+        if callable(obj):
+            obj = obj()
+        return obj
+
+    def to_json_value(self, almanac_field: AlmanacField, obj: Any) -> Any:
+        """Apply the format spec (ValueHelpers format exactly as the report
+        tag would render) and coerce to a json-serializable value."""
+        if isinstance(obj, weewx.units.ValueHelper):
+            if almanac_field.format_spec == 'raw':
+                value = obj.raw
+            elif almanac_field.format_spec == 'formatted':
+                value = obj.formatted
+            elif almanac_field.format_spec == 'ordinal_compass':
+                value = obj.ordinal_compass
+            else:
+                value = str(obj)
+        elif almanac_field.format_spec is not None and almanac_field.format_spec != 'raw':
+            # formatted/ordinal_compass need a ValueHelper; .raw is allowed as
+            # identity on plain values (almanac.moon_index.raw).
+            raise TypeError('%s: %s returned %s, which does not support .%s'
+                % (almanac_field.field, '.'.join(seg.name for seg in almanac_field.chain),
+                   type(obj).__name__, almanac_field.format_spec))
+        else:
+            value = obj
+        if value is None or isinstance(value, (bool, int, float, str)):
+            return value
+        return str(value)
+
+    def compute(self, almanac_field: AlmanacField, base_almanac: weewx.almanac.Almanac,
+            pkt_time: int) -> None:
+        try:
+            obj = self.evaluate(almanac_field, base_almanac, pkt_time)
+            if almanac_field.tier == 'event':
+                raw = obj.raw if isinstance(obj, weewx.units.ValueHelper) else obj
+                self.event_ts[almanac_field.field] = raw if isinstance(raw, (int, float)) else None
+            self.values[almanac_field.field] = self.to_json_value(almanac_field, obj)
+        except Exception as e:
+            reraise_if_terminate(e)
+            if almanac_field.field not in self.warned:
+                self.warned.add(almanac_field.field)
+                log.info('Cannot evaluate almanac field %s: %s' % (almanac_field.field, e))
+            self.values[almanac_field.field] = AlmanacFieldEvaluator.SKIP
+            if almanac_field.tier == 'event':
+                self.event_ts[almanac_field.field] = None
+
+    def roll_day(self, day: date) -> None:
+        advancing = self.cache_day is not None and day > self.cache_day
+        day_start_ts = time.mktime(day.timetuple())
+        for almanac_field in self.fields:
+            if almanac_field.tier == 'day':
+                self.values.pop(almanac_field.field, None)
+            elif almanac_field.tier == 'event':
+                event_ts = self.event_ts.get(almanac_field.field)
+                if not advancing or event_ts is None or event_ts < day_start_ts:
+                    self.values.pop(almanac_field.field, None)
+                    self.event_ts.pop(almanac_field.field, None)
+        self.cache_day = day
+
+    def insert_fields(self, loopdata_pkt: Dict[str, Any], pkt: Dict[str, Any]) -> None:
+        if len(self.fields) == 0:
+            return
+        pkt_time: int = to_int(pkt['dateTime'])
+        day = date.fromtimestamp(pkt_time)
+        if day != self.cache_day:
+            self.roll_day(day)
+        base_almanac = self.build_almanac(pkt)
+        for almanac_field in self.fields:
+            if almanac_field.tier == 'continuous' or almanac_field.field not in self.values:
+                self.compute(almanac_field, base_almanac, pkt_time)
+            value = self.values.get(almanac_field.field)
+            if value is not None and value is not AlmanacFieldEvaluator.SKIP:
+                loopdata_pkt[almanac_field.field] = value
+
 class LoopProcessor:
     def __init__(self, cfg: Configuration):
         self.cfg = cfg
         self.archive_start: float = time.time()
+        self.almanac_eval: Optional[AlmanacFieldEvaluator] = \
+            AlmanacFieldEvaluator(cfg) if len(cfg.almanac_fields) > 0 else None
 
     def process_queue(self) -> None:
         try:
@@ -1674,7 +2008,8 @@ class LoopProcessor:
                     pass
 
                 # Process new packet.
-                loopdata_pkt = LoopProcessor.generate_loopdata_dictionary(pkt, self.cfg, self.accumulators)
+                loopdata_pkt = LoopProcessor.generate_loopdata_dictionary(
+                    pkt, self.cfg, self.accumulators, self.almanac_eval)
                 # Write the loop-data.txt file.
                 LoopProcessor.write_packet_to_file(loopdata_pkt,
                     self.cfg.tmpname, self.cfg.loop_data_dir, self.cfg.filename)
@@ -1694,7 +2029,8 @@ class LoopProcessor:
             os.unlink(self.cfg.tmpname)
 
     @staticmethod
-    def generate_loopdata_dictionary(in_pkt: Dict[str, Any], cfg: Configuration, accums: Accumulators) -> Dict[str, Any]:
+    def generate_loopdata_dictionary(in_pkt: Dict[str, Any], cfg: Configuration, accums: Accumulators,
+            almanac_eval: Optional[AlmanacFieldEvaluator] = None) -> Dict[str, Any]:
 
         # pkt needs to be in the units that the accumulators are expecting.
         pruned_pkt = LoopProcessor.prune_period_packet(in_pkt, cfg.obstypes.current)
@@ -1779,7 +2115,14 @@ class LoopProcessor:
             accums.continuous[per].addRecord(pruned_pkt, weight=cfg.loop_frequency)
 
         # Create the loopdata dictionary.
-        return LoopProcessor.create_loopdata_packet(pkt, cfg, accums)
+        loopdata_pkt = LoopProcessor.create_loopdata_packet(pkt, cfg, accums)
+
+        # Almanac fields are computed from the (unpruned) incoming packet's
+        # time, temperature and pressure, not from accumulators.
+        if almanac_eval is not None:
+            almanac_eval.insert_fields(loopdata_pkt, in_pkt)
+
+        return loopdata_pkt
 
     @staticmethod
     def add_unit_obstype(cname: CheetahName, loopdata_pkt: Dict[str, Any],
@@ -2094,6 +2437,11 @@ class LoopProcessor:
         for per, obstypes in cfg.obstypes.continuous.items():
             log.info('obstypes.%s: %s' % (per, obstypes))
         log.info('baro_trend_descs        : %s' % cfg.baro_trend_descs)
+        if len(cfg.almanac_fields) > 0:
+            log.info('almanac_fields          : %s' % [ f.field for f in cfg.almanac_fields ])
+            log.info('latitude                : %f' % cfg.latitude)
+            log.info('longitude               : %f' % cfg.longitude)
+            log.info('altitude_m              : %f' % cfg.altitude_m)
 
     @staticmethod
     def rsync_data(pktTime: int, skip_if_older_than: int, loop_data_dir: str,

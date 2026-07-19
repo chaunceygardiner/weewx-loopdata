@@ -42,6 +42,10 @@ The json file will contain any specified values for:
 * yearly aggregate values (e.g., `year.wind.max`)
 * rainyear aggregate values (e.g., `rainyear.rain.sum`)
 * alltime aggregate values (e.g., `alltime.outTemp.max`)
+* almanac values (new in 5.0) -- any WeeWX report almanac tag with the `$`
+  removed (e.g., `almanac.sunrise`, `almanac.moon_phase`,
+  `almanac(horizon=-6).sun(use_center=1).rise.raw`), computed live on every
+  loop record -- see the "Almanac fields" section below
 
 
 In addition to the usual observation types (which includes `windrun`), there
@@ -245,6 +249,11 @@ never touches the database and never consults WeeWX's accumulators.
 Its only connection to the WeeWX main thread is that NEW_LOOP_PACKET is bound
 to queue each loop packet.
 
+Almanac fields (see their own section below) follow the same pattern: they
+touch no accumulators and are evaluated on LoopData's thread, off the WeeWX
+engine thread, with per-field caching so only values that actually change
+(positions, distances, phase) are recomputed on every loop record.
+
 ### Period Aggregates implemented via xtypes are not currently supported by loopdata
 
 Currently, if an aggregate is implemented via xtypes, it will be ignored by loopdata.
@@ -441,7 +450,9 @@ Generally, if you can specify a field in a Cheetah template, and that field begi
 don't include the dollar sign).  For all time, you can use `alltime`.  Also, rolling-window periods
 are available: any number of minutes from `1m` through `1440m` and any number of hours from `1h`
 through `24h` (e.g., `2m`, `10m`, `90m`, `8h`, `24h`).  These rolling periods act just like `day`,
-`week`, `month`, `year`, `rainyear` and `alltime`.
+`week`, `month`, `year`, `rainyear` and `alltime`.  As of 5.0, `$almanac` tags are also
+available as fields — they follow the report almanac grammar rather than the period grammar
+above, and have their own section ("Almanac fields") later in this README.
 
 For example, just like in a report, one can add the following extensions to specialize the fields:
 * `No extension`: Field is converted and formatted per the report and a label is added.
@@ -471,6 +482,66 @@ and `Rising Very Rapidly`, respectively.
         FALLING_QUICKLY = Falling Quickly
         FALLING_VERY_RAPIDLY = Falling Very Rapidly
 ```
+
+## Almanac fields
+
+Any WeeWX report almanac tag can be listed as a field: write the tag as it would appear in a
+Cheetah template, with the `$` removed.  The values are computed with whatever almanac WeeWX
+has registered — [weewx-skyfield](https://github.com/chaunceygardiner/weewx-skyfield) for the
+full Skyfield experience, PyEphem if installed, or WeeWX's built-in fallback (sunrise, sunset
+and moon phase only) — and are converted and formatted per the target report, exactly as the
+report tag would render.  Examples:
+
+```
+almanac.sunrise                                      06:47 (formatted per the report)
+almanac.sunrise.raw                                  1593611225 (unix epoch seconds)
+almanac.sunset.raw
+almanac.moon_phase                                   Waxing gibbous
+almanac.moon_index                                   the 0-7 moon phase index
+almanac.moon.phase                                   percent of the moon illuminated
+almanac.sun.az                                       sun azimuth in decimal degrees
+almanac.sun.alt                                      sun altitude in decimal degrees
+almanac.sun.transit.raw
+almanac.sun.visible.raw                              length of daylight in seconds
+almanac.moon.rise.raw
+almanac.mars.earth_distance                          in AU, as in reports
+almanac.next_full_moon.raw
+almanac.next_solstice.raw
+almanac(horizon=-6).sun(use_center=1).rise.raw       civil dawn
+almanac(horizon=-6).sun(use_center=1).set.raw        civil dusk
+almanac(horizon=-12).sun(use_center=1).rise.raw      nautical dawn
+almanac(horizon=-18).sun(use_center=1).rise.raw      astronomical dawn
+```
+
+One loopdata extension to the report grammar: `almanac(days=±N)` evaluates the almanac at the
+same wall-clock time N *local calendar* days away.  For example, `almanac(days=1).sunrise.raw`
+is tomorrow's sunrise and `almanac(days=-1).sun.visible.raw` is yesterday's length of day.
+(Reports express this with `$almanac(almanac_time=$time_ts+86400)`, which needs Cheetah
+variables that a config line doesn't have; `days=` is also DST-correct where ±86400 is not.)
+
+Notes:
+* Almanac fields are current-only: they take no period prefix and no aggregate
+  (`10m.almanac...` and `almanac.sunrise.max` are not valid).
+* `.raw`/`.formatted`/`.ordinal_compass` work on tags that return formatted values
+  (times, and angles like `almanac.sun.azimuth`); `.raw` on a plain number
+  (e.g., `almanac.moon_index.raw`) is allowed and returns the number unchanged.
+* The json key is the field entry verbatim, so element ids can match keys as usual.
+* A call with more than one keyword contains a comma, so the entry must be quoted in
+  weewx.conf: `fields = ..., "almanac(pressure=0, horizon=-8).sun.rise.raw", ...`.
+  None of the standard entries above need quoting.
+* Cost is managed automatically: positions and distances are recomputed every loop
+  packet; rise/set/transit/daylight once per local day; `next_*`/`previous_*` events are
+  computed once and kept until the local day advances past the event (so a page can show
+  today's event for the rest of its day).  For this reason prefer `almanac.sun.rise` over
+  `almanac.sun.next_rising` in loop data.
+
+If you are migrating from weewx-celestial's loop fields, every `current.<field>` it emitted
+has an almanac equivalent (e.g., `current.sunrise.raw` → `almanac.sunrise.raw`,
+`current.civilTwilightStart.raw` → `almanac(horizon=-6).sun(use_center=1).rise.raw`,
+`current.daylightDur.raw` → `almanac.sun.visible.raw`, `current.tomorrowSunrise.raw` →
+`almanac(days=1).sunrise.raw`).  The only derivation left to the page is waxing/waning:
+the moon is waxing when `almanac.next_full_moon.raw` < `almanac.next_new_moon.raw`.
+Note that distances arrive in AU (as reports show them) rather than miles/km.
 
 ## Rsync isn't Working for me, help!
 LoopData uses WeeWX's `weeutil.rsyncupload.RsyncUpload` utility.  If you have rsync working

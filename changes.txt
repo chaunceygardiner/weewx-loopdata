@@ -1,6 +1,24 @@
 loopdata change history
 -----------------------
 
+5.0 Release 2026/07/19
+----------------------
+New: almanac fields.  Any WeeWX report almanac tag can now be listed in
+[LoopData] [[Include]] fields with the $ removed (e.g., almanac.sunrise,
+almanac.sunrise.raw, almanac.moon_phase, almanac.sun.az,
+almanac(horizon=-6).sun(use_center=1).rise.raw, almanac.next_solstice.raw).
+Values are computed with whatever almanac WeeWX has registered (weewx-skyfield,
+PyEphem, or the built-in fallback) and formatted with the target report's
+formatter/converter, exactly as the report tag would render.  One loopdata
+extension: almanac(days=±N) evaluates at the same wall-clock time N local
+calendar days away (e.g., almanac(days=1).sunrise.raw is tomorrow's sunrise).
+Almanac fields are current-only (no period prefixes or aggregates) and are
+cached by attribute class: positions/distances recompute every packet,
+rise/set/transit/visible once per local day, and next_*/previous_* events are
+kept until the local day advances past the cached event.
+This makes celestial loop fields available without any packet-injecting
+service: weewx-celestial's loop fields can be replaced by almanac.* entries.
+
 4.1 Release 2026/07/12
 ----------------------
 Fix: weewx could fail to shut down if SIGTERM landed while LoopData was

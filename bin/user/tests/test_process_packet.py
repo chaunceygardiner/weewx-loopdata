@@ -37,10 +37,14 @@ import queue
 import random
 import shutil
 import tempfile
+import time
 import unittest
+
+from datetime import date
 
 import weewx
 import weewx.accum
+import weewx.almanac
 import weewx.manager
 import weewx.units
 from weewx.schemas.wview_extended import schema as wview_extended_schema
@@ -62,6 +66,73 @@ log = logging.getLogger(__name__)
 
 # Set up logging using the defaults.
 weeutil.logger.setup('test_config', {})
+
+class StubAlmanacBinder:
+    """Stands in for a heavenly-body binder (e.g. $almanac.sun)."""
+    def __init__(self, stub: 'StubAlmanacType', almanac_obj: Any) -> None:
+        self.stub = stub
+        self.almanac_obj = almanac_obj
+        self.use_center = 0
+
+    def __call__(self, use_center: int = 0) -> 'StubAlmanacBinder':
+        self.use_center = use_center
+        return self
+
+    @property
+    def az(self) -> float:
+        self.stub.count('sun.az')
+        return 123.4
+
+    @property
+    def rise(self) -> weewx.units.ValueHelper:
+        # 06:00 local on the almanac's local day, shifted one minute per
+        # degree of horizon and ten minutes earlier for use_center, so the
+        # test can verify both kwargs reached the computation.
+        self.stub.count('sun.rise')
+        day_start = time.mktime(date.fromtimestamp(self.almanac_obj.time_ts).timetuple())
+        rise_ts = (day_start + 6 * 3600 + int(self.almanac_obj.horizon * 60)
+                   - (600 if self.use_center else 0))
+        return self.stub.time_vh(self.almanac_obj, rise_ts)
+
+class StubAlmanacType(weewx.almanac.AlmanacType):
+    """Serves deterministic values so loopdata's almanac plumbing (parsing,
+    evaluation, formatting, caching) can be tested from first principles,
+    independent of any ephemeris."""
+    def __init__(self) -> None:
+        self.counts: Dict[str, int] = {}
+        self.next_full_moon_ts: float = 0.0
+
+    def count(self, attr: str) -> None:
+        self.counts[attr] = self.counts.get(attr, 0) + 1
+
+    @staticmethod
+    def time_vh(almanac_obj: Any, ts: float) -> weewx.units.ValueHelper:
+        return weewx.units.ValueHelper(
+            weewx.units.ValueTuple(ts, 'unix_epoch', 'group_time'),
+            context='ephem_day',
+            formatter=almanac_obj.formatter,
+            converter=almanac_obj.converter)
+
+    def get_almanac_data(self, almanac_obj: Any, attr: str) -> Any:
+        if attr == 'stub_time':
+            self.count(attr)
+            return almanac_obj.time_ts
+        if attr == 'stub_horizon':
+            self.count(attr)
+            return almanac_obj.horizon
+        if attr == 'sunrise':
+            self.count(attr)
+            day_start = time.mktime(date.fromtimestamp(almanac_obj.time_ts).timetuple())
+            return StubAlmanacType.time_vh(almanac_obj, day_start + 6 * 3600)
+        if attr == 'moon_index':
+            self.count(attr)
+            return 4
+        if attr == 'next_full_moon':
+            self.count(attr)
+            return StubAlmanacType.time_vh(almanac_obj, self.next_full_moon_ts)
+        if attr == 'sun':
+            return StubAlmanacBinder(self, almanac_obj)
+        raise weewx.UnknownType(attr)
 
 class ProcessPacketTests(unittest.TestCase):
     maxDiff = None
@@ -980,6 +1051,265 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertTrue('windGust' in obstypes.day)
         self.assertTrue('windGustDir' in obstypes.day)
         self.assertTrue('windSpeed' in obstypes.day)
+
+    def test_parse_almanac_field(self) -> None:
+        parse = user.loopdata.LoopData.parse_almanac_field
+
+        af = parse('almanac.sunrise')
+        assert af is not None
+        self.assertEqual(af.field, 'almanac.sunrise')
+        self.assertEqual(af.almanac_kwargs, {})
+        self.assertEqual(af.days, 0)
+        self.assertEqual(af.chain, [user.loopdata.AlmanacSegment('sunrise', None)])
+        self.assertEqual(af.format_spec, None)
+        self.assertEqual(af.tier, 'day')
+
+        af = parse('almanac.sunrise.raw')
+        assert af is not None
+        self.assertEqual(af.chain, [user.loopdata.AlmanacSegment('sunrise', None)])
+        self.assertEqual(af.format_spec, 'raw')
+        self.assertEqual(af.tier, 'day')
+
+        af = parse('almanac.moon_index')
+        assert af is not None
+        self.assertEqual(af.tier, 'continuous')
+
+        af = parse('almanac.sun.az')
+        assert af is not None
+        self.assertEqual(af.chain, [user.loopdata.AlmanacSegment('sun', None),
+                                    user.loopdata.AlmanacSegment('az', None)])
+        self.assertEqual(af.tier, 'continuous')
+
+        af = parse('almanac(horizon=-6).sun(use_center=1).rise.raw')
+        assert af is not None
+        self.assertEqual(af.almanac_kwargs, {'horizon': -6})
+        self.assertEqual(af.days, 0)
+        self.assertEqual(af.chain, [user.loopdata.AlmanacSegment('sun', {'use_center': 1}),
+                                    user.loopdata.AlmanacSegment('rise', None)])
+        self.assertEqual(af.format_spec, 'raw')
+        self.assertEqual(af.tier, 'day')
+
+        af = parse('almanac(days=+1).sunset.raw')
+        assert af is not None
+        self.assertEqual(af.almanac_kwargs, {})
+        self.assertEqual(af.days, 1)
+        self.assertEqual(af.tier, 'day')
+
+        af = parse('almanac(days=-1).sun.visible.raw')
+        assert af is not None
+        self.assertEqual(af.days, -1)
+        self.assertEqual(af.tier, 'day')
+
+        af = parse('almanac.next_solstice.raw')
+        assert af is not None
+        self.assertEqual(af.tier, 'event')
+
+        af = parse('almanac.previous_equinox')
+        assert af is not None
+        self.assertEqual(af.tier, 'event')
+
+        af = parse('almanac.mars.earth_distance')
+        assert af is not None
+        self.assertEqual(af.tier, 'continuous')
+
+        af = parse('almanac(pressure=0, horizon=-8.5).sun.rise')
+        assert af is not None
+        self.assertEqual(af.almanac_kwargs, {'pressure': 0, 'horizon': -8.5})
+        self.assertEqual(af.tier, 'day')
+
+        af = parse('almanac.moon.phase.formatted')
+        assert af is not None
+        self.assertEqual(af.chain, [user.loopdata.AlmanacSegment('moon', None),
+                                    user.loopdata.AlmanacSegment('phase', None)])
+        self.assertEqual(af.format_spec, 'formatted')
+
+        # Malformed entries.
+        self.assertIsNone(parse('almanac'))
+        self.assertIsNone(parse('almanac.'))
+        self.assertIsNone(parse('almanac..sunrise'))
+        self.assertIsNone(parse('almanac(days=1.5).sunrise'))
+        self.assertIsNone(parse('almanac(horizon=abc).sun.rise'))
+        self.assertIsNone(parse('almanac(horizon-6).sun.rise'))
+        self.assertIsNone(parse('almanac(horizon=-6.sun.rise'))
+        self.assertIsNone(parse('almanac.sun(rise'))
+        self.assertIsNone(parse('almanac.9sun.rise'))
+        self.assertIsNone(parse('almanac(horizon=-6)(use_center=1).sun.rise'))
+
+    def test_get_almanac_fields(self) -> None:
+        specified_fields = [
+            'current.outTemp',
+            'almanac.sunrise.raw',
+            'day.outTemp.max',
+            'almanac(horizon=-6).sun(use_center=1).rise.raw',
+            'almanac.sunrise.raw',            # duplicate: dropped
+            'almanac(horizon=abc).sun.rise',  # malformed: dropped
+            'trend.barometer.desc',
+        ]
+        almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
+        self.assertEqual([ f.field for f in almanac_fields ],
+            ['almanac.sunrise.raw', 'almanac(horizon=-6).sun(use_center=1).rise.raw'])
+
+        # Almanac entries must not leak into the observation-field parse.
+        (fields_to_include, _) = user.loopdata.LoopData.get_fields_to_include(set(specified_fields))
+        self.assertEqual({ cname.field for cname in fields_to_include },
+            {'current.outTemp', 'day.outTemp.max', 'trend.barometer.desc'})
+
+    def test_almanac_field_evaluator(self) -> None:
+        specified_fields = [
+            'almanac.stub_time',                                # continuous, plain float
+            'almanac(horizon=-6).stub_horizon',                 # continuous, almanac kwargs
+            'almanac.sunrise.raw',                              # day tier
+            'almanac.sunrise',                                  # formatted like the report tag
+            'almanac(days=1).sunrise.raw',                      # local calendar-day shift
+            'almanac(days=-1).sunrise.raw',
+            'almanac(horizon=-6).sun(use_center=1).rise.raw',   # chain call kwargs
+            'almanac.moon_index',                               # plain int
+            'almanac.moon_index.raw',                           # .raw identity on plain value
+            'almanac.moon_index.formatted',                     # invalid: skipped
+            'almanac.next_full_moon.raw',                       # event tier
+            'almanac.no_such_attr',                             # unknown: skipped
+        ]
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, ['current.outTemp'])
+        cfg.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
+        self.assertEqual(len(cfg.almanac_fields), len(specified_fields))
+        cfg.latitude, cfg.longitude, cfg.altitude_m = 37.4, -122.1, 20.0
+
+        stub = StubAlmanacType()
+        weewx.almanac.almanacs.insert(0, stub)
+        try:
+            evaluator = user.loopdata.AlmanacFieldEvaluator(cfg)
+
+            # 2020-07-01 (PDT) noon; day boundaries computed the same way the stub does.
+            day1_noon = 1593630000
+            def six_am(day_offset: int) -> float:
+                day = date.fromtimestamp(day1_noon + day_offset * 86400)
+                return time.mktime(day.timetuple()) + 6 * 3600
+            stub.next_full_moon_ts = six_am(2) + 12 * 3600   # day 3, 18:00
+
+            pkt: Dict[str, Any] = {'dateTime': day1_noon, 'usUnits': 1}
+            loopdata_pkt: Dict[str, Any] = {}
+            evaluator.insert_fields(loopdata_pkt, pkt)
+
+            self.assertEqual(loopdata_pkt['almanac.stub_time'], day1_noon)
+            self.assertEqual(loopdata_pkt['almanac(horizon=-6).stub_horizon'], -6)
+            self.assertEqual(loopdata_pkt['almanac.sunrise.raw'], six_am(0))
+            expected_vh = weewx.units.ValueHelper(
+                weewx.units.ValueTuple(six_am(0), 'unix_epoch', 'group_time'),
+                context='ephem_day', formatter=cfg.formatter, converter=cfg.converter)
+            self.assertEqual(loopdata_pkt['almanac.sunrise'], str(expected_vh))
+            self.assertEqual(loopdata_pkt['almanac(days=1).sunrise.raw'], six_am(1))
+            self.assertEqual(loopdata_pkt['almanac(days=-1).sunrise.raw'], six_am(-1))
+            # 06:00 less 6 degrees of horizon (one minute per degree) less ten minutes for use_center.
+            self.assertEqual(loopdata_pkt['almanac(horizon=-6).sun(use_center=1).rise.raw'],
+                six_am(0) - 360 - 600)
+            self.assertEqual(loopdata_pkt['almanac.moon_index'], 4)
+            self.assertEqual(loopdata_pkt['almanac.moon_index.raw'], 4)
+            self.assertNotIn('almanac.moon_index.formatted', loopdata_pkt)
+            self.assertEqual(loopdata_pkt['almanac.next_full_moon.raw'], stub.next_full_moon_ts)
+            self.assertNotIn('almanac.no_such_attr', loopdata_pkt)
+
+            # Four fields walk the sunrise attribute; moon_index is walked
+            # three times (the .formatted variant evaluates, then fails to format).
+            self.assertEqual(stub.counts['sunrise'], 4)
+            self.assertEqual(stub.counts['sun.rise'], 1)
+            self.assertEqual(stub.counts['moon_index'], 3)
+            self.assertEqual(stub.counts['next_full_moon'], 1)
+
+            # Same day, an hour later: continuous fields recompute, day and
+            # event fields are served from cache.
+            pkt = {'dateTime': day1_noon + 3600, 'usUnits': 1}
+            loopdata_pkt = {}
+            evaluator.insert_fields(loopdata_pkt, pkt)
+            self.assertEqual(loopdata_pkt['almanac.stub_time'], day1_noon + 3600)
+            self.assertEqual(loopdata_pkt['almanac.sunrise.raw'], six_am(0))
+            self.assertEqual(stub.counts['stub_time'], 2)
+            self.assertEqual(stub.counts['sunrise'], 4)
+            self.assertEqual(stub.counts['sun.rise'], 1)
+            self.assertEqual(stub.counts['moon_index'], 6)
+            self.assertEqual(stub.counts['next_full_moon'], 1)
+
+            # Day 2: day-tier fields recompute; the cached full moon (day 3
+            # evening) is still ahead, so the event field is kept.
+            pkt = {'dateTime': day1_noon + 86400, 'usUnits': 1}
+            loopdata_pkt = {}
+            evaluator.insert_fields(loopdata_pkt, pkt)
+            self.assertEqual(loopdata_pkt['almanac.sunrise.raw'], six_am(1))
+            self.assertEqual(loopdata_pkt['almanac(days=1).sunrise.raw'], six_am(2))
+            self.assertEqual(stub.counts['sunrise'], 8)
+            self.assertEqual(stub.counts['next_full_moon'], 1)
+
+            # Day 3, the day of the full moon: the event is deliberately kept
+            # for the rest of its day.
+            pkt = {'dateTime': day1_noon + 2 * 86400, 'usUnits': 1}
+            evaluator.insert_fields({}, pkt)
+            self.assertEqual(stub.counts['next_full_moon'], 1)
+
+            # Day 4: the local day advanced past the cached event; recompute.
+            stub.next_full_moon_ts = six_am(31)
+            pkt = {'dateTime': day1_noon + 3 * 86400, 'usUnits': 1}
+            loopdata_pkt = {}
+            evaluator.insert_fields(loopdata_pkt, pkt)
+            self.assertEqual(stub.counts['next_full_moon'], 2)
+            self.assertEqual(loopdata_pkt['almanac.next_full_moon.raw'], six_am(31))
+
+            # Backfilled packet from day 1: equality compare, so the old day
+            # gets its own values, never a newer cache.
+            pkt = {'dateTime': day1_noon, 'usUnits': 1}
+            loopdata_pkt = {}
+            evaluator.insert_fields(loopdata_pkt, pkt)
+            self.assertEqual(loopdata_pkt['almanac.sunrise.raw'], six_am(0))
+            # Four sunrise fields recomputed on each of the five day changes.
+            self.assertEqual(stub.counts['sunrise'], 20)
+            self.assertEqual(stub.counts['next_full_moon'], 3)
+        finally:
+            weewx.almanac.almanacs.remove(stub)
+
+    def test_almanac_field_end_to_end(self) -> None:
+        """Almanac fields through generate_loopdata_dictionary, against the
+        real weewx.almanac (PyEphem or the built-in fallback) as oracle."""
+        specified_fields = [
+            'current.outTemp',
+            'almanac.sunrise',
+            'almanac.sunrise.raw',
+            'almanac.sunset.raw',
+            'almanac.moon_phase',
+            'almanac.moon_index.raw',
+            'almanac(days=1).sunrise.raw',
+            'almanac(horizon=-6).sun(use_center=1).rise.raw',
+        ]
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, specified_fields)
+        cfg.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
+        cfg.latitude, cfg.longitude, cfg.altitude_m = 37.4, -122.1, 20.0
+        evaluator = user.loopdata.AlmanacFieldEvaluator(cfg)
+
+        # July 1, 2020 Noon PDT
+        pkt: Dict[str, Any] = {'dateTime': 1593630000, 'usUnits': 1, 'outTemp': 77.4}
+        accums: user.loopdata.Accumulators = ProcessPacketTests._get_accums(cfg, pkt['dateTime'])
+        loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums, evaluator)
+
+        # The oracle: the Almanac exactly as a report would build it (same
+        # location, temperature from the packet, formatter/converter from the
+        # target report).
+        temperature_c = weewx.units.convert(
+            weewx.units.as_value_tuple(pkt, 'outTemp'), 'degree_C')[0]
+        oracle = weewx.almanac.Almanac(pkt['dateTime'], 37.4, -122.1, altitude=20.0,
+            temperature=temperature_c, texts={}, formatter=cfg.formatter, converter=cfg.converter)
+
+        self.assertEqual(loopdata_pkt['current.outTemp'], '77.4°F')
+        self.assertEqual(loopdata_pkt['almanac.sunrise'], str(oracle.sunrise))
+        self.assertEqual(loopdata_pkt['almanac.sunrise.raw'], oracle.sunrise.raw)
+        self.assertEqual(loopdata_pkt['almanac.sunset.raw'], oracle.sunset.raw)
+        self.assertEqual(loopdata_pkt['almanac.moon_phase'], str(oracle.moon_phase))
+        self.assertEqual(loopdata_pkt['almanac.moon_index.raw'], oracle.moon_index)
+        tomorrow_oracle = oracle(almanac_time=user.loopdata.AlmanacFieldEvaluator.shift_days(
+            pkt['dateTime'], 1))
+        self.assertEqual(loopdata_pkt['almanac(days=1).sunrise.raw'], tomorrow_oracle.sunrise.raw)
+        if oracle.hasExtras:
+            self.assertEqual(loopdata_pkt['almanac(horizon=-6).sun(use_center=1).rise.raw'],
+                oracle(horizon=-6).sun(use_center=1).rise.raw)
+            # Civil dawn precedes sunrise.
+            self.assertLess(loopdata_pkt['almanac(horizon=-6).sun(use_center=1).rise.raw'],
+                loopdata_pkt['almanac.sunrise.raw'])
 
     def test_get_barometer_trend_mbar(self) -> None:
         # Forecast descriptions for the 3 hour change in barometer readings.
