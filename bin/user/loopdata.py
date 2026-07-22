@@ -229,6 +229,80 @@ AGG_TYPES: FrozenSet[str] = (
     frozenset(SCALAR_AGGS) | frozenset(VEC_AGGS) | frozenset(FIRSTLAST_AGGS))
 
 # ===============================================================================
+#                          Format-spec renderers
+# ===============================================================================
+
+# Unit types that hold a point in time.  Times have no numeric format string;
+# they render through Formatter.toString with a [Units][TimeFormats] context.
+TIME_UNIT_TYPES: FrozenSet[str] = frozenset(
+    ('unix_epoch', 'unix_epoch_ms', 'unix_epoch_ns'))
+
+# The renderers behind FORMAT_SPECS (below).  Each takes the field's
+# CheetahName, the converted value tuple (value, unit_type, group_type), the
+# output packet, the target report's formatter, the [Units][TimeFormats]
+# context for time values, and is_delta (see LoopProcessor.render_field), and
+# writes the finished json value into loopdata_pkt[cname.field] -- or, on a
+# formatting error, logs and writes nothing, omitting the field.
+
+def _render_ordinal_compass(cname: CheetahName, value_t: Tuple[Any, Any, Any],
+        loopdata_pkt: Dict[str, Any], formatter: weewx.units.Formatter,
+        time_context: str, is_delta: bool) -> None:
+    loopdata_pkt[cname.field] = formatter.to_ordinal_compass(value_t)
+
+def _render_formatted(cname: CheetahName, value_t: Tuple[Any, Any, Any],
+        loopdata_pkt: Dict[str, Any], formatter: weewx.units.Formatter,
+        time_context: str, is_delta: bool) -> None:
+    value, unit_type, _ = value_t
+    if not is_delta and unit_type in TIME_UNIT_TYPES:
+        # Times have no numeric format string; render via the time context,
+        # as a report tag's .formatted does (times never carry a label, so
+        # this equals the unadorned rendering).
+        loopdata_pkt[cname.field] = formatter.toString(value_t,
+            context=time_context, addLabel=False)
+        return
+    fmt_str = formatter.get_format_string(unit_type)
+    try:
+        loopdata_pkt[cname.field] = fmt_str % value
+    except Exception as e:
+        log.debug('%s: %s, %s, %s' % (e, cname.field, fmt_str, value))
+
+def _render_raw(cname: CheetahName, value_t: Tuple[Any, Any, Any],
+        loopdata_pkt: Dict[str, Any], formatter: weewx.units.Formatter,
+        time_context: str, is_delta: bool) -> None:
+    loopdata_pkt[cname.field] = value_t[0]
+
+def _render_default(cname: CheetahName, value_t: Tuple[Any, Any, Any],
+        loopdata_pkt: Dict[str, Any], formatter: weewx.units.Formatter,
+        time_context: str, is_delta: bool) -> None:
+    """The no-format_spec rendering: WeeWX's formatted-with-label string."""
+    if type(value_t[0]) == str:
+        # String values (e.g. a firstlast string obstype) are emitted as-is;
+        # they have no numeric format.
+        loopdata_pkt[cname.field] = value_t[0]
+    else:
+        loopdata_pkt[cname.field] = formatter.toString(value_t,
+            context=time_context)
+
+# format_spec -> renderer, the single render path for current, period and trend
+# fields (LoopProcessor.render_field dispatches here).  This table is the
+# single source of truth for which format specs exist: the grammar's accepted
+# sets (FORMAT_SPEC_NAMES below; parse_almanac_field uses this table directly)
+# are derived from it, so a spec cannot parse unless a renderer implements it.
+FORMAT_SPECS: Dict[str, Callable[[CheetahName, Tuple[Any, Any, Any],
+        Dict[str, Any], weewx.units.Formatter, str, bool], None]] = {
+    'ordinal_compass': _render_ordinal_compass,
+    'formatted':       _render_formatted,
+    'raw':             _render_raw,
+}
+
+# The grammar's valid format specs ARE the renderers' -- derived, never
+# hand-listed -- plus code/desc, which are not value renderings but
+# trend.barometer classifications, handled in add_trend_obstype before the
+# renderer is reached.  parse_cname validates against this set.
+FORMAT_SPEC_NAMES: FrozenSet[str] = (
+    frozenset(FORMAT_SPECS) | frozenset(('code', 'desc')))
+
+# ===============================================================================
 #                                  MinMaxDict
 # ===============================================================================
 
@@ -1681,8 +1755,6 @@ class LoopData(StdService):
     def parse_cname(field: str) -> Optional[CheetahName]:
         valid_prefixes    : List[str] = [ 'unit' ]
         valid_prefixes2   : List[str] = [ 'label' ]
-        valid_format_specs: List[str] = [ 'formatted', 'raw', 'ordinal_compass',
-                                          'desc', 'code' ]
 
         segment: List[str] = field.split('.')
         if len(segment) < 2:
@@ -1736,14 +1808,16 @@ class LoopData(StdService):
         # segment is a unit only if WeeWX knows it as one; format_specs are a
         # disjoint set, so there is no ambiguity.
         if prefix is None and len(segment) > next_seg:
-            if segment[next_seg] not in valid_format_specs and LoopData.is_valid_unit(segment[next_seg]):
+            if segment[next_seg] not in FORMAT_SPEC_NAMES and LoopData.is_valid_unit(segment[next_seg]):
                 unit = segment[next_seg]
                 next_seg += 1
 
         format_spec = None
-        # check for a format spec
+        # check for a format spec.  FORMAT_SPEC_NAMES is derived from the
+        # FORMAT_SPECS renderer table, so the grammar and the rendering can
+        # never drift apart.
         if prefix is None and len(segment) > next_seg:
-            if segment[next_seg] in valid_format_specs:
+            if segment[next_seg] in FORMAT_SPEC_NAMES:
                 format_spec = segment[next_seg]
                 next_seg += 1
 
@@ -1846,8 +1920,6 @@ class LoopData(StdService):
 
     @staticmethod
     def parse_almanac_field(field: str) -> Optional[AlmanacField]:
-        valid_format_specs: List[str] = [ 'formatted', 'raw', 'ordinal_compass' ]
-
         segments = LoopData.split_almanac_segments(field)
         if segments is None or len(segments) < 2:
             return None
@@ -1867,9 +1939,13 @@ class LoopData(StdService):
             return None
 
         # A trailing bare format spec is loopdata's, not the almanac's.
+        # Almanac fields take only the renderer specs (FORMAT_SPECS keys) --
+        # never code/desc, which are trend.barometer classifications --
+        # because to_json_value renders each as the ValueHelper attribute of
+        # the same name.
         chain_segments = segments[1:]
         format_spec = None
-        if len(chain_segments) >= 2 and chain_segments[-1] in valid_format_specs:
+        if len(chain_segments) >= 2 and chain_segments[-1] in FORMAT_SPECS:
             format_spec = chain_segments[-1]
             chain_segments = chain_segments[:-1]
 
@@ -1988,12 +2064,11 @@ class AlmanacFieldEvaluator:
         """Apply the format spec (ValueHelpers format exactly as the report
         tag would render) and coerce to a json-serializable value."""
         if isinstance(obj, weewx.units.ValueHelper):
-            if almanac_field.format_spec == 'raw':
-                value = obj.raw
-            elif almanac_field.format_spec == 'formatted':
-                value = obj.formatted
-            elif almanac_field.format_spec == 'ordinal_compass':
-                value = obj.ordinal_compass
+            if almanac_field.format_spec is not None:
+                # ValueHelper exposes every renderer spec (FORMAT_SPECS key)
+                # as an attribute of the same name; the parser admits nothing
+                # else here.
+                value = getattr(obj, almanac_field.format_spec)
             else:
                 value = str(obj)
         elif almanac_field.format_spec is not None and almanac_field.format_spec != 'raw':
@@ -2226,6 +2301,29 @@ class LoopProcessor:
             loopdata_pkt[cname.field] = formatter.get_label_string(tgt_type)
 
     @staticmethod
+    def render_field(cname: CheetahName, value_t: Tuple[Any, Any, Any],
+            loopdata_pkt: Dict[str, Any], formatter: weewx.units.Formatter,
+            time_context: str = 'current', is_delta: bool = False) -> None:
+        """Render a converted value tuple into loopdata_pkt[cname.field] per
+        the field's format_spec, dispatching through FORMAT_SPECS (no spec,
+        and specs with no renderer, get the default labeled rendering).
+
+        time_context is the [Units][TimeFormats] context for time values,
+        per the field's period.  is_delta marks trend values, which are
+        differences rather than observations: a delta of a compass direction
+        is not a direction and a delta of a time is not a timestamp, so
+        ordinal_compass and .formatted's time-context path fall back to the
+        plain numeric renderings (longstanding shipped behavior)."""
+        format_spec = cname.format_spec
+        if is_delta and format_spec == 'ordinal_compass':
+            format_spec = None
+        renderer = FORMAT_SPECS.get(format_spec) if format_spec is not None \
+            else None
+        if renderer is None:
+            renderer = _render_default
+        renderer(cname, value_t, loopdata_pkt, formatter, time_context, is_delta)
+
+    @staticmethod
     def add_current_obstype(cname: CheetahName, pkt: Dict[str, Any],
             loopdata_pkt: Dict[str, Any], converter: weewx.units.Converter,
             formatter: weewx.units.Formatter) -> None:
@@ -2247,33 +2345,8 @@ class LoopProcessor:
             log.debug('%s not found in loop packet.' % cname.field)
             return
 
-        if cname.format_spec == 'ordinal_compass':
-            loopdata_pkt[cname.field] = formatter.to_ordinal_compass(
-                (value, unit_type, group_type))
-            return
-
-        if cname.format_spec == 'formatted':
-            if unit_type in ('unix_epoch', 'unix_epoch_ms', 'unix_epoch_ns'):
-                # Times have no numeric format string; render via toString
-                # ('current' context), as a report tag's .formatted does.
-                loopdata_pkt[cname.field] = formatter.toString(
-                    (value, unit_type, group_type), addLabel=False)
-                return
-            fmt_str = formatter.get_format_string(unit_type)
-            try:
-                loopdata_pkt[cname.field] = fmt_str % value
-            except Exception as e:
-                log.debug('%s: %s, %s, %s' % (e, cname.field, fmt_str, value))
-            return
-
-        if cname.format_spec == 'raw':
-            loopdata_pkt[cname.field] = value
-            return
-
-        if type(value) == str:
-            loopdata_pkt[cname.field] = value
-        else:
-            loopdata_pkt[cname.field] = formatter.toString((value, unit_type, group_type))
+        LoopProcessor.render_field(cname, (value, unit_type, group_type),
+            loopdata_pkt, formatter)
 
     @staticmethod
     def add_period_obstype(cname: CheetahName, period_accum: Union[weewx.accum.Accum, ContinuousAccum],
@@ -2350,38 +2423,8 @@ class LoopProcessor:
         if time_context == 'alltime':
             time_context = 'year'
 
-        if cname.format_spec == 'ordinal_compass':
-            loopdata_pkt[cname.field] = formatter.to_ordinal_compass(
-                (tgt_value, tgt_type, tgt_group))
-            return
-
-        if cname.format_spec == 'formatted':
-            if tgt_type in ('unix_epoch', 'unix_epoch_ms', 'unix_epoch_ns'):
-                # Times have no numeric format string; render via the time
-                # context, as a report tag's .formatted does (times never carry
-                # a label, so this equals the unadorned rendering).
-                loopdata_pkt[cname.field] = formatter.toString(
-                    (tgt_value, tgt_type, tgt_group), context=time_context,
-                    addLabel=False)
-                return
-            fmt_str = formatter.get_format_string(tgt_type)
-            try:
-                loopdata_pkt[cname.field] = fmt_str % tgt_value
-            except Exception as e:
-                log.debug('%s: %s, %s, %s' % (e, cname.field, fmt_str, tgt_value))
-            return
-
-        if cname.format_spec == 'raw':
-            loopdata_pkt[cname.field] = tgt_value
-            return
-
-        if type(tgt_value) == str:
-            # String values (e.g. a firstlast string obstype) are emitted as-is;
-            # they have no numeric format.  Mirrors add_current_obstype.
-            loopdata_pkt[cname.field] = tgt_value
-        else:
-            loopdata_pkt[cname.field] = formatter.toString(
-                (tgt_value, tgt_type, tgt_group), context=time_context)
+        LoopProcessor.render_field(cname, (tgt_value, tgt_type, tgt_group),
+            loopdata_pkt, formatter, time_context=time_context)
 
     @staticmethod
     def add_trend_obstype(cname: CheetahName, accum: ContinuousAccum,
@@ -2415,19 +2458,8 @@ class LoopProcessor:
             # code and desc are only supported for trend.barometer
             return
 
-        if cname.format_spec == 'formatted':
-            fmt_str = formatter.get_format_string(unit_type)
-            try:
-                loopdata_pkt[cname.field] = fmt_str % value
-            except Exception as e:
-                log.debug('%s: %s, %s, %s' % (e, cname.field, fmt_str, value))
-            return
-
-        if cname.format_spec == 'raw':
-            loopdata_pkt[cname.field] = value
-            return
-
-        loopdata_pkt[cname.field] = formatter.toString((value, unit_type, group_type))
+        LoopProcessor.render_field(cname, (value, unit_type, group_type),
+            loopdata_pkt, formatter, is_delta=True)
 
 
     @staticmethod

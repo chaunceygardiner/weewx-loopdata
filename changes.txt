@@ -33,6 +33,12 @@ per-stats-kind extractor tables (SCALAR_AGGS/VEC_AGGS/FIRSTLAST_AGGS), and the
 grammar's set of valid aggregate types is now derived from those tables, so
 the parser and the dispatch can never drift apart.  No behavior change.
 
+Internal: the format-spec render block that was repeated in the current,
+period and trend paths is now a single renderer dispatching through a
+FORMAT_SPECS table, and the grammar's set of valid format specs (and the
+almanac grammar's) is derived from that table, just like the aggregate
+types.  No behavior change.
+
 5.0 Release 2026/07/19
 ----------------------
 New: almanac fields.  Any WeeWX report almanac tag can now be listed in
