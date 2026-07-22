@@ -12,6 +12,14 @@ interval and page reload.  This works for nearly every tag you would use in a
 report: current observations, trends, aggregates over hours, days, weeks,
 months, years and rolling windows — including almanac tags and unit labels.
 
+This is the sample report included with this extension — a NOAA-style
+windrose and eleven gauges, drawn by a few hundred lines of dependency-free
+canvas javascript.  Every needle, petal and readout on this page redraws on
+every loop packet, and gauges for sensors a station does not have (UV,
+solar radiation, air quality) hide themselves automatically:
+
+![LoopDataReport](LoopDataReport.png)
+
 Here is the whole idea in one example.  Say your report template shows a
 current condition, a daily aggregate and an almanac time:
 
@@ -213,15 +221,21 @@ e.g., `day.barometer.max.raw`).  Thus, it is simple to replace the reports
 observations with updated values in JavaScript as they will already be in the
 correct units and in the correct format.
 
-LoopData is initially configured with a target report of LoopDataReport.
-LoopDataReport is a sample report included with this extension.
-After installing and restarting, and after waiting for a report cycle,
-the loopdata report can be found at `<weewx-url>/loopdata/`:
-
-**Every field in this report is updated on every loop packet.  That includes
-the 2 minute, 10 minute, day, week, month, year, rain year and trend fields.**
-
-![LoopDataReport](LoopDataReport.png)
+LoopData is initially configured with a target report of LoopDataReport, the
+instrument-panel sample report pictured at the top of this README:
+temperature, dew point, feels-like and humidity dials wear today's min–max
+as a band, the wind compass carries a second ghost needle at the 10-minute
+gust direction, the barometer draws the 3-hour trend as an arc, rain and
+rain-rate dials rescale themselves on a big day, and the windrose is the
+NOAA banded kind.  The `.raw` fields drive the geometry, report-formatted
+fields supply the readouts, and `unit.label` fields pick the dial scales,
+so the panel follows the target report's units and formatting like any
+other loopdata page.  Gauges for observations a station does not report —
+UV, solar radiation, air quality (weewx-purple's `pm2_5_aqi`), and
+feels-like where appTemp is not computed — hide themselves, and reappear
+if the field shows up in loop-data.txt.  After installing and restarting,
+and after waiting for a report cycle, it can be found at
+`<weewx-url>/loopdata/`.
 
 
 The fields specified in weewx.conf on the fields line will be the keys
@@ -321,8 +335,7 @@ is:
    page can fetch the file with a relative URL.
 
 1. In your page, give an id to each HTML element that should show a value.
-   The simplest convention, used by the sample skin, is to make the id the
-   json key itself:
+   The simplest convention is to make the id the json key itself:
 
    ```html
    Outside Temperature: <span id="current.outTemp"></span>
@@ -353,7 +366,8 @@ is:
 
 1. Remember that a field missing from the packet is missing from the json
    (see above).  The loop above simply leaves the old value in place; the
-   sample skin instead blanks the element — choose what suits your page.
+   sample skin's gauges instead draw the dial with no needle and a `--`
+   readout — choose what suits your page.
 
 The sample skin's `realtime_updater.inc` shows the production niceties:
 a LIVE/age indicator driven by `current.dateTime.raw`, and a page-expiration
@@ -525,7 +539,7 @@ extension (its GitHub repository is no longer available).
         timeout = 1
         skip_if_older_than = 3
     [[Include]]
-        fields = current.dateTime.raw, current.windDir.ordinal_compass, day.rain.sum, current.dewpoint, current.outTemp, current.rainRate, current.windSpeed, day.windGust.max, 10m.windGust.max, current.windSpeed
+        fields = current.dateTime.raw, current.outTemp, current.outTemp.raw, day.outTemp.min.raw, day.outTemp.max.raw, day.outTemp.min.formatted, day.outTemp.max.formatted, current.outHumidity, current.outHumidity.raw, day.outHumidity.min.raw, day.outHumidity.max.raw, current.windSpeed, current.windSpeed.raw, current.windDir.raw, current.windDir.ordinal_compass, 10m.windGust.max, 10m.wind.gustdir.raw, 10m.wind.gustdir.ordinal_compass, current.barometer, current.barometer.raw, trend.barometer.raw, trend.barometer.desc, current.rainRate, current.rainRate.raw, day.rain.sum, day.rain.sum.raw, day.rainRate.max, day.rainRate.max.raw, current.dewpoint, current.dewpoint.raw, day.dewpoint.min.raw, day.dewpoint.max.raw, day.dewpoint.min.formatted, day.dewpoint.max.formatted, current.appTemp, current.appTemp.raw, day.appTemp.min.raw, day.appTemp.max.raw, day.appTemp.min.formatted, day.appTemp.max.formatted, current.UV, current.UV.raw, day.UV.max, current.radiation, current.radiation.raw, day.radiation.max, current.pm2_5, current.pm2_5_aqi.raw, current.pm2_5_aqi.formatted, day.windrose.banded, day.windrose.calm, unit.label.outTemp, unit.label.barometer, unit.label.rain, unit.label.rainRate, unit.label.windSpeed
     [[BarometerTrendDescriptions]]
         RISING_VERY_RAPIDLY = Rising Very Rapidly
         RISING_QUICKLY = Rising Quickly

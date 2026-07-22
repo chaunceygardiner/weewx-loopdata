@@ -131,3 +131,6 @@ dmypy.json
 # Claude Code (never check in)
 CLAUDE.md
 .claude/
+
+# Local development tools (e.g. the README screenshot generator); not published.
+tools/

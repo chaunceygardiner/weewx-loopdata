@@ -1,4 +1,4 @@
-## Copyright (C)2022 by John A Kline (john@johnkline.com)
+## Copyright (C)2022-2026 by John A Kline (john@johnkline.com)
 ## Distributed under the terms of the GNU Public License (GPLv3)
 ## See LICENSE for your rights.
 #errorCatcher Echo
@@ -7,6 +7,7 @@
 <html lang="en">
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/png" href="favicon.ico">
     #if $Extras.has_key('meta_title')
       <title>$Extras.meta_title</title>
@@ -14,82 +15,184 @@
       <title>$station.location</title>
     #end if
     <meta name="description" content="Up to date weather readings for $station.location.">
+    <style>
+      :root {
+        --ground: #10141c;
+        --face: #171d28;
+        --track: #232c3b;
+        --ink: #e8edf4;
+        --muted: #8b96a8;
+        --amber: #f5a83c;
+        --steel: #5b87ad;
+        --steel-dim: #33506b;
+      }
+      html, body { background: var(--ground); }
+      body {
+        color: var(--ink);
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        margin: 0;
+        padding: 24px 20px 40px;
+        font-variant-numeric: tabular-nums;
+      }
+      .wrap { max-width: 1100px; margin: 0 auto; }
+      header {
+        display: grid; grid-template-columns: 1fr auto 1fr;
+        align-items: baseline; gap: 16px; margin-bottom: 30px;
+      }
+      h1 {
+        font-size: 20px; font-weight: 600; letter-spacing: 0.01em;
+        margin: 0; text-align: center;
+      }
+      .stamp { font-size: 12px; color: var(--muted); }
+      .live {
+        font-size: 12px; font-weight: 600; letter-spacing: 0.14em;
+        color: var(--amber); text-align: right; cursor: default;
+      }
+      .gauges {
+        display: grid; grid-template-columns: repeat(4, 1fr);
+        gap: 36px 16px; justify-items: center; align-items: start;
+      }
+      @media (max-width: 1080px) { .gauges { grid-template-columns: repeat(3, 1fr); } }
+      @media (max-width: 800px) { .gauges { grid-template-columns: repeat(2, 1fr); } }
+      @media (max-width: 540px) { .gauges { grid-template-columns: 1fr; } }
+      .gauge {
+        display: flex; flex-direction: column; align-items: center;
+        gap: 10px; max-width: 100%;
+      }
+      .gauge h2 {
+        font-size: 11px; font-weight: 600; letter-spacing: 0.22em;
+        text-transform: uppercase; margin: 0; color: var(--muted);
+      }
+      canvas { display: block; max-width: 100%; }
+      .legend {
+        display: flex; flex-wrap: wrap; gap: 4px 10px; justify-content: center;
+        font-size: 10.5px; color: var(--muted); max-width: 250px;
+      }
+      .legend span { display: flex; align-items: center; gap: 5px; }
+      .legend i {
+        width: 10px; height: 10px; display: inline-block; border-radius: 2px;
+      }
+      .fields {
+        font-size: 11px; color: var(--muted); opacity: 0.75; line-height: 1.7;
+        margin: 0; text-align: center; max-width: 100%;
+        font-family: ui-monospace, Menlo, Consolas, monospace;
+      }
+    </style>
   </head>
-  <body style="background-color:black;font-family:monospace;color:#00FFFF;">
+  <body>
     #include "analytics.inc"
     #include "realtime_updater.inc"
-    <div>
-      <div>
-        <table style="font-size:32px;width:100%;margin:auto;">
-          <tr>
-            <td style="text-align:left;width:220px;">
-              <span id="last-update"></span>
-            </td>
-            <td style="text-align:center;">
-              <h1 style="font-size:32px;text-decoration:underline;">
-                #if $Extras.has_key('title')
-                  $Extras.title
-                #else
-                  $station.location
-                #end if
-              </h1>
-            </td>
-            <td style="text-align:right;width:220px;">
-              <span id="live-label"></span>
-            </td>
-          </tr>
-        </table>
-      </div>
-    </div>
-    <div style="font-size:60px;text-align:center;">
-      <span style="font-size:32px;">Current</span>
-      <div style="font-size:20px;">
-        Temperature Trend: <span id="trend.outTemp"></span>
-        &mdash;
-        Barometer Trend: <span id="trend.barometer.desc"></span>
-      </div>
-      <table style="width:100%;margin:auto;">
-        <tr>
-          <td style="font-size:20px;">Out Temp</td>
-          <td style="font-size:20px;">Dew Pt</td>
-          <td style="font-size:20px;">Wind Sp</td>
-          <td style="font-size:20px;">Wind Dir</td>
-          <td style="font-size:20px;">Rain Rate</td>
-        </tr>
-        <tr>
-          <td id="current.outTemp.formatted" style='white-space:pre;'></td>
-          <td id="current.dewpoint.formatted" style='white-space:pre;'></td>
-          <td id="current.windSpeed.formatted" style='white-space:pre;'></td>
-          <td id="current.windDir.ordinal_compass" style='white-space:pre;'></td>
-          <td id="current.rainRate.formatted" style='white-space:pre;'></td>
-        </tr>
-      </table>
-      <div>
-        <span style="font-size:32px;">Today&#39;s Windrose</span>
-        <div>
-          <canvas id="windrose" width="380" height="380"></canvas>
+    <div class="wrap">
+      <header>
+        <span class="stamp" id="last-update"></span>
+        <h1>
+          #if $Extras.has_key('title')
+            $Extras.title
+          #else
+            $station.location
+          #end if
+        </h1>
+        <span class="live" id="live-label"></span>
+      </header>
+      <div class="gauges">
+        <div class="gauge">
+          <h2>Today&#39;s Windrose</h2>
+          <canvas id="gauge-rose" width="240" height="240"></canvas>
+          <div class="legend" id="rose-legend"></div>
+          <div class="fields">
+            day.windrose.banded &middot; day.windrose.calm<br>
+            windrose.bands
+          </div>
+        </div>
+        <div class="gauge">
+          <h2>Wind</h2>
+          <canvas id="gauge-wind" width="240" height="240"></canvas>
+          <div class="fields">
+            current.windSpeed &middot; current.windDir.raw<br>
+            10m.windGust.max &middot; 10m.wind.gustdir.raw
+          </div>
+        </div>
+        <div class="gauge">
+          <h2>Temperature</h2>
+          <canvas id="gauge-temp" width="240" height="240"></canvas>
+          <div class="fields">
+            current.outTemp &middot; current.outTemp.raw<br>
+            day.outTemp.min.raw &middot; day.outTemp.max.raw
+          </div>
+        </div>
+        <div class="gauge">
+          <h2>Dew Point</h2>
+          <canvas id="gauge-dew" width="240" height="240"></canvas>
+          <div class="fields">
+            current.dewpoint &middot; current.dewpoint.raw<br>
+            day.dewpoint.min.raw &middot; day.dewpoint.max.raw
+          </div>
+        </div>
+        <div class="gauge">
+          <h2>Humidity</h2>
+          <canvas id="gauge-hum" width="240" height="240"></canvas>
+          <div class="fields">
+            current.outHumidity &middot; current.outHumidity.raw<br>
+            day.outHumidity.min.raw &middot; day.outHumidity.max.raw
+          </div>
+        </div>
+        <div class="gauge">
+          <h2>Barometer</h2>
+          <canvas id="gauge-baro" width="240" height="240"></canvas>
+          <div class="fields">
+            current.barometer &middot; trend.barometer.raw<br>
+            trend.barometer.desc
+          </div>
+        </div>
+        <div class="gauge">
+          <h2>Rain</h2>
+          <canvas id="gauge-rain" width="240" height="240"></canvas>
+          <div class="fields">
+            day.rain.sum &middot; day.rain.sum.raw<br>
+            current.rainRate
+          </div>
+        </div>
+        <div class="gauge">
+          <h2>Rain Rate</h2>
+          <canvas id="gauge-rrate" width="240" height="240"></canvas>
+          <div class="fields">
+            current.rainRate &middot; current.rainRate.raw<br>
+            day.rainRate.max
+          </div>
+        </div>
+        <div class="gauge" id="cell-feel">
+          <h2>Feels Like</h2>
+          <canvas id="gauge-feel" width="240" height="240"></canvas>
+          <div class="fields">
+            current.appTemp &middot; current.appTemp.raw<br>
+            day.appTemp.min.raw &middot; day.appTemp.max.raw
+          </div>
+        </div>
+        <div class="gauge" id="cell-uv">
+          <h2>UV Index</h2>
+          <canvas id="gauge-uv" width="240" height="240"></canvas>
+          <div class="fields">
+            current.UV &middot; current.UV.raw<br>
+            day.UV.max
+          </div>
+        </div>
+        <div class="gauge" id="cell-rad">
+          <h2>Solar Radiation</h2>
+          <canvas id="gauge-rad" width="240" height="240"></canvas>
+          <div class="fields">
+            current.radiation &middot; current.radiation.raw<br>
+            day.radiation.max
+          </div>
+        </div>
+        <div class="gauge" id="cell-aqi">
+          <h2>Air Quality</h2>
+          <canvas id="gauge-aqi" width="240" height="240"></canvas>
+          <div class="fields">
+            current.pm2_5_aqi.raw &middot; current.pm2_5_aqi.formatted<br>
+            current.pm2_5
+          </div>
         </div>
       </div>
-      #set $archive_data = [('Last 2 Minutes', '2m'), ('Last 10 Minutes', '10m'), ('Last 24 Hours', '24h'), ('Hour', 'hour'), ('Today', 'day'), ('Week', 'week'), ('Month', 'month'), ('Year', 'year'), ('Rain Year', 'rainyear'), ('All Time', 'alltime')]
-      #for $archive in $archive_data
-      <span style="font-size:32px;">$archive[0]</span>
-      <table style="width:100%;margin:auto;">
-        <tr>
-          <td style="font-size:20px;">Hi Out Temp</td>
-          <td style="font-size:20px;">Lo Out Temp</td>
-          <td style="font-size:20px;">Wind RMS</td>
-          <td style="font-size:20px;">Hi Gust</td>
-          <td style="font-size:20px;">Rain</td>
-        </tr>
-        <tr>
-          <td id='$(archive[1]).outTemp.max.formatted' style='white-space:pre;'></td>
-          <td id='$(archive[1]).outTemp.min.formatted' style='white-space:pre;'></td>
-          <td id='$(archive[1]).wind.rms.formatted' style='white-space:pre;'></td>
-          <td id='$(archive[1]).windGust.max.formatted' style='white-space:pre;'></td>
-          <td id='$(archive[1]).rain.sum.formatted' style='white-space:pre;'></td>
-        </tr>
-      </table>
-      #end for
     </div>
   </body>
 </html>

@@ -93,6 +93,24 @@ so it always fell back to its own assembly), and the fallback now disables
 ConfigObj interpolation exactly as WeeWX does.  Without this, the %(hour)d-style
 delta-time format strings misparse and long_form() cannot render.
 
+New: the sample LoopData skin is a live instrument panel.  A NOAA windrose
+plus eleven canvas gauges in three rows of four -- temperature, dew point,
+feels-like and humidity dials wearing today's min-max as a band, a wind
+compass with a ghost needle at the 10-minute gust direction, a barometer
+with the 3-hour trend drawn as an arc (chevron showing the direction of
+travel), rain and rain-rate dials that rescale themselves on a big day,
+UV, solar radiation and air quality (weewx-purple's pm2_5_aqi) -- in a few
+hundred lines of dependency-free javascript to crib from, replacing the
+old tables page.  Gauges for observations the station does not report
+(UV/radiation/air quality without the sensor, feels-like without appTemp)
+hide themselves and reappear if the field shows up.  The .raw fields drive
+the geometry, report-formatted fields supply every readout, and unit.label
+fields pick the dial scales, so the panel follows the target report's
+units (metric or US) automatically.  Fresh installs get the fields line
+the panel needs; UPGRADING INSTALLS KEEP THEIR EXISTING fields LINE -- to
+adopt the new page, replace it with the fields line shown in the README's
+sample configuration.
+
 Docs: the README now opens with the point -- report tags updated on every
 loop packet -- and a four-step example (report tags, the same tags on the
 fields line, the loop-data.txt they produce, and the javascript that makes
