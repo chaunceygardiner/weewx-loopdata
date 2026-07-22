@@ -28,6 +28,29 @@ a fixed unit.  The override is on value fields only; the unit.label prefix form
 is unchanged (WeeWX parity: $unit.label is obstype-only).  A unit incompatible
 with the observation's group causes the field to be omitted.
 
+New: call-syntax format specs.  The formatting methods WeeWX report tags can
+call are now format specs, with the same names, arguments and output:
+format(format_string, None_string, add_label, localize), nolabel(format_string,
+None_string), string(None_string) and long_form(format_string, None_string) --
+e.g. day.outTemp.maxtime.format("%H:%M"), current.outTemp.format(add_label=False),
+day.windGust.max.nolabel("%.0f"), day.sunshineDur.sum.long_form().  Arguments
+must be literals; positional arguments bind exactly as the report tag's do.  A
+bare spec name (day.rain.sum.string) is a zero-argument call, as Cheetah
+renders it.  The unit override composes (day.outTemp.avg.degree_C.nolabel("%.2f")),
+and the calls work on almanac fields too (almanac.sunrise.format("%H:%M")).
+string(), or an explicit None_string argument, additionally makes a field with
+missing data EMIT its None rendering (N/A or the None_string), overriding
+loopdata's omit-missing-fields default -- handy for pages that want every key
+present from the first packet.  NOTE: a call containing a comma must be quoted
+in weewx.conf ('day.rain.sum.format("%.2f", add_label=False)') or ConfigObj
+splits the entry at the comma.
+
+Fixed: the target report's options are now assembled by WeeWX's own
+build_skin_dict when it exists (loopdata was looking it up under a stale name,
+so it always fell back to its own assembly), and the fallback now disables
+ConfigObj interpolation exactly as WeeWX does.  Without this, the %(hour)d-style
+delta-time format strings misparse and long_form() cannot render.
+
 Internal: the per-aggregate dispatch in add_period_obstype was refactored into
 per-stats-kind extractor tables (SCALAR_AGGS/VEC_AGGS/FIRSTLAST_AGGS), and the
 grammar's set of valid aggregate types is now derived from those tables, so

@@ -10,6 +10,7 @@ today's high, low, sum, average and weighted averages for each observation
 in the packet.
 """
 
+import ast
 import copy
 import configobj
 import itertools
@@ -89,7 +90,8 @@ class CheetahName:
     obstype    : str           # e.g,. outTemp
     agg_type   : Optional[str] # avg, sum, etc. (required if period, other than current, is specified, else None)
     unit       : Optional[str] # unit override (e.g. degree_C, beaufort); None means the target report's unit for the obstype's group.  Grammar-ordered between agg_type and format_spec.  Value fields only -- never on the unit.label prefix form (WeeWX parity: $unit.label has no override).
-    format_spec: Optional[str] # formatted (formatted value sans label), raw or ordinal_compass (could be on direction), or None
+    format_spec: Optional[str] # formatted (formatted value sans label), raw or ordinal_compass (could be on direction), a call spec (format/nolabel/string/long_form), or None
+    format_kwargs: Optional[Dict[str, Any]] = None # call-syntax specs only: the call's arguments, positionals bound to the ValueHelper method's parameter names; None for bare specs
     def __hash__(self):
         return hash(self.field)
 
@@ -115,8 +117,9 @@ class AlmanacField:
     almanac_kwargs: Dict[str, float]     # kwargs of the leading almanac segment (days removed)
     days          : int                  # local calendar-day shift (almanac(days=±N))
     chain         : List[AlmanacSegment] # attribute chain after the leading almanac segment
-    format_spec   : Optional[str]        # formatted, raw, ordinal_compass or None
+    format_spec   : Optional[str]        # formatted, raw, ordinal_compass, a call spec (format/nolabel/string/long_form), or None
     tier          : str                  # continuous, day or event
+    format_kwargs : Optional[Dict[str, Any]] = None # call-syntax specs only (see CheetahName.format_kwargs)
     def __hash__(self):
         return hash(self.field)
 
@@ -301,6 +304,74 @@ FORMAT_SPECS: Dict[str, Callable[[CheetahName, Tuple[Any, Any, Any],
 # renderer is reached.  parse_cname validates against this set.
 FORMAT_SPEC_NAMES: FrozenSet[str] = (
     frozenset(FORMAT_SPECS) | frozenset(('code', 'desc')))
+
+# Call-syntax format specs: the ValueHelper formatting methods a report tag
+# can call, e.g. $day.outTemp.maxtime.format("%H:%M"),
+# $current.outTemp.format(add_label=False), $day.windGust.max.nolabel("%.1f"),
+# $day.rain.sum.string("--"), $day.sunshineDur.sum.long_form().  Each entry
+# mirrors the ValueHelper method of the same name: params lists its
+# parameters in positional order (LoopData.parse_call_spec binds a field's
+# positional arguments to these names), required counts the leading ones a
+# call must supply (nolabel's format_string), and render applies the bound
+# kwargs through the target report's Formatter -- the exact calls ValueHelper
+# makes, so the output matches the report tag's.  A bare spec name (no
+# parens) is a zero-argument call, as Cheetah's auto-call renders it.
+@dataclass(frozen=True)
+class CallFormatSpec:
+    params  : Tuple[str, ...]
+    required: int
+    render  : Callable[[weewx.units.Formatter, Tuple[Any, Any, Any], str,
+                        Dict[str, Any]], str]
+
+CALL_FORMAT_SPECS: Dict[str, CallFormatSpec] = {
+    'format': CallFormatSpec(
+        ('format_string', 'None_string', 'add_label', 'localize'), 0,
+        lambda f, v, ctx, kw: f.toString(v, context=ctx,
+            useThisFormat=kw.get('format_string'),
+            None_string=kw.get('None_string'),
+            addLabel=kw.get('add_label', True),
+            localize=kw.get('localize', True))),
+    'nolabel': CallFormatSpec(
+        ('format_string', 'None_string'), 1,
+        lambda f, v, ctx, kw: f.toString(v, context=ctx, addLabel=False,
+            useThisFormat=kw['format_string'],
+            None_string=kw.get('None_string'))),
+    'string': CallFormatSpec(
+        ('None_string',), 0,
+        lambda f, v, ctx, kw: f.toString(v, context=ctx,
+            None_string=kw.get('None_string'))),
+    'long_form': CallFormatSpec(
+        ('format_string', 'None_string'), 0,
+        lambda f, v, ctx, kw: f.long_form(v, context=ctx,
+            format_string=kw.get('format_string'),
+            None_string=kw.get('None_string'))),
+}
+
+def _render_call_spec(cname: CheetahName, value_t: Tuple[Any, Any, Any],
+        loopdata_pkt: Dict[str, Any], formatter: weewx.units.Formatter,
+        time_context: str, is_delta: bool) -> None:
+    """The renderer for every call-syntax spec: look the spec up in
+    CALL_FORMAT_SPECS and apply the field's bound kwargs.  As with the other
+    renderers, a formatting error (bad format string, unit with no 'second'
+    conversion under long_form, ...) logs and omits the field."""
+    assert cname.format_spec is not None
+    call_spec = CALL_FORMAT_SPECS[cname.format_spec]
+    try:
+        loopdata_pkt[cname.field] = call_spec.render(
+            formatter, value_t, time_context, cname.format_kwargs or {})
+    except Exception as e:
+        log.debug('%s: %s' % (cname.field, e))
+
+def spec_emits_none(cname: CheetahName) -> bool:
+    """True when the field's format spec carries explicit None handling -- a
+    string() call, or an explicit None_string argument to
+    format/nolabel/long_form.  Such a field is EMITTED with its None
+    rendering when data is missing (a report tag always renders something),
+    overriding loopdata's default of omitting fields with no data."""
+    if cname.format_kwargs is None:
+        return False
+    return cname.format_spec == 'string' \
+        or cname.format_kwargs.get('None_string') is not None
 
 # ===============================================================================
 #                                  MinMaxDict
@@ -1344,16 +1415,22 @@ class LoopData(StdService):
 
     @staticmethod
     def get_target_report_dict(config_dict, report) -> Dict[str, Any]:
-        try:
-            return weewx.reportengine._build_skin_dict(config_dict, report)
-        except AttributeError:
-            pass # Load the report dict the old fashioned way below
+        # WeeWX's own skin-dict builder: build_skin_dict since WeeWX 4.6
+        # (checking the older _build_skin_dict name too), else assemble the
+        # report dict the old fashioned way below.
+        build_skin_dict = getattr(weewx.reportengine, 'build_skin_dict',
+            getattr(weewx.reportengine, '_build_skin_dict', None))
+        if build_skin_dict is not None:
+            return build_skin_dict(config_dict, report)
         try:
             skin_dict = weeutil.config.deep_copy(weewx.defaults.defaults)
         except Exception as e:
             reraise_if_terminate(e)
             # Fall back to copy.deepcopy for earlier than weewx 4.1.2 installs.
             skin_dict = copy.deepcopy(weewx.defaults.defaults)
+        # Turn off interpolation, exactly as WeeWX's build_skin_dict does: it
+        # interferes with the %(hour)d-style delta-time format strings.
+        skin_dict.interpolation = False
         skin_dict['REPORT_NAME'] = report
         skin_config_path = os.path.join(
             config_dict['WEEWX_ROOT'],
@@ -1756,7 +1833,10 @@ class LoopData(StdService):
         valid_prefixes    : List[str] = [ 'unit' ]
         valid_prefixes2   : List[str] = [ 'label' ]
 
-        segment: List[str] = field.split('.')
+        segments: Optional[List[str]] = LoopData.split_field_segments(field)
+        if segments is None:
+            return None
+        segment: List[str] = segments
         if len(segment) < 2:
             return None
 
@@ -1805,21 +1885,30 @@ class LoopData(StdService):
         # Optional unit override (value fields only, never the unit.label prefix
         # form).  Sits between the agg_type and the format_spec, e.g.
         # day.outTemp.avg.degree_C.formatted or current.windSpeed.beaufort.  A
-        # segment is a unit only if WeeWX knows it as one; format_specs are a
-        # disjoint set, so there is no ambiguity.
+        # segment is a unit only if WeeWX knows it as one; format specs (bare
+        # and call-syntax) are a disjoint set, so there is no ambiguity.
         if prefix is None and len(segment) > next_seg:
-            if segment[next_seg] not in FORMAT_SPEC_NAMES and LoopData.is_valid_unit(segment[next_seg]):
+            if segment[next_seg] not in FORMAT_SPEC_NAMES \
+                    and segment[next_seg] not in CALL_FORMAT_SPECS \
+                    and LoopData.is_valid_unit(segment[next_seg]):
                 unit = segment[next_seg]
                 next_seg += 1
 
         format_spec = None
+        format_kwargs = None
         # check for a format spec.  FORMAT_SPEC_NAMES is derived from the
         # FORMAT_SPECS renderer table, so the grammar and the rendering can
-        # never drift apart.
+        # never drift apart; likewise the call-syntax specs
+        # (format/nolabel/string/long_form) parse against CALL_FORMAT_SPECS.
         if prefix is None and len(segment) > next_seg:
             if segment[next_seg] in FORMAT_SPEC_NAMES:
                 format_spec = segment[next_seg]
                 next_seg += 1
+            else:
+                parsed_call = LoopData.parse_call_spec(segment[next_seg])
+                if parsed_call is not None:
+                    format_spec, format_kwargs = parsed_call
+                    next_seg += 1
 
         # windrun_<dir> is not supported for week, month, year, rainyear and alltime
         if obstype.startswith('windrun_') and (
@@ -1831,14 +1920,15 @@ class LoopData(StdService):
             return None
 
         return CheetahName(
-            field       = field,
-            prefix      = prefix,
-            prefix2     = prefix2,
-            period      = period,
-            obstype     = obstype,
-            agg_type    = agg_type,
-            unit        = unit,
-            format_spec = format_spec)
+            field         = field,
+            prefix        = prefix,
+            prefix2       = prefix2,
+            period        = period,
+            obstype       = obstype,
+            agg_type      = agg_type,
+            unit          = unit,
+            format_spec   = format_spec,
+            format_kwargs = format_kwargs)
 
     # An almanac field segment: an identifier with an optional call suffix
     # holding kwargs (no nested parens), e.g. sun(use_center=1).
@@ -1871,28 +1961,88 @@ class LoopData(StdService):
         return almanac_fields
 
     @staticmethod
-    def split_almanac_segments(field: str) -> Optional[List[str]]:
-        """Split on '.' at paren depth zero, so call suffixes keep their
-        contents (almanac(horizon=-6).sun.rise -> 3 segments)."""
+    def split_field_segments(field: str) -> Optional[List[str]]:
+        """Split a fields-line entry on '.' at paren depth zero, so call
+        suffixes keep their contents (almanac(horizon=-6).sun.rise -> 3
+        segments, day.outTemp.maxtime.format("%H:%M") -> 4).  Quoted call
+        arguments are opaque: dots, parens and backslash-escaped quotes
+        inside them neither split nor count toward the depth.  Returns None
+        on unbalanced parens or an unterminated quote."""
         segments: List[str] = []
         current = ''
         depth = 0
+        quote: Optional[str] = None
+        escaped = False
         for ch in field:
+            if quote is not None:
+                current += ch
+                if escaped:
+                    escaped = False
+                elif ch == '\\':
+                    escaped = True
+                elif ch == quote:
+                    quote = None
+                continue
             if ch == '.' and depth == 0:
                 segments.append(current)
                 current = ''
                 continue
-            if ch == '(':
+            if ch in ('"', "'"):
+                quote = ch
+            elif ch == '(':
                 depth += 1
             elif ch == ')':
                 depth -= 1
                 if depth < 0:
                     return None
             current += ch
-        if depth != 0:
+        if depth != 0 or quote is not None:
             return None
         segments.append(current)
         return segments
+
+    @staticmethod
+    def parse_call_spec(segment: str) -> Optional[Tuple[str, Dict[str, Any]]]:
+        """Parse a call-syntax format spec segment -- format("%H:%M"),
+        nolabel("%.1f", None_string="--"), string(), long_form() -- into
+        (spec_name, kwargs), binding positional arguments to the ValueHelper
+        method's parameter names per CALL_FORMAT_SPECS.  A bare name is a
+        zero-argument call, as Cheetah's auto-call renders it.  Arguments
+        must be Python literals.  Returns None unless the segment is a
+        well-formed call of a known spec supplying its required arguments."""
+        try:
+            node = ast.parse(segment, mode='eval').body
+        except (SyntaxError, ValueError):
+            return None
+        args: List[ast.expr] = []
+        keywords: List[ast.keyword] = []
+        if isinstance(node, ast.Name):
+            name = node.id
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            name = node.func.id
+            args = node.args
+            keywords = node.keywords
+        else:
+            return None
+        call_spec = CALL_FORMAT_SPECS.get(name)
+        if call_spec is None or len(args) > len(call_spec.params):
+            return None
+        kwargs: Dict[str, Any] = {}
+        try:
+            for i, arg in enumerate(args):
+                kwargs[call_spec.params[i]] = ast.literal_eval(arg)
+            for keyword in keywords:
+                if keyword.arg is None or keyword.arg not in call_spec.params \
+                        or keyword.arg in kwargs:
+                    return None
+                kwargs[keyword.arg] = ast.literal_eval(keyword.value)
+        except (SyntaxError, ValueError, TypeError, MemoryError):
+            # Not a literal (e.g. a name or an expression).
+            return None
+        if any(param not in kwargs
+                for param in call_spec.params[:call_spec.required]):
+            return None
+        return name, kwargs
 
     @staticmethod
     def parse_almanac_kwargs(kwargs_str: str) -> Optional[Dict[str, float]]:
@@ -1920,7 +2070,7 @@ class LoopData(StdService):
 
     @staticmethod
     def parse_almanac_field(field: str) -> Optional[AlmanacField]:
-        segments = LoopData.split_almanac_segments(field)
+        segments = LoopData.split_field_segments(field)
         if segments is None or len(segments) < 2:
             return None
 
@@ -1938,16 +2088,23 @@ class LoopData(StdService):
         if not isinstance(days, int):
             return None
 
-        # A trailing bare format spec is loopdata's, not the almanac's.
-        # Almanac fields take only the renderer specs (FORMAT_SPECS keys) --
-        # never code/desc, which are trend.barometer classifications --
-        # because to_json_value renders each as the ValueHelper attribute of
-        # the same name.
+        # A trailing format spec is loopdata's, not the almanac's.  Almanac
+        # fields take the renderer specs (FORMAT_SPECS keys) and the
+        # call-syntax specs (CALL_FORMAT_SPECS) -- never code/desc, which are
+        # trend.barometer classifications -- because to_json_value renders
+        # each as the ValueHelper attribute of the same name.
         chain_segments = segments[1:]
         format_spec = None
-        if len(chain_segments) >= 2 and chain_segments[-1] in FORMAT_SPECS:
-            format_spec = chain_segments[-1]
-            chain_segments = chain_segments[:-1]
+        format_kwargs = None
+        if len(chain_segments) >= 2:
+            if chain_segments[-1] in FORMAT_SPECS:
+                format_spec = chain_segments[-1]
+                chain_segments = chain_segments[:-1]
+            else:
+                parsed_call = LoopData.parse_call_spec(chain_segments[-1])
+                if parsed_call is not None:
+                    format_spec, format_kwargs = parsed_call
+                    chain_segments = chain_segments[:-1]
 
         chain: List[AlmanacSegment] = []
         for segment in chain_segments:
@@ -1976,7 +2133,8 @@ class LoopData(StdService):
             days           = days,
             chain          = chain,
             format_spec    = format_spec,
-            tier           = tier)
+            tier           = tier,
+            format_kwargs  = format_kwargs)
 
 class AlmanacFieldEvaluator:
     """Evaluates almanac fields against weewx.almanac (whatever AlmanacTypes
@@ -2065,10 +2223,15 @@ class AlmanacFieldEvaluator:
         tag would render) and coerce to a json-serializable value."""
         if isinstance(obj, weewx.units.ValueHelper):
             if almanac_field.format_spec is not None:
-                # ValueHelper exposes every renderer spec (FORMAT_SPECS key)
-                # as an attribute of the same name; the parser admits nothing
-                # else here.
+                # ValueHelper exposes every format spec as an attribute of
+                # the same name; the parser admits nothing else here.  Call
+                # specs (format/nolabel/string/long_form) are methods, called
+                # with the field's bound kwargs; a bare spec that is callable
+                # (ordinal_compass) is called with none, as Cheetah's
+                # auto-call renders it.
                 value = getattr(obj, almanac_field.format_spec)
+                if callable(value):
+                    value = value(**(almanac_field.format_kwargs or {}))
             else:
                 value = str(obj)
         elif almanac_field.format_spec is not None and almanac_field.format_spec != 'raw':
@@ -2305,8 +2468,9 @@ class LoopProcessor:
             loopdata_pkt: Dict[str, Any], formatter: weewx.units.Formatter,
             time_context: str = 'current', is_delta: bool = False) -> None:
         """Render a converted value tuple into loopdata_pkt[cname.field] per
-        the field's format_spec, dispatching through FORMAT_SPECS (no spec,
-        and specs with no renderer, get the default labeled rendering).
+        the field's format_spec, dispatching through FORMAT_SPECS -- or, for
+        call-syntax specs (format_kwargs is not None), CALL_FORMAT_SPECS (no
+        spec, and specs with no renderer, get the default labeled rendering).
 
         time_context is the [Units][TimeFormats] context for time values,
         per the field's period.  is_delta marks trend values, which are
@@ -2317,11 +2481,30 @@ class LoopProcessor:
         format_spec = cname.format_spec
         if is_delta and format_spec == 'ordinal_compass':
             format_spec = None
-        renderer = FORMAT_SPECS.get(format_spec) if format_spec is not None \
-            else None
+        renderer: Optional[Callable[[CheetahName, Tuple[Any, Any, Any],
+            Dict[str, Any], weewx.units.Formatter, str, bool], None]] = None
+        if format_spec is not None:
+            if cname.format_kwargs is not None:
+                renderer = _render_call_spec
+            else:
+                renderer = FORMAT_SPECS.get(format_spec)
         if renderer is None:
             renderer = _render_default
         renderer(cname, value_t, loopdata_pkt, formatter, time_context, is_delta)
+
+    @staticmethod
+    def render_missing(cname: CheetahName, loopdata_pkt: Dict[str, Any],
+            formatter: weewx.units.Formatter, is_delta: bool = False) -> bool:
+        """Missing-data hook: a field whose format spec carries explicit None
+        handling (spec_emits_none) is emitted as its None rendering -- what
+        the report tag would show -- instead of being omitted; returns True
+        if the field was emitted.  The None rendering never reads the unit or
+        the time context, so a unitless value tuple suffices."""
+        if not spec_emits_none(cname):
+            return False
+        LoopProcessor.render_field(cname, (None, None, None), loopdata_pkt,
+            formatter, is_delta=is_delta)
+        return True
 
     @staticmethod
     def add_current_obstype(cname: CheetahName, pkt: Dict[str, Any],
@@ -2329,7 +2512,8 @@ class LoopProcessor:
             formatter: weewx.units.Formatter) -> None:
 
         if cname.obstype not in pkt:
-            log.debug('%s not found in packet, skipping %s' % (cname.obstype, cname.field))
+            if not LoopProcessor.render_missing(cname, loopdata_pkt, formatter):
+                log.debug('%s not found in packet, skipping %s' % (cname.obstype, cname.field))
             return
 
         try:
@@ -2342,7 +2526,8 @@ class LoopProcessor:
             return
 
         if value is None:
-            log.debug('%s not found in loop packet.' % cname.field)
+            if not LoopProcessor.render_missing(cname, loopdata_pkt, formatter):
+                log.debug('%s not found in loop packet.' % cname.field)
             return
 
         LoopProcessor.render_field(cname, (value, unit_type, group_type),
@@ -2353,7 +2538,8 @@ class LoopProcessor:
             loopdata_pkt: Dict[str, Any], converter: weewx.units.Converter,
             formatter: weewx.units.Formatter) -> None:
         if cname.obstype not in period_accum:
-            log.debug('No %s stats for %s, skipping %s' % (cname.period, cname.obstype, cname.field))
+            if not LoopProcessor.render_missing(cname, loopdata_pkt, formatter):
+                log.debug('No %s stats for %s, skipping %s' % (cname.period, cname.obstype, cname.field))
             return
 
         stats = period_accum[cname.obstype]
@@ -2391,10 +2577,12 @@ class LoopProcessor:
 
         else:
             # No stats available (e.g. empty accumulator).
+            LoopProcessor.render_missing(cname, loopdata_pkt, formatter)
             return
 
         if src_value is None:
-            log.debug('Currently no %s stats for %s.' % (cname.period, cname.field))
+            if not LoopProcessor.render_missing(cname, loopdata_pkt, formatter):
+                log.debug('Currently no %s stats for %s.' % (cname.period, cname.field))
             return
 
         src_type, src_group = weewx.units.getStandardUnitType(period_accum.unit_system, cname.obstype, agg_type=cname.agg_type)
@@ -2433,7 +2621,8 @@ class LoopProcessor:
             formatter: weewx.units.Formatter) -> None:
 
         if cname.obstype not in accum:
-            log.debug('No %s stats for %s, skipping %s' % (cname.period, cname.obstype, cname.field))
+            if not LoopProcessor.render_missing(cname, loopdata_pkt, formatter, is_delta=True):
+                log.debug('No %s stats for %s, skipping %s' % (cname.period, cname.obstype, cname.field))
             return
 
         # A unit override re-targets the numeric trend.  For the barometer
@@ -2444,7 +2633,8 @@ class LoopProcessor:
 
         value, unit_type, group_type = LoopProcessor.get_trend(cname, pkt, accum, converter, time_delta, loop_frequency, trend_unit)
         if value is None:
-            log.debug('add_trend_obstype: %s: get_trend returned None.' % cname.field)
+            if not LoopProcessor.render_missing(cname, loopdata_pkt, formatter, is_delta=True):
+                log.debug('add_trend_obstype: %s: get_trend returned None.' % cname.field)
             return
 
         if cname.obstype == 'barometer' and (cname.format_spec == 'code' or cname.format_spec == 'desc'):

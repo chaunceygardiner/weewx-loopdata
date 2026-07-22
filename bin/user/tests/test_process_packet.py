@@ -3979,6 +3979,241 @@ class ProcessPacketTests(unittest.TestCase):
         # code path from the current/period drops -- so pin it separately.
         self.assertIsNone(trend_value('trend.outTemp.beaufort.raw'))
 
+    def test_parse_call_spec(self) -> None:
+        # Grammar for call-syntax format specs (5.1): format/nolabel/string/
+        # long_form parse with their arguments bound to the ValueHelper
+        # method's parameter names, mirroring the report-tag call.
+        parse = user.loopdata.LoopData.parse_cname
+
+        cname = parse('day.outTemp.maxtime.format("%H:%M")')
+        assert cname is not None
+        self.assertEqual(cname.field, 'day.outTemp.maxtime.format("%H:%M")')
+        self.assertEqual(cname.period, 'day')
+        self.assertEqual(cname.obstype, 'outTemp')
+        self.assertEqual(cname.agg_type, 'maxtime')
+        self.assertEqual(cname.unit, None)
+        self.assertEqual(cname.format_spec, 'format')
+        self.assertEqual(cname.format_kwargs, {'format_string': '%H:%M'})
+
+        # Positional arguments bind in the ValueHelper method's order.
+        cname = parse("day.windGust.max.nolabel('%.1f', '--')")
+        assert cname is not None
+        self.assertEqual(cname.format_spec, 'nolabel')
+        self.assertEqual(cname.format_kwargs,
+            {'format_string': '%.1f', 'None_string': '--'})
+
+        # Keyword arguments, including booleans.
+        cname = parse('current.outTemp.format(add_label=False)')
+        assert cname is not None
+        self.assertEqual(cname.format_spec, 'format')
+        self.assertEqual(cname.format_kwargs, {'add_label': False})
+
+        cname = parse('day.rain.sum.format("%.2f", None_string="--", localize=False)')
+        assert cname is not None
+        self.assertEqual(cname.format_kwargs,
+            {'format_string': '%.2f', 'None_string': '--', 'localize': False})
+
+        # A unit override composes, ordered before the spec.
+        cname = parse('day.outTemp.avg.degree_C.nolabel("%.2f")')
+        assert cname is not None
+        self.assertEqual(cname.unit, 'degree_C')
+        self.assertEqual(cname.format_spec, 'nolabel')
+
+        # A bare spec name is a zero-argument call (Cheetah auto-call), so
+        # nolabel -- whose format_string is required -- must not parse bare
+        # or empty.
+        cname = parse('day.rain.sum.string')
+        assert cname is not None
+        self.assertEqual(cname.format_spec, 'string')
+        self.assertEqual(cname.format_kwargs, {})
+        cname = parse('day.sunshineDur.sum.long_form')
+        assert cname is not None
+        self.assertEqual(cname.format_spec, 'long_form')
+        self.assertIsNone(parse('day.windGust.max.nolabel'))
+        self.assertIsNone(parse('day.windGust.max.nolabel()'))
+
+        # Quoted arguments are opaque to the splitter: dots and parens
+        # inside them are argument text, not grammar.
+        cname = parse('day.outTemp.maxtime.format("%d.%m (%Y)")')
+        assert cname is not None
+        self.assertEqual(cname.format_kwargs, {'format_string': '%d.%m (%Y)'})
+
+        # Malformed calls reject the whole field.
+        self.assertIsNone(parse('day.outTemp.max.format("%.1f", format_string="%.2f")'))  # duplicate arg
+        self.assertIsNone(parse('day.outTemp.max.format(bogus=1)'))      # unknown kwarg
+        self.assertIsNone(parse('day.outTemp.max.string("a", "b")'))     # too many positionals
+        self.assertIsNone(parse('day.outTemp.max.format(add_label=x)'))  # non-literal argument
+        self.assertIsNone(parse('day.outTemp.max.frobnicate("x")'))      # unknown spec
+        self.assertIsNone(parse('day.outTemp.max.format("%.1f'))         # unterminated quote
+        self.assertIsNone(parse('day.outTemp.max.format("%.1f").raw'))   # no chaining after a spec
+        self.assertIsNone(parse('trend.barometer.desc()'))               # code/desc are not calls
+
+    def test_call_spec_rendering_parity(self) -> None:
+        # Call-syntax format specs (5.1) are ValueHelper-method parity: for
+        # period.obstype.agg.spec(...), loopdata must emit exactly what a
+        # report tag's ValueHelper renders for the same value tuple, context,
+        # formatter and converter.  Expected values are computed by
+        # constructing that ValueHelper -- parity IS the spec.
+        import weewx.units
+        from weewx.units import ValueHelper, ValueTuple
+        US = weewx.units.unit_constants['US']
+        cfg = ProcessPacketTests._get_config('us', 10800, 1, 6, ['day.outTemp.max'])
+        converter = cfg.converter
+        formatter = cfg.formatter
+
+        t_max = 1593630000
+        day_accum = weewx.accum.Accum(weeutil.weeutil.archiveDaySpan(t_max), US)
+        day_accum.addRecord({'dateTime': t_max - 1000, 'usUnits': 1,
+            'outTemp': 50.0, 'sunshineDur': 300.0}, weight=300)
+        day_accum.addRecord({'dateTime': t_max, 'usUnits': 1,
+            'outTemp': 80.0, 'sunshineDur': 4000.0}, weight=300)
+
+        def rendered(field) -> dict:
+            cname = user.loopdata.LoopData.parse_cname(field)
+            self.assertIsNotNone(cname, msg='parse failed %s' % field)
+            out: dict = {}
+            user.loopdata.LoopProcessor.add_period_obstype(
+                cname, day_accum, out, converter, formatter)
+            return out
+
+        # Value present: the day max is 80 degree_F; context is the period.
+        vh = ValueHelper(ValueTuple(80.0, 'degree_F', 'group_temperature'),
+            'day', formatter, converter)
+        for spec, expected in [
+                ('format("%.3f")',            vh.format("%.3f")),
+                ('format(add_label=False)',   vh.format(add_label=False)),
+                ('format("%05.1f", localize=False)',
+                                              vh.format("%05.1f", localize=False)),
+                ('nolabel("%.2f")',           vh.nolabel("%.2f")),
+                ('string()',                  vh.string()),
+                ('string',                    vh.string())]:
+            field = 'day.outTemp.max.%s' % spec
+            self.assertEqual(rendered(field).get(field), expected, msg=field)
+
+        # A unit override converts before the spec renders, as the report
+        # tag's $day.outTemp.max.degree_C.nolabel(...) does.
+        vh_c = vh.convert('degree_C')
+        field = 'day.outTemp.max.degree_C.nolabel("%.2f")'
+        self.assertEqual(rendered(field).get(field), vh_c.nolabel("%.2f"))
+
+        # Times: format's argument is a strftime format; argument-less specs
+        # render through the period's [Units][TimeFormats] context.
+        vh_t = ValueHelper(ValueTuple(t_max, 'unix_epoch', 'group_time'),
+            'day', formatter, converter)
+        field = 'day.outTemp.maxtime.format("%H:%M")'
+        self.assertEqual(rendered(field).get(field), vh_t.format("%H:%M"))
+        field = 'day.outTemp.maxtime.string()'
+        self.assertEqual(rendered(field).get(field), vh_t.string())
+
+        # long_form on a delta time (sunshineDur sums 300 + 4000 seconds).
+        vh_d = ValueHelper(ValueTuple(4300.0, 'second', 'group_deltatime'),
+            'day', formatter, converter)
+        field = 'day.sunshineDur.sum.long_form()'
+        self.assertEqual(rendered(field).get(field), vh_d.long_form())
+        field = 'day.sunshineDur.sum.long_form("%(hour)d h %(minute)d m")'
+        self.assertEqual(rendered(field).get(field),
+            vh_d.long_form("%(hour)d h %(minute)d m"))
+
+        # Missing data: string(), or an explicit None_string, EMITS the None
+        # rendering exactly as the report tag would (inTemp has no day
+        # stats); everything else keeps loopdata's omit-missing default.
+        vh_none = ValueHelper(ValueTuple(None, 'degree_F', 'group_temperature'),
+            'day', formatter, converter)
+        for spec, expected in [
+                ('string()',                    vh_none.string()),
+                ('string("missing")',           vh_none.string("missing")),
+                ('string(None_string="--")',    vh_none.string(None_string="--")),
+                ('format(None_string="--")',    vh_none.format(None_string="--")),
+                ('nolabel("%.1f", "--")',       vh_none.nolabel("%.1f", "--"))]:
+            field = 'day.inTemp.avg.%s' % spec
+            self.assertEqual(rendered(field).get(field), expected, msg=field)
+        for spec in ['format()', 'format("%.1f")', 'nolabel("%.1f")', 'formatted', '']:
+            field = 'day.inTemp.avg.%s' % spec if spec else 'day.inTemp.avg'
+            self.assertEqual(rendered(field), {}, msg=field)
+
+        # The current path: context is 'current', missing obstypes emit only
+        # under explicit None handling.
+        pkt = {'dateTime': t_max, 'usUnits': 1, 'outTemp': 80.0}
+        def rendered_current(field) -> dict:
+            cname = user.loopdata.LoopData.parse_cname(field)
+            self.assertIsNotNone(cname, msg='parse failed %s' % field)
+            out: dict = {}
+            user.loopdata.LoopProcessor.add_current_obstype(
+                cname, pkt, out, converter, formatter)
+            return out
+        vh_cur = ValueHelper(ValueTuple(80.0, 'degree_F', 'group_temperature'),
+            'current', formatter, converter)
+        field = 'current.outTemp.format("%.2f", add_label=False)'
+        self.assertEqual(rendered_current(field).get(field),
+            vh_cur.format("%.2f", add_label=False))
+        field = 'current.inTemp.string()'
+        self.assertEqual(rendered_current(field).get(field), vh_none.string())
+        self.assertEqual(rendered_current('current.inTemp.format("%.1f")'), {})
+
+        # The trend path: a not-yet-computable trend (empty accumulator)
+        # emits only under explicit None handling.
+        baro_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
+        empty_accum = user.loopdata.ContinuousAccum(100000, US)
+        def rendered_trend(field) -> dict:
+            cname = user.loopdata.LoopData.parse_cname(field)
+            self.assertIsNotNone(cname, msg='parse failed %s' % field)
+            out: dict = {}
+            user.loopdata.LoopProcessor.add_trend_obstype(
+                cname, empty_accum, pkt, out, 10800, 2.0, baro_descs,
+                converter, formatter)
+            return out
+        field = 'trend.outTemp.string("n/a")'
+        self.assertEqual(rendered_trend(field).get(field), 'n/a')
+        self.assertEqual(rendered_trend('trend.outTemp.formatted'), {})
+
+    def test_almanac_call_spec(self) -> None:
+        # Call-syntax format specs on almanac fields: the trailing call is
+        # loopdata's spec, evaluated as the ValueHelper method of the same
+        # name -- exactly the report tag's $almanac.sunrise.format("%H:%M").
+        from weewx.units import ValueHelper, ValueTuple
+        parse = user.loopdata.LoopData.parse_almanac_field
+
+        af = parse('almanac.sunrise.format("%H:%M")')
+        assert af is not None
+        self.assertEqual(af.chain, [user.loopdata.AlmanacSegment('sunrise', None)])
+        self.assertEqual(af.format_spec, 'format')
+        self.assertEqual(af.format_kwargs, {'format_string': '%H:%M'})
+        self.assertEqual(af.tier, 'day')
+
+        # Bare call-spec names are zero-argument calls; bare renderer specs
+        # keep format_kwargs None.
+        af = parse('almanac.sunrise.string')
+        assert af is not None
+        self.assertEqual(af.format_spec, 'string')
+        self.assertEqual(af.format_kwargs, {})
+        af = parse('almanac.sun.az.ordinal_compass')
+        assert af is not None
+        self.assertEqual(af.format_spec, 'ordinal_compass')
+        self.assertEqual(af.format_kwargs, None)
+        self.assertEqual(af.tier, 'continuous')
+
+        # to_json_value renders through the actual ValueHelper, so its output
+        # IS the report tag's.
+        cfg = ProcessPacketTests._get_config('us', 10800, 10, 6, ['current.outTemp'])
+        evaluator = user.loopdata.AlmanacFieldEvaluator(cfg)
+        vh = ValueHelper(ValueTuple(1593630000, 'unix_epoch', 'group_time'),
+            'ephem_day', cfg.formatter, cfg.converter)
+        af = parse('almanac.sunrise.format("%H:%M")')
+        assert af is not None
+        self.assertEqual(evaluator.to_json_value(af, vh), vh.format("%H:%M"))
+        af = parse('almanac.sunrise.string(None_string="--")')
+        assert af is not None
+        self.assertEqual(evaluator.to_json_value(af, vh), vh.string(None_string="--"))
+
+        # ordinal_compass is a ValueHelper METHOD (not a property); a bare
+        # callable spec is invoked, as Cheetah's auto-call renders it.
+        vh_dir = ValueHelper(ValueTuple(225.0, 'degree_compass', 'group_direction'),
+            'current', cfg.formatter, cfg.converter)
+        af = parse('almanac.sun.az.ordinal_compass')
+        assert af is not None
+        self.assertEqual(evaluator.to_json_value(af, vh_dir),
+            vh_dir.ordinal_compass())
+
     def test_add_trend_obstype_barometer_code_desc(self) -> None:
         # Pins add_trend_obstype's barometer code/desc routing: for
         # trend.barometer.code the field gets the BarometerTrend enum VALUE;
