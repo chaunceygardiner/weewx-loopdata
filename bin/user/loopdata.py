@@ -54,7 +54,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '5.1'
+LOOP_DATA_VERSION = '6.0'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -92,6 +92,7 @@ class CheetahName:
     unit       : Optional[str] # unit override (e.g. degree_C, beaufort); None means the target report's unit for the obstype's group.  Grammar-ordered between agg_type and format_spec.  Value fields only -- never on the unit.label prefix form (WeeWX parity: $unit.label has no override).
     format_spec: Optional[str] # formatted (formatted value sans label), raw or ordinal_compass (could be on direction), a call spec (format/nolabel/string/long_form), or None
     format_kwargs: Optional[Dict[str, Any]] = None # call-syntax specs only: the call's arguments, positionals bound to the ValueHelper method's parameter names; None for bare specs
+    round_ndigits: Optional[int] = None # round(n) transform (grammar-ordered between unit and format_spec): round the value to n digits before the format spec renders it.  None means no round segment, or a bare round()/round -- rounder treats ndigits None as identity, so the distinction never matters.
     def __hash__(self):
         return hash(self.field)
 
@@ -120,6 +121,7 @@ class AlmanacField:
     format_spec   : Optional[str]        # formatted, raw, ordinal_compass, a call spec (format/nolabel/string/long_form), or None
     tier          : str                  # continuous, day or event
     format_kwargs : Optional[Dict[str, Any]] = None # call-syntax specs only (see CheetahName.format_kwargs)
+    round_ndigits : Optional[int] = None # round(n) transform (see CheetahName.round_ndigits); applied via ValueHelper.round before the format spec
     def __hash__(self):
         return hash(self.field)
 
@@ -1894,6 +1896,17 @@ class LoopData(StdService):
                 unit = segment[next_seg]
                 next_seg += 1
 
+        round_ndigits = None
+        # Optional round(n) transform, ordered between the unit override and
+        # the format spec, matching report tags
+        # ($day.outTemp.max.degree_C.round(1).raw): the value is rounded,
+        # then the format spec renders the rounded value.
+        if prefix is None and len(segment) > next_seg:
+            parsed_round = LoopData.parse_round_spec(segment[next_seg])
+            if parsed_round is not None:
+                round_ndigits = parsed_round[0]
+                next_seg += 1
+
         format_spec = None
         format_kwargs = None
         # check for a format spec.  FORMAT_SPEC_NAMES is derived from the
@@ -1928,7 +1941,8 @@ class LoopData(StdService):
             agg_type      = agg_type,
             unit          = unit,
             format_spec   = format_spec,
-            format_kwargs = format_kwargs)
+            format_kwargs = format_kwargs,
+            round_ndigits = round_ndigits)
 
     # An almanac field segment: an identifier with an optional call suffix
     # holding kwargs (no nested parens), e.g. sun(use_center=1).
@@ -2002,47 +2016,96 @@ class LoopData(StdService):
         return segments
 
     @staticmethod
-    def parse_call_spec(segment: str) -> Optional[Tuple[str, Dict[str, Any]]]:
-        """Parse a call-syntax format spec segment -- format("%H:%M"),
-        nolabel("%.1f", None_string="--"), string(), long_form() -- into
-        (spec_name, kwargs), binding positional arguments to the ValueHelper
-        method's parameter names per CALL_FORMAT_SPECS.  A bare name is a
-        zero-argument call, as Cheetah's auto-call renders it.  Arguments
-        must be Python literals.  Returns None unless the segment is a
-        well-formed call of a known spec supplying its required arguments."""
+    def parse_call(segment: str) -> Optional[Tuple[str, List[ast.expr], List[ast.keyword]]]:
+        """Parse a segment as a bare name or a name(args) call, returning
+        (name, positional arg nodes, keyword arg nodes) -- a bare name is a
+        call with no arguments, as Cheetah's auto-call renders it.  Returns
+        None for anything else."""
         try:
             node = ast.parse(segment, mode='eval').body
         except (SyntaxError, ValueError):
             return None
-        args: List[ast.expr] = []
-        keywords: List[ast.keyword] = []
         if isinstance(node, ast.Name):
-            name = node.id
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            name = node.func.id
-            args = node.args
-            keywords = node.keywords
-        else:
-            return None
-        call_spec = CALL_FORMAT_SPECS.get(name)
-        if call_spec is None or len(args) > len(call_spec.params):
+            return node.id, [], []
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            return node.func.id, node.args, node.keywords
+        return None
+
+    @staticmethod
+    def bind_call_args(args: List[ast.expr], keywords: List[ast.keyword],
+            params: Tuple[str, ...], required: int) -> Optional[Dict[str, Any]]:
+        """Bind a call's arguments to params (the method's parameter names in
+        positional order), exactly as Python would.  Arguments must be
+        literals.  Returns the bound kwargs, or None on too many positionals,
+        an unknown or duplicate keyword, a non-literal argument, or a missing
+        required (leading) parameter."""
+        if len(args) > len(params):
             return None
         kwargs: Dict[str, Any] = {}
         try:
             for i, arg in enumerate(args):
-                kwargs[call_spec.params[i]] = ast.literal_eval(arg)
+                kwargs[params[i]] = ast.literal_eval(arg)
             for keyword in keywords:
-                if keyword.arg is None or keyword.arg not in call_spec.params \
+                if keyword.arg is None or keyword.arg not in params \
                         or keyword.arg in kwargs:
                     return None
                 kwargs[keyword.arg] = ast.literal_eval(keyword.value)
         except (SyntaxError, ValueError, TypeError, MemoryError):
             # Not a literal (e.g. a name or an expression).
             return None
-        if any(param not in kwargs
-                for param in call_spec.params[:call_spec.required]):
+        if any(param not in kwargs for param in params[:required]):
+            return None
+        return kwargs
+
+    @staticmethod
+    def parse_call_spec(segment: str) -> Optional[Tuple[str, Dict[str, Any]]]:
+        """Parse a call-syntax format spec segment -- format("%H:%M"),
+        nolabel("%.1f", None_string="--"), string(), long_form() -- into
+        (spec_name, kwargs), binding positional arguments to the ValueHelper
+        method's parameter names per CALL_FORMAT_SPECS.  Returns None unless
+        the segment is a well-formed call of a known spec supplying its
+        required arguments."""
+        parsed = LoopData.parse_call(segment)
+        if parsed is None:
+            return None
+        name, args, keywords = parsed
+        call_spec = CALL_FORMAT_SPECS.get(name)
+        if call_spec is None:
+            return None
+        kwargs = LoopData.bind_call_args(args, keywords,
+            call_spec.params, call_spec.required)
+        if kwargs is None:
             return None
         return name, kwargs
+
+    @staticmethod
+    def parse_round_spec(segment: str) -> Optional[Tuple[Optional[int]]]:
+        """Parse a round / round(n) / round(ndigits=n) segment into the
+        1-tuple (ndigits,) -- a tuple so that 'not a round segment' (None)
+        stays distinct from a bare round() ((None,), the identity, exactly
+        as ValueHelper.round with no argument).  ndigits must be an int.
+        round is not a format spec: it rounds the VALUE, and any format spec
+        that follows renders the rounded value (ValueHelper.round returns a
+        new ValueHelper)."""
+        parsed = LoopData.parse_call(segment)
+        if parsed is None:
+            return None
+        name, args, keywords = parsed
+        if name != 'round':
+            return None
+        kwargs = LoopData.bind_call_args(args, keywords, ('ndigits',), 0)
+        if kwargs is None:
+            return None
+        ndigits = kwargs.get('ndigits')
+        # bool is an int subclass; round(True) is nonsense, reject it.
+        if ndigits is not None and (not isinstance(ndigits, int)
+                or isinstance(ndigits, bool)):
+            return None
+        if not hasattr(weeutil.weeutil, 'rounder'):
+            log.error('round requires a WeeWX with weeutil.weeutil.rounder '
+                '(4.6 or later); ignoring %s' % segment)
+            return None
+        return (ndigits,)
 
     @staticmethod
     def parse_almanac_kwargs(kwargs_str: str) -> Optional[Dict[str, float]]:
@@ -2105,6 +2168,14 @@ class LoopData(StdService):
                 if parsed_call is not None:
                     format_spec, format_kwargs = parsed_call
                     chain_segments = chain_segments[:-1]
+        # An optional round(n) transform sits before the format spec
+        # (almanac.moon.az.round(1).raw), so peel it after the spec.
+        round_ndigits = None
+        if len(chain_segments) >= 2:
+            parsed_round = LoopData.parse_round_spec(chain_segments[-1])
+            if parsed_round is not None:
+                round_ndigits = parsed_round[0]
+                chain_segments = chain_segments[:-1]
 
         chain: List[AlmanacSegment] = []
         for segment in chain_segments:
@@ -2134,7 +2205,8 @@ class LoopData(StdService):
             chain          = chain,
             format_spec    = format_spec,
             tier           = tier,
-            format_kwargs  = format_kwargs)
+            format_kwargs  = format_kwargs,
+            round_ndigits  = round_ndigits)
 
 class AlmanacFieldEvaluator:
     """Evaluates almanac fields against weewx.almanac (whatever AlmanacTypes
@@ -2222,6 +2294,11 @@ class AlmanacFieldEvaluator:
         """Apply the format spec (ValueHelpers format exactly as the report
         tag would render) and coerce to a json-serializable value."""
         if isinstance(obj, weewx.units.ValueHelper):
+            if almanac_field.round_ndigits is not None:
+                # round(n) first: ValueHelper.round returns a new ValueHelper
+                # with the value rounded, then the spec (or str()) renders it,
+                # exactly as the report tag chain does.
+                obj = obj.round(almanac_field.round_ndigits)
             if almanac_field.format_spec is not None:
                 # ValueHelper exposes every format spec as an attribute of
                 # the same name; the parser admits nothing else here.  Call
@@ -2234,12 +2311,15 @@ class AlmanacFieldEvaluator:
                     value = value(**(almanac_field.format_kwargs or {}))
             else:
                 value = str(obj)
-        elif almanac_field.format_spec is not None and almanac_field.format_spec != 'raw':
-            # formatted/ordinal_compass need a ValueHelper; .raw is allowed as
-            # identity on plain values (almanac.moon_index.raw).
+        elif almanac_field.round_ndigits is not None or (
+                almanac_field.format_spec is not None
+                and almanac_field.format_spec != 'raw'):
+            # round and formatted/ordinal_compass/the calls need a
+            # ValueHelper; .raw is allowed as identity on plain values
+            # (almanac.moon_index.raw).
             raise TypeError('%s: %s returned %s, which does not support .%s'
                 % (almanac_field.field, '.'.join(seg.name for seg in almanac_field.chain),
-                   type(obj).__name__, almanac_field.format_spec))
+                   type(obj).__name__, almanac_field.format_spec or 'round'))
         else:
             value = obj
         if value is None or isinstance(value, (bool, int, float, str)):
@@ -2478,6 +2558,13 @@ class LoopProcessor:
         is not a direction and a delta of a time is not a timestamp, so
         ordinal_compass and .formatted's time-context path fall back to the
         plain numeric renderings (longstanding shipped behavior)."""
+        if cname.round_ndigits is not None and not isinstance(value_t[0], str):
+            # ValueHelper.round parity: round the value, then render.  String
+            # values (firstlast obstypes) have nothing to round and pass
+            # through, as in the default renderer's string bypass; rounder
+            # passes None through, so the render_missing path composes.
+            value_t = (weeutil.weeutil.rounder(value_t[0], cname.round_ndigits),
+                       value_t[1], value_t[2])
         format_spec = cname.format_spec
         if is_delta and format_spec == 'ordinal_compass':
             format_spec = None

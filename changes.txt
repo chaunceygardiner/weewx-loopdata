@@ -1,7 +1,7 @@
 loopdata change history
 -----------------------
 
-5.1 Release 2026/07/21
+6.0 Release 2026/07/21
 ----------------------
 Changed (check your pages): time-of-event fields (maxtime, mintime,
 firsttime, lasttime) now format with the field's period as the time context,
@@ -44,6 +44,15 @@ loopdata's omit-missing-fields default -- handy for pages that want every key
 present from the first packet.  NOTE: a call containing a comma must be quoted
 in weewx.conf ('day.rain.sum.format("%.2f", add_label=False)') or ConfigObj
 splits the entry at the comma.
+
+New: round(n).  A field may round its value before rendering, exactly as
+report tags allow -- day.outTemp.max.round(1).raw, or with a unit override,
+day.barometer.max.mbar.round(1).raw.  Ordered between the unit override and
+the format spec (period.obstype[.agg_type][.unit][.round(n)][.format_spec]);
+composes with every format spec (round(2).format("%.3f") renders the rounded
+value) and works on almanac fields (almanac.moon.az.round(1).raw).  Most
+useful with .raw, to publish numbers with limited digits (29.93 instead of
+29.927100000000002).
 
 Fixed: the target report's options are now assembled by WeeWX's own
 build_skin_dict when it exists (loopdata was looking it up under a stale name,

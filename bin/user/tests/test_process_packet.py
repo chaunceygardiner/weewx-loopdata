@@ -729,7 +729,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(
             user.loopdata.LoopData.parse_cname('unit.notlabel.outTemp'), None)
 
-        # --- unit override grammar (5.1) ---
+        # --- unit override grammar (6.0) ---
         # The optional unit segment sits between the agg_type and the
         # format_spec: [period].obstype[.agg_type][.unit][.format_spec].
 
@@ -3750,7 +3750,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertAlmostEqual(loopdata_pkt['current.outTemp.raw'], 65.0)
 
     def test_unit_override_current(self) -> None:
-        # Pins the unit-override path of add_current_obstype (5.1).  A US packet
+        # Pins the unit-override path of add_current_obstype (6.0).  A US packet
         # (windSpeed in mph, outTemp in degree_F) is asked for in overridden
         # units.  Expected values are WeeWX's own conversions (parity is the
         # spec).  An override incompatible with the obstype's group is dropped.
@@ -3796,7 +3796,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertNotIn(key, out)
 
     def test_unit_override_period(self) -> None:
-        # Pins the unit-override path of add_period_obstype (5.1).  A day accum
+        # Pins the unit-override path of add_period_obstype (6.0).  A day accum
         # of degree_F outTemp is read back with a degree_C override.  avg of
         # 50 and 80 degree_F is 65 degree_F -> 18.3333 degree_C.  An incompatible
         # override is dropped.  Uses the real SeasonsReport formatter (via
@@ -3859,7 +3859,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertAlmostEqual(out_c['10m.windGust.max.knot.raw'], 20.0 * 0.868976242)
 
     def test_time_context_formatting(self) -> None:
-        # Pins the time-context parity fix (5.1): WeeWX report tags render time
+        # Pins the time-context parity fix (6.0): WeeWX report tags render time
         # aggregates (maxtime et al.) with the PERIOD as the Formatter context,
         # selecting that period's [Units][TimeFormats] entry.  Expectations are
         # derived from first principles by applying the fixture's TimeFormats
@@ -3932,7 +3932,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(out.get('current.dateTime.formatted'), expect('%x %X'))
 
     def test_unit_override_trend_offset_unit(self) -> None:
-        # Pins the unit-override path of the trend machinery (5.1) for an OFFSET
+        # Pins the unit-override path of the trend machinery (6.0) for an OFFSET
         # unit (temperature), where order matters: converting each endpoint to
         # the override unit BEFORE subtracting makes the offset cancel, so a
         # 9 degree_F trend is a 5 degree_C trend -- NOT the (wrong) 9-degree_F-as-
@@ -3980,7 +3980,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertIsNone(trend_value('trend.outTemp.beaufort.raw'))
 
     def test_parse_call_spec(self) -> None:
-        # Grammar for call-syntax format specs (5.1): format/nolabel/string/
+        # Grammar for call-syntax format specs (6.0): format/nolabel/string/
         # long_form parse with their arguments bound to the ValueHelper
         # method's parameter names, mirroring the report-tag call.
         parse = user.loopdata.LoopData.parse_cname
@@ -4048,8 +4048,34 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertIsNone(parse('day.outTemp.max.format("%.1f").raw'))   # no chaining after a spec
         self.assertIsNone(parse('trend.barometer.desc()'))               # code/desc are not calls
 
+        # round(n): a value transform, ordered between the unit override and
+        # the format spec, composing with any format spec.
+        cname = parse('day.barometer.max.round(2).raw')
+        assert cname is not None
+        self.assertEqual(cname.round_ndigits, 2)
+        self.assertEqual(cname.unit, None)
+        self.assertEqual(cname.format_spec, 'raw')
+        cname = parse('day.barometer.max.mbar.round(1).format("%.3f")')
+        assert cname is not None
+        self.assertEqual(cname.unit, 'mbar')
+        self.assertEqual(cname.round_ndigits, 1)
+        self.assertEqual(cname.format_spec, 'format')
+        cname = parse('day.barometer.max.round(ndigits=2)')  # kwarg form; no spec
+        assert cname is not None
+        self.assertEqual(cname.round_ndigits, 2)
+        self.assertEqual(cname.format_spec, None)
+        cname = parse('day.barometer.max.round()')  # identity, as vh.round()
+        assert cname is not None
+        self.assertEqual(cname.round_ndigits, None)
+        self.assertEqual(cname.field, 'day.barometer.max.round()')
+        self.assertIsNone(parse('day.barometer.max.round(1.5)'))       # ndigits must be int
+        self.assertIsNone(parse('day.barometer.max.round(True)'))      # bool is not ndigits
+        self.assertIsNone(parse('day.barometer.max.round(1, 2)'))      # too many positionals
+        self.assertIsNone(parse('day.barometer.max.raw.round(1)'))     # round precedes the spec
+        self.assertIsNone(parse('day.barometer.max.round(1).round(2)'))  # one round only
+
     def test_call_spec_rendering_parity(self) -> None:
-        # Call-syntax format specs (5.1) are ValueHelper-method parity: for
+        # Call-syntax format specs (6.0) are ValueHelper-method parity: for
         # period.obstype.agg.spec(...), loopdata must emit exactly what a
         # report tag's ValueHelper renders for the same value tuple, context,
         # formatter and converter.  Expected values are computed by
@@ -4064,9 +4090,9 @@ class ProcessPacketTests(unittest.TestCase):
         t_max = 1593630000
         day_accum = weewx.accum.Accum(weeutil.weeutil.archiveDaySpan(t_max), US)
         day_accum.addRecord({'dateTime': t_max - 1000, 'usUnits': 1,
-            'outTemp': 50.0, 'sunshineDur': 300.0}, weight=300)
+            'outTemp': 50.0, 'sunshineDur': 300.0, 'barometer': 29.8123}, weight=300)
         day_accum.addRecord({'dateTime': t_max, 'usUnits': 1,
-            'outTemp': 80.0, 'sunshineDur': 4000.0}, weight=300)
+            'outTemp': 80.0, 'sunshineDur': 4000.0, 'barometer': 29.9271}, weight=300)
 
         def rendered(field) -> dict:
             cname = user.loopdata.LoopData.parse_cname(field)
@@ -4105,6 +4131,21 @@ class ProcessPacketTests(unittest.TestCase):
         field = 'day.outTemp.maxtime.string()'
         self.assertEqual(rendered(field).get(field), vh_t.string())
 
+        # round(n): the value is rounded, then any spec renders the rounded
+        # value -- exactly ValueHelper.round's chaining (the day max
+        # barometer is 29.9271 inHg).
+        vh_b = ValueHelper(ValueTuple(29.9271, 'inHg', 'group_pressure'),
+            'day', formatter, converter)
+        for spec, expected in [
+                ('round(2).raw',            vh_b.round(2).raw),
+                ('round()',                 str(vh_b.round())),
+                ('round(1)',                str(vh_b.round(1))),
+                ('round(2).format("%.3f")', vh_b.round(2).format("%.3f")),
+                ('round(2).string()',       vh_b.round(2).string()),
+                ('mbar.round(1).raw',       vh_b.convert('mbar').round(1).raw)]:
+            field = 'day.barometer.max.%s' % spec
+            self.assertEqual(rendered(field).get(field), expected, msg=field)
+
         # long_form on a delta time (sunshineDur sums 300 + 4000 seconds).
         vh_d = ValueHelper(ValueTuple(4300.0, 'second', 'group_deltatime'),
             'day', formatter, converter)
@@ -4124,7 +4165,8 @@ class ProcessPacketTests(unittest.TestCase):
                 ('string("missing")',           vh_none.string("missing")),
                 ('string(None_string="--")',    vh_none.string(None_string="--")),
                 ('format(None_string="--")',    vh_none.format(None_string="--")),
-                ('nolabel("%.1f", "--")',       vh_none.nolabel("%.1f", "--"))]:
+                ('nolabel("%.1f", "--")',       vh_none.nolabel("%.1f", "--")),
+                ('round(1).string("--")',       vh_none.round(1).string("--"))]:
             field = 'day.inTemp.avg.%s' % spec
             self.assertEqual(rendered(field).get(field), expected, msg=field)
         for spec in ['format()', 'format("%.1f")', 'nolabel("%.1f")', 'formatted', '']:
@@ -4213,6 +4255,28 @@ class ProcessPacketTests(unittest.TestCase):
         assert af is not None
         self.assertEqual(evaluator.to_json_value(af, vh_dir),
             vh_dir.ordinal_compass())
+
+        # round(n) on almanac fields: peeled before the spec, applied via
+        # ValueHelper.round, so the spec renders the rounded value.
+        af = parse('almanac.sun.az.round(1).raw')
+        assert af is not None
+        self.assertEqual(af.chain, [user.loopdata.AlmanacSegment('sun', None),
+                                    user.loopdata.AlmanacSegment('az', None)])
+        self.assertEqual(af.round_ndigits, 1)
+        self.assertEqual(af.format_spec, 'raw')
+        self.assertEqual(af.tier, 'continuous')
+        vh_az = ValueHelper(ValueTuple(225.6789, 'degree_compass', 'group_direction'),
+            'current', cfg.formatter, cfg.converter)
+        self.assertEqual(evaluator.to_json_value(af, vh_az), vh_az.round(1).raw)
+        af = parse('almanac.sun.az.round(1)')  # no spec: default str() rendering
+        assert af is not None
+        self.assertEqual(af.round_ndigits, 1)
+        self.assertEqual(af.format_spec, None)
+        self.assertEqual(evaluator.to_json_value(af, vh_az), str(vh_az.round(1)))
+        # round on a plain (non-ValueHelper) value is a TypeError -> the
+        # evaluator skips the field, exactly like formatted on a plain value.
+        with self.assertRaises(TypeError):
+            evaluator.to_json_value(af, 4)
 
     def test_add_trend_obstype_barometer_code_desc(self) -> None:
         # Pins add_trend_obstype's barometer code/desc routing: for

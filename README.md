@@ -191,8 +191,8 @@ fields are available"), in which case it is emitted with its missing-data
 rendering (e.g., `N/A`).  For all other fields, your JavaScript should expect
 absent keys and react accordingly.
 
-The complete grammar — every period, aggregate, unit override and format spec
-— is documented in "What fields are available" later in this README.
+The complete grammar — every period, aggregate, unit override, `round(n)` and
+format spec — is documented in "What fields are available" later in this README.
 
 ### Using LoopData in Your Own Skin
 
@@ -476,7 +476,7 @@ below, and have their own section ("Almanac fields") later in this README.
 Every observation field has this shape (brackets mark optional slots):
 
 ```
-period.obstype[.agg_type][.unit][.format_spec]
+period.obstype[.agg_type][.unit][.round(n)][.format_spec]
 ```
 
 * **period**: `current`, `trend`, `hour`, `day`, `week`, `month`, `year`,
@@ -493,6 +493,11 @@ period.obstype[.agg_type][.unit][.format_spec]
     `firsttime`, `lasttime`
 * **unit**: an optional unit override — see "Overriding the unit of a field"
   below.
+* **round(n)**: an optional rounding transform, exactly as report tags allow
+  (`$day.outTemp.max.round(1).raw`): the value is rounded to n digits, then
+  the format spec renders the rounded value.  Most useful with `.raw`, to
+  publish a number with limited digits (`29.93` instead of
+  `29.927100000000002`).
 * **format_spec**: optional; just like in a report, it specializes the rendering:
   * `No format spec`: converted and formatted per the report, with a label
     (e.g., `64.7°F`).
@@ -507,9 +512,9 @@ period.obstype[.agg_type][.unit][.format_spec]
 
 By default every field is converted to the unit the target report calls for.
 A field may instead name an explicit unit, exactly as WeeWX report tags allow
-(e.g. `$current.outTemp.degree_C`).  The unit goes between the aggregation and
-the optional format spec (see the shape above).  Any unit WeeWX knows for the
-observation's unit group is accepted.  For example, regardless of the report's
+(e.g. `$current.outTemp.degree_C`).  The unit goes right after the
+aggregation, before the optional `round(n)` and format spec (see the shape
+above).  Any unit WeeWX knows for the observation's unit group is accepted.  For example, regardless of the report's
 configured units:
 
 * `current.windSpeed.beaufort`           which might yield `5`
@@ -553,8 +558,8 @@ For example:
 Exactly as in a report, a time-of-event field's `format_string` is a strftime
 format, and a numeric field's is a %-format.  A bare spec name
 (`day.rain.sum.string`) is a zero-argument call, just as Cheetah renders
-`$day.rain.sum.string`.  The unit override composes as usual:
-`day.outTemp.avg.degree_C.nolabel("%.2f")`.
+`$day.rain.sum.string`.  The unit override and `round(n)` compose as usual:
+`day.outTemp.avg.degree_C.nolabel("%.2f")`, `day.barometer.max.mbar.round(1).raw`.
 
 Missing data: by default, a field with no value (say a trend before enough
 packets have arrived, or an observation the station doesn't report) is omitted
@@ -602,8 +607,8 @@ and `Rising Very Rapidly`, respectively.
 ### What report tags can do that fields cannot
 
 For rendering values, the fields grammar is at parity with report tags: any
-period tag with a standard aggregate, converted to any unit and formatted with
-the full set of formatting calls.  What remains report-only:
+period tag with a standard aggregate, converted to any unit, rounded, and
+formatted with the full set of formatting calls.  What remains report-only:
 
 * Aggregates computed by xtypes (`$day.heatdeg.sum`, `$year.growdeg.sum`, ...)
   — see "Period Aggregates implemented via xtypes are not currently supported
@@ -614,7 +619,6 @@ the full set of formatting calls.  What remains report-only:
 * The introspection helpers `.json`, `.exists` and `.has_data` (a field with
   missing data is simply absent from loop-data.txt — or always emitted, via
   `string()`).
-* `.round(n)` (use `.format("%.1f")`, or round a `.raw` value in JavaScript).
 * Non-observation tags: `$station`, `$latitude`, `$longitude`, `$altitude`,
   `$Extras`, `$gettext`, `$obs`, and the like.  The one exception is
   `$unit.label.<obs>`, supported as `unit.label.<obs>` above.
@@ -661,8 +665,9 @@ Notes:
 * `.raw`/`.formatted`/`.ordinal_compass` work on tags that return formatted values
   (times, and angles like `almanac.sun.azimuth`); `.raw` on a plain number
   (e.g., `almanac.moon_index.raw`) is allowed and returns the number unchanged.
-* The formatting calls work here too, exactly as on report almanac tags:
-  `almanac.sunrise.format("%H:%M")`, `almanac.sun.az.format("%.1f", add_label=False)`.
+* The formatting calls and `round(n)` work here too, exactly as on report
+  almanac tags: `almanac.sunrise.format("%H:%M")`,
+  `almanac.sun.az.format("%.1f", add_label=False)`, `almanac.sun.az.round(1).raw`.
 * The json key is the field entry verbatim, so element ids can match keys as usual.
 * A call with more than one keyword contains a comma, so the entry must be quoted in
   weewx.conf: `fields = ..., "almanac(pressure=0, horizon=-8).sun.rise.raw", ...`.
