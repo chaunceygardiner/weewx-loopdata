@@ -3858,6 +3858,79 @@ class ProcessPacketTests(unittest.TestCase):
             cname, cont, out_c, converter, formatter)
         self.assertAlmostEqual(out_c['10m.windGust.max.knot.raw'], 20.0 * 0.868976242)
 
+    def test_time_context_formatting(self) -> None:
+        # Pins the time-context parity fix (5.1): WeeWX report tags render time
+        # aggregates (maxtime et al.) with the PERIOD as the Formatter context,
+        # selecting that period's [Units][TimeFormats] entry.  Expectations are
+        # derived from first principles by applying the fixture's TimeFormats
+        # entries (hour %H:%M, day %X, week '%X (%A)', month/year %x %X) via
+        # time.strftime.  'alltime' must use the 'year' format because that is
+        # the context weewx.tags binds for the $alltime tag; continuous
+        # periods have no report analog and must keep the 'current' format.
+        import time
+        import weewx.units
+        US = weewx.units.unit_constants['US']
+        cfg = ProcessPacketTests._get_config('us', 10800, 1, 6, ['day.outTemp.maxtime'])
+        converter = cfg.converter
+        formatter = cfg.formatter
+
+        t_max = 1593630000
+        day_accum = weewx.accum.Accum(
+            weeutil.weeutil.archiveDaySpan(t_max), US)
+        day_accum.addRecord({'dateTime': t_max - 1000, 'usUnits': 1, 'outTemp': 50.0}, weight=300)
+        day_accum.addRecord({'dateTime': t_max, 'usUnits': 1, 'outTemp': 80.0}, weight=300)
+
+        def rendered(field, accum):
+            cname = user.loopdata.LoopData.parse_cname(field)
+            self.assertIsNotNone(cname, msg='parse failed %s' % field)
+            out: dict = {}
+            user.loopdata.LoopProcessor.add_period_obstype(
+                cname, accum, out, converter, formatter)
+            return out.get(cname.field)
+
+        def expect(fmt):
+            return time.strftime(fmt, time.localtime(t_max))
+
+        # add_period_obstype takes the context from the cname's period, so one
+        # accum can pin every span context.
+        self.assertEqual(rendered('hour.outTemp.maxtime', day_accum), expect('%H:%M'))
+        self.assertEqual(rendered('day.outTemp.maxtime', day_accum), expect('%X'))
+        self.assertEqual(rendered('week.outTemp.maxtime', day_accum), expect('%X (%A)'))
+        self.assertEqual(rendered('month.outTemp.maxtime', day_accum), expect('%x %X'))
+        self.assertEqual(rendered('year.outTemp.maxtime', day_accum), expect('%x %X'))
+        self.assertEqual(rendered('rainyear.outTemp.maxtime', day_accum), expect('%x %X'))
+        # weewx.tags.CurrentObj.alltime binds context='year' (there is no
+        # 'alltime' TimeFormats entry); loopdata must match the $alltime tag.
+        self.assertEqual(rendered('alltime.outTemp.maxtime', day_accum), expect('%x %X'))
+        # The fixture's year and current formats coincide (%x %X), so pin the
+        # alltime->year mapping with a formatter whose entries all differ.
+        distinct_formatter = weewx.units.Formatter(
+            time_format_dict={'year': 'Y=%H:%M', 'current': 'C=%H:%M', 'alltime': 'A=%H:%M'})
+        cname_at = user.loopdata.LoopData.parse_cname('alltime.outTemp.maxtime')
+        out_at: dict = {}
+        user.loopdata.LoopProcessor.add_period_obstype(
+            cname_at, day_accum, out_at, converter, distinct_formatter)
+        self.assertEqual(out_at.get('alltime.outTemp.maxtime'), expect('Y=%H:%M'))
+
+        # .formatted on a time renders the same context format (times never
+        # carry a label) -- NOT the numeric '%f'-fallback path.
+        self.assertEqual(rendered('day.outTemp.maxtime.formatted', day_accum), expect('%X'))
+
+        # Continuous periods have no report analog: 'current' context.
+        cont = user.loopdata.ContinuousAccum(100000, US)
+        cont.addRecord({'dateTime': t_max - 1000, 'usUnits': 1, 'outTemp': 50.0})
+        cont.addRecord({'dateTime': t_max, 'usUnits': 1, 'outTemp': 80.0})
+        self.assertEqual(rendered('10m.outTemp.maxtime', cont), expect('%x %X'))
+
+        # current path: .formatted on a time value also routes through
+        # toString ('current' context), not the numeric format-string path.
+        cname = user.loopdata.LoopData.parse_cname('current.dateTime.formatted')
+        self.assertIsNotNone(cname)
+        out: dict = {}
+        user.loopdata.LoopProcessor.add_current_obstype(
+            cname, {'dateTime': t_max, 'usUnits': 1}, out, converter, formatter)
+        self.assertEqual(out.get('current.dateTime.formatted'), expect('%x %X'))
+
     def test_unit_override_trend_offset_unit(self) -> None:
         # Pins the unit-override path of the trend machinery (5.1) for an OFFSET
         # unit (temperature), where order matters: converting each endpoint to
@@ -4465,13 +4538,13 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['hour.windGust.max'], '6 mph')
         self.assertEqual(loopdata_pkt['hour.windGust.max.formatted'], '6')
         self.assertEqual(loopdata_pkt['hour.windGust.max.raw'], 6.5)
-        self.assertEqual(loopdata_pkt['hour.windGust.maxtime'], '07/04/20 10:18:20')
+        self.assertEqual(loopdata_pkt['hour.windGust.maxtime'], '10:18')
         self.assertEqual(loopdata_pkt['hour.windGust.maxtime.raw'], 1593883100)
 
         self.assertEqual(loopdata_pkt['hour.outTemp.max'], '72.1°F')
         self.assertEqual(loopdata_pkt['hour.outTemp.max.formatted'], '72.1')
         self.assertEqual(loopdata_pkt['hour.outTemp.max.raw'], 72.1)
-        self.assertEqual(loopdata_pkt['hour.outTemp.maxtime'], '07/04/20 10:22:02')
+        self.assertEqual(loopdata_pkt['hour.outTemp.maxtime'], '10:22')
         self.assertEqual(loopdata_pkt['hour.outTemp.maxtime.raw'], 1593883322)
 
         self.assertEqual(loopdata_pkt['current.outTemp'], '72.0°F')
@@ -4523,14 +4596,14 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['unit.label.windDir'], '°')
 
         self.assertEqual(loopdata_pkt['unit.label.wind'], ' mph')
-        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '07/04/20 06:40:00')
+        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '06:40:00')
         self.assertEqual(loopdata_pkt['day.wind.max.formatted'], '20')
         self.assertEqual(loopdata_pkt['day.wind.max'], '20 mph')
         self.assertEqual(loopdata_pkt['day.wind.gustdir.formatted'], '244')
         self.assertEqual(loopdata_pkt['day.wind.gustdir.ordinal_compass'], 'WSW')
         self.assertEqual(loopdata_pkt['day.wind.gustdir'], '244°')
 
-        self.assertEqual(loopdata_pkt['day.wind.mintime'], '07/04/20 10:17:48')
+        self.assertEqual(loopdata_pkt['day.wind.mintime'], '10:17:48')
         self.assertEqual(loopdata_pkt['day.wind.min.formatted'], '1')
         self.assertEqual(loopdata_pkt['day.wind.min'], '1 mph')
         self.assertEqual(loopdata_pkt['unit.label.wind'], ' mph')
@@ -4625,14 +4698,14 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['unit.label.windDir'], '°')
 
         self.assertEqual(loopdata_pkt['unit.label.wind'], ' mph')
-        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '07/04/20 06:40:00')
+        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '06:40:00')
         self.assertEqual(loopdata_pkt['day.wind.max.formatted'], '20')
         self.assertEqual(loopdata_pkt['day.wind.max'], '20 mph')
         self.assertEqual(loopdata_pkt['day.wind.gustdir.formatted'], '244')
         self.assertEqual(loopdata_pkt['day.wind.gustdir.ordinal_compass'], 'WSW')
         self.assertEqual(loopdata_pkt['day.wind.gustdir'], '244°')
 
-        self.assertEqual(loopdata_pkt['day.wind.mintime'], '07/04/20 10:17:48')
+        self.assertEqual(loopdata_pkt['day.wind.mintime'], '10:17:48')
         self.assertEqual(loopdata_pkt['day.wind.min.formatted'], '1')
         self.assertEqual(loopdata_pkt['day.wind.min'], '1 mph')
         self.assertEqual(loopdata_pkt['unit.label.wind'], ' mph')
@@ -4700,13 +4773,13 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['hour.windGust.max'], '5 mph')
         self.assertEqual(loopdata_pkt['hour.windGust.max.formatted'], '5')
         self.assertEqual(loopdata_pkt['hour.windGust.max.raw'], 5.0)
-        self.assertEqual(loopdata_pkt['hour.windGust.maxtime'], '10/14/22 18:23:53')
+        self.assertEqual(loopdata_pkt['hour.windGust.maxtime'], '18:23')
         self.assertEqual(loopdata_pkt['hour.windGust.maxtime.raw'], 1665797033)
 
         self.assertEqual(loopdata_pkt['hour.outTemp.max'], '62.9°F')
         self.assertEqual(loopdata_pkt['hour.outTemp.max.formatted'], '62.9')
         self.assertEqual(loopdata_pkt['hour.outTemp.max.raw'], 62.9)
-        self.assertEqual(loopdata_pkt['hour.outTemp.maxtime'], '10/14/22 18:22:47')
+        self.assertEqual(loopdata_pkt['hour.outTemp.maxtime'], '18:22')
         self.assertEqual(loopdata_pkt['hour.outTemp.maxtime.raw'], 1665796967)
 
         self.assertEqual(loopdata_pkt['current.outTemp'], '62.4°F')
@@ -4765,14 +4838,14 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['unit.label.windDir'], '°')
 
         self.assertEqual(loopdata_pkt['unit.label.wind'], ' mph')
-        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '10/14/22 18:23:53')
+        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '18:23:53')
         self.assertEqual(loopdata_pkt['day.wind.max.formatted'], '5')
         self.assertEqual(loopdata_pkt['day.wind.max'], '5 mph')
         self.assertEqual(loopdata_pkt.get('day.wind.gustdir.formatted'), '354')
         self.assertEqual(loopdata_pkt.get('day.wind.gustdir.ordinal_compass'), 'N')
         self.assertEqual(loopdata_pkt.get('day.wind.gustdir'), '354°')
 
-        self.assertEqual(loopdata_pkt['day.wind.mintime'], '10/14/22 18:24:57')
+        self.assertEqual(loopdata_pkt['day.wind.mintime'], '18:24:57')
         self.assertEqual(loopdata_pkt['day.wind.min.formatted'], '0')
         self.assertEqual(loopdata_pkt['day.wind.min'], '0 mph')
         self.assertEqual(loopdata_pkt['unit.label.wind'], ' mph')
@@ -4836,13 +4909,13 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['hour.windGust.max'], '5 mph')
         self.assertEqual(loopdata_pkt['hour.windGust.max.formatted'], '5')
         self.assertEqual(loopdata_pkt['hour.windGust.max.raw'], 5.0)
-        self.assertEqual(loopdata_pkt['hour.windGust.maxtime'], '10/14/22 18:23:53')
+        self.assertEqual(loopdata_pkt['hour.windGust.maxtime'], '18:23')
         self.assertEqual(loopdata_pkt['hour.windGust.maxtime.raw'], 1665797033)
 
         self.assertEqual(loopdata_pkt['hour.outTemp.max'], '62.9°F')
         self.assertEqual(loopdata_pkt['hour.outTemp.max.formatted'], '62.9')
         self.assertEqual(loopdata_pkt['hour.outTemp.max.raw'], 62.9)
-        self.assertEqual(loopdata_pkt['hour.outTemp.maxtime'], '10/14/22 18:22:47')
+        self.assertEqual(loopdata_pkt['hour.outTemp.maxtime'], '18:22')
         self.assertEqual(loopdata_pkt['hour.outTemp.maxtime.raw'], 1665796967)
 
         self.assertEqual(loopdata_pkt['current.outTemp'], '62.0°F')
@@ -4894,14 +4967,14 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['unit.label.windDir'], '°')
 
         self.assertEqual(loopdata_pkt['unit.label.wind'], ' mph')
-        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '10/14/22 18:23:53')
+        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '18:23:53')
         self.assertEqual(loopdata_pkt['day.wind.max.formatted'], '5')
         self.assertEqual(loopdata_pkt['day.wind.max'], '5 mph')
         self.assertEqual(loopdata_pkt.get('day.wind.gustdir.formatted'), '354')
         self.assertEqual(loopdata_pkt.get('day.wind.gustdir.ordinal_compass'), 'N')
         self.assertEqual(loopdata_pkt.get('day.wind.gustdir'), '354°')
 
-        self.assertEqual(loopdata_pkt['day.wind.mintime'], '10/14/22 18:24:57')
+        self.assertEqual(loopdata_pkt['day.wind.mintime'], '18:24:57')
         self.assertEqual(loopdata_pkt['day.wind.min.formatted'], '0')
         self.assertEqual(loopdata_pkt['day.wind.min'], '0 mph')
         self.assertEqual(loopdata_pkt['unit.label.wind'], ' mph')
@@ -5001,13 +5074,13 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['hour.windGust.max'], '7 mph')
         self.assertEqual(loopdata_pkt['hour.windGust.max.formatted'], '7')
         self.assertEqual(loopdata_pkt['hour.windGust.max.raw'], 7.2)
-        self.assertEqual(loopdata_pkt['hour.windGust.maxtime'], '07/05/20 11:50:30')
+        self.assertEqual(loopdata_pkt['hour.windGust.maxtime'], '11:50')
         self.assertEqual(loopdata_pkt['hour.windGust.maxtime.raw'], 1593975030)
 
         self.assertEqual(loopdata_pkt['hour.outTemp.max'], '76.3°F')
         self.assertEqual(loopdata_pkt['hour.outTemp.max.formatted'], '76.3')
         self.assertEqual(loopdata_pkt['hour.outTemp.max.raw'], 76.3)
-        self.assertEqual(loopdata_pkt['hour.outTemp.maxtime'], '07/05/20 11:50:34')
+        self.assertEqual(loopdata_pkt['hour.outTemp.maxtime'], '11:50')
         self.assertEqual(loopdata_pkt['hour.outTemp.maxtime.raw'], 1593975034)
 
         self.assertEqual(loopdata_pkt['current.outTemp'], '75.4°F')
@@ -5056,14 +5129,14 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['unit.label.windDir'], '°')
 
         self.assertEqual(loopdata_pkt['unit.label.wind'], ' mph')
-        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '07/05/20 11:50:30')
+        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '11:50:30')
         self.assertEqual(loopdata_pkt['day.wind.max.formatted'], '7')
         self.assertEqual(loopdata_pkt['day.wind.max'], '7 mph')
         self.assertEqual(loopdata_pkt['day.wind.gustdir.formatted'], '22')
         self.assertEqual(loopdata_pkt['day.wind.gustdir.ordinal_compass'], 'NNE')
         self.assertEqual(loopdata_pkt['day.wind.gustdir'], '22°')
 
-        self.assertEqual(loopdata_pkt['day.wind.mintime'], '07/05/20 11:51:58')
+        self.assertEqual(loopdata_pkt['day.wind.mintime'], '11:51:58')
         self.assertEqual(loopdata_pkt['day.wind.min.formatted'], '0')
         self.assertEqual(loopdata_pkt['day.wind.min'], '0 mph')
         self.assertEqual(loopdata_pkt['unit.label.wind'], ' mph')
@@ -5158,14 +5231,14 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['unit.label.windDir'], '°')
 
         self.assertEqual(loopdata_pkt['unit.label.wind'], ' km/h')
-        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '07/05/20 11:50:30')
+        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '11:50:30')
         self.assertEqual(loopdata_pkt['day.wind.max.formatted'], '12')
         self.assertEqual(loopdata_pkt['day.wind.max'], '12 km/h')
         self.assertEqual(loopdata_pkt['day.wind.gustdir.formatted'], '22')
         self.assertEqual(loopdata_pkt['day.wind.gustdir.ordinal_compass'], 'NNE')
         self.assertEqual(loopdata_pkt['day.wind.gustdir'], '22°')
 
-        self.assertEqual(loopdata_pkt['day.wind.mintime'], '07/05/20 11:51:58')
+        self.assertEqual(loopdata_pkt['day.wind.mintime'], '11:51:58')
         self.assertEqual(loopdata_pkt['day.wind.min.formatted'], '0')
         self.assertEqual(loopdata_pkt['day.wind.min'], '0 km/h')
         self.assertEqual(loopdata_pkt['unit.label.wind'], ' km/h')
@@ -5227,13 +5300,13 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['hour.windGust.max'], '0 mph')
         self.assertEqual(loopdata_pkt['hour.windGust.max.formatted'], '0')
         self.assertEqual(loopdata_pkt['hour.windGust.max.raw'], 0.0)
-        self.assertEqual(loopdata_pkt['hour.windGust.maxtime'], '07/22/20 23:45:00')
+        self.assertEqual(loopdata_pkt['hour.windGust.maxtime'], '23:45')
         self.assertEqual(loopdata_pkt['hour.windGust.maxtime.raw'], 1595486700)
 
         self.assertEqual(loopdata_pkt['hour.outTemp.max'], '57.4°F')
         self.assertEqual(loopdata_pkt['hour.outTemp.max.formatted'], '57.4')
         self.assertEqual(loopdata_pkt['hour.outTemp.max.raw'], 57.4)
-        self.assertEqual(loopdata_pkt['hour.outTemp.maxtime'], '07/22/20 23:45:00')
+        self.assertEqual(loopdata_pkt['hour.outTemp.maxtime'], '23:45')
         self.assertEqual(loopdata_pkt['hour.outTemp.maxtime.raw'], 1595486700)
 
         self.assertEqual(loopdata_pkt['current.outTemp'], '57.3°F')
@@ -5282,14 +5355,14 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['unit.label.windDir'], '°')
 
         self.assertEqual(loopdata_pkt['unit.label.wind'], ' mph')
-        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '07/22/20 23:45:00')
+        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '23:45:00')
         self.assertEqual(loopdata_pkt['day.wind.max.formatted'], '0')
         self.assertEqual(loopdata_pkt['day.wind.max'], '0 mph')
         self.assertEqual(loopdata_pkt.get('day.wind.gustdir.formatted'), None)
         self.assertEqual(loopdata_pkt.get('day.wind.gustdir.ordinal_compass'), None)
         self.assertEqual(loopdata_pkt.get('day.wind.gustdir'), None)
 
-        self.assertEqual(loopdata_pkt['day.wind.mintime'], '07/22/20 23:45:00')
+        self.assertEqual(loopdata_pkt['day.wind.mintime'], '23:45:00')
         self.assertEqual(loopdata_pkt['day.wind.min.formatted'], '0')
         self.assertEqual(loopdata_pkt['day.wind.min'], '0 mph')
         self.assertEqual(loopdata_pkt['unit.label.wind'], ' mph')
@@ -5335,13 +5408,13 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['hour.windGust.max'], '2 mph')
         self.assertEqual(loopdata_pkt['hour.windGust.max.formatted'], '2')
         self.assertEqual(loopdata_pkt['hour.windGust.max.raw'], 1.9)
-        self.assertEqual(loopdata_pkt['hour.windGust.maxtime'], '07/23/20 00:13:02')
+        self.assertEqual(loopdata_pkt['hour.windGust.maxtime'], '00:13')
         self.assertEqual(loopdata_pkt['hour.windGust.maxtime.raw'], 1595488382)
 
         self.assertEqual(loopdata_pkt['hour.outTemp.max'], '58.2°F')
         self.assertEqual(loopdata_pkt['hour.outTemp.max.formatted'], '58.2')
         self.assertEqual(loopdata_pkt['hour.outTemp.max.raw'], 58.2)
-        self.assertEqual(loopdata_pkt['hour.outTemp.maxtime'], '07/23/20 00:14:10')
+        self.assertEqual(loopdata_pkt['hour.outTemp.maxtime'], '00:14')
         self.assertEqual(loopdata_pkt['hour.outTemp.maxtime.raw'], 1595488450)
 
         self.assertEqual(loopdata_pkt['current.outTemp'], '58.2°F')
@@ -5389,14 +5462,14 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['unit.label.windDir'], '°')
 
         self.assertEqual(loopdata_pkt['unit.label.wind'], ' mph')
-        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '07/23/20 00:13:02')
+        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '00:13:02')
         self.assertEqual(loopdata_pkt['day.wind.max.formatted'], '2')
         self.assertEqual(loopdata_pkt['day.wind.max'], '2 mph')
         self.assertEqual(loopdata_pkt['day.wind.gustdir.formatted'], '45')
         self.assertEqual(loopdata_pkt['day.wind.gustdir.ordinal_compass'], 'NE')
         self.assertEqual(loopdata_pkt['day.wind.gustdir'], '45°')
 
-        self.assertEqual(loopdata_pkt['day.wind.mintime'], '07/23/20 00:00:02')
+        self.assertEqual(loopdata_pkt['day.wind.mintime'], '00:00:02')
         self.assertEqual(loopdata_pkt['day.wind.min.formatted'], '0')
         self.assertEqual(loopdata_pkt['day.wind.min'], '0 mph')
         self.assertEqual(loopdata_pkt['unit.label.wind'], ' mph')
@@ -5491,14 +5564,14 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['unit.label.windDir'], '°')
 
         self.assertEqual(loopdata_pkt['unit.label.wind'], ' km/h')
-        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '07/05/20 12:33:35')
+        self.assertEqual(loopdata_pkt['day.wind.maxtime'], '12:33:35')
         self.assertEqual(loopdata_pkt['day.wind.max.formatted'], '0')
         self.assertEqual(loopdata_pkt['day.wind.max'], '0 km/h')
         self.assertEqual(loopdata_pkt['day.wind.gustdir.formatted'], '360')
         self.assertEqual(loopdata_pkt['day.wind.gustdir.ordinal_compass'], 'N')
         self.assertEqual(loopdata_pkt['day.wind.gustdir'], '360°')
 
-        self.assertEqual(loopdata_pkt['day.wind.mintime'], '07/05/20 12:18:29')
+        self.assertEqual(loopdata_pkt['day.wind.mintime'], '12:18:29')
         self.assertEqual(loopdata_pkt['day.wind.min.formatted'], '0')
         self.assertEqual(loopdata_pkt['day.wind.min'], '0 km/h')
         self.assertEqual(loopdata_pkt['unit.label.wind'], ' km/h')

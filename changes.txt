@@ -3,6 +3,20 @@ loopdata change history
 
 5.1 Release 2026/07/21
 ----------------------
+Changed (check your pages): time-of-event fields (maxtime, mintime,
+firsttime, lasttime) now format with the field's period as the time context,
+exactly as WeeWX report tags do -- the target report's [Units][TimeFormats]
+entry for that period applies.  With the standard TimeFormats, day.*
+times now render as 12:00:00 instead of 07/01/20 12:00:00, hour.* times as
+12:00, week.* times as 12:00:00 (Wednesday); month/year/rainyear are
+unchanged, and alltime uses the year format (the context WeeWX binds for the
+$alltime tag), also unchanged with the standard TimeFormats.  Continuous
+periods (1m-1440m, 1h-24h) keep the 'current' format.  In addition, .formatted on a time-of-event field now
+yields the same context-formatted time (times carry no label) instead of an
+unusable raw-number rendering.  If your page relied on the old full
+date-time rendering for day/hour/week times, either adjust the page or set
+that period's format in the target report's [Units][TimeFormats].
+
 New: unit override in the fields grammar.  A field may now name an explicit
 unit between the aggregation and the format spec
 (period.obstype[.agg_type][.unit][.format_spec]), exactly as WeeWX report

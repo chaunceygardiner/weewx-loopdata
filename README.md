@@ -151,6 +151,17 @@ The wind speed average for this week can be included as:
 * `week.windSpeed.avg`           which might yield `2.7 mph`
 * `week.windSpeed.avg.raw`       which might yield `2.74`
 
+Time-of-event fields (`maxtime`, `mintime`, `firsttime`, `lasttime`) are
+formatted exactly as WeeWX report tags format them: the field's period is the
+time context, so the target report's `[Units][TimeFormats]` entry for that
+period applies (with the standard settings: `hour` is `%H:%M`, `day` is `%X`,
+`week` is `%X (%A)`, `month`/`year`/`rainyear` are `%x %X`).  `alltime` uses
+the `year` format, as WeeWX's `$alltime` tag does.  Rolling periods
+(`1m`-`1440m`, `1h`-`24h`) use the `current` format.  For example:
+
+* `day.outTemp.maxtime`   which might yield `12:00:00`
+* `hour.outTemp.maxtime`  which might yield `12:00`
+
 The minimum dewpoint this month and the time of that event can be included as:
 
 * `month.dewpoint.min`     which might yield `43.7°`

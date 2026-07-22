@@ -2253,6 +2253,12 @@ class LoopProcessor:
             return
 
         if cname.format_spec == 'formatted':
+            if unit_type in ('unix_epoch', 'unix_epoch_ms', 'unix_epoch_ns'):
+                # Times have no numeric format string; render via toString
+                # ('current' context), as a report tag's .formatted does.
+                loopdata_pkt[cname.field] = formatter.toString(
+                    (value, unit_type, group_type), addLabel=False)
+                return
             fmt_str = formatter.get_format_string(unit_type)
             try:
                 loopdata_pkt[cname.field] = fmt_str % value
@@ -2332,12 +2338,32 @@ class LoopProcessor:
             log.debug('%s: cannot convert %s to %s: %s' % (cname.field, cname.obstype, cname.unit, e))
             return
 
+        # WeeWX formats times per time context: a report tag like
+        # $day.outTemp.maxtime uses the 'day' entry of the target report's
+        # [Units][TimeFormats].  Pass the period as the context so loopdata
+        # matches.  Continuous periods (Nm/Nh) have no report analog and keep
+        # the 'current' context.  'alltime' maps to 'year' because that is the
+        # context weewx.tags binds for the $alltime tag (there is no 'alltime'
+        # TimeFormats entry).
+        time_context = 'current' if cname.period is None \
+            or LoopData.is_continuous_period(cname.period) else cname.period
+        if time_context == 'alltime':
+            time_context = 'year'
+
         if cname.format_spec == 'ordinal_compass':
             loopdata_pkt[cname.field] = formatter.to_ordinal_compass(
                 (tgt_value, tgt_type, tgt_group))
             return
 
         if cname.format_spec == 'formatted':
+            if tgt_type in ('unix_epoch', 'unix_epoch_ms', 'unix_epoch_ns'):
+                # Times have no numeric format string; render via the time
+                # context, as a report tag's .formatted does (times never carry
+                # a label, so this equals the unadorned rendering).
+                loopdata_pkt[cname.field] = formatter.toString(
+                    (tgt_value, tgt_type, tgt_group), context=time_context,
+                    addLabel=False)
+                return
             fmt_str = formatter.get_format_string(tgt_type)
             try:
                 loopdata_pkt[cname.field] = fmt_str % tgt_value
@@ -2354,7 +2380,8 @@ class LoopProcessor:
             # they have no numeric format.  Mirrors add_current_obstype.
             loopdata_pkt[cname.field] = tgt_value
         else:
-            loopdata_pkt[cname.field] = formatter.toString((tgt_value, tgt_type, tgt_group))
+            loopdata_pkt[cname.field] = formatter.toString(
+                (tgt_value, tgt_type, tgt_group), context=time_context)
 
     @staticmethod
     def add_trend_obstype(cname: CheetahName, accum: ContinuousAccum,

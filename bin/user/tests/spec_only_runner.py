@@ -42,6 +42,7 @@ SPEC_TESTS = [
     'test_create_loopdata_packet_period_routing',
     'test_unit_override_current',
     'test_unit_override_period',
+    'test_time_context_formatting',
     'test_unit_override_trend_offset_unit',
     'test_add_period_obstype_vec_agg_dispatch',
     'test_continuous_firstlast_accum_basic',
