@@ -1,5 +1,4 @@
-# weewx-loopdata
-Open source plugin for WeeWX software.
+# weewx-loopdata – Make your skins come alive!
 
 Copyright (C)2022-2026 by John A Kline (john@johnkline.com)
 
@@ -7,8 +6,66 @@ Copyright (C)2022-2026 by John A Kline (john@johnkline.com)
 
 ## Description
 
-LoopData is a WeeWX service that generates a json file (loop-data.txt)
-on every loop (e.g., every 2s).
+With LoopData, the tags in your WeeWX reports can be updated on every LOOP
+packet — typically every few seconds — instead of waiting for the next archive
+interval and page reload.  This works for nearly every tag you would use in a
+report: current observations, trends, aggregates over hours, days, weeks,
+months, years and rolling windows — including almanac tags and unit labels.
+
+Here is the whole idea in one example.  Say your report template shows a
+current condition, a daily aggregate and an almanac time:
+
+```
+Temperature: $current.outTemp
+High today: $day.outTemp.max
+Sunset: $almanac.sunset
+```
+
+List those same tags — with the `$` removed — on the `fields` line of the
+`[LoopData]` section of weewx.conf:
+
+```
+[LoopData]
+    [[Include]]
+        fields = current.outTemp, day.outTemp.max, almanac.sunset
+```
+
+Now, on every loop packet, LoopData writes a json file, `loop-data.txt`, with
+those tags as its keys — and every value already unit-converted and formatted
+exactly as your report would render it:
+
+```json
+{"current.outTemp": "79.2°F", "day.outTemp.max": "85.1°F", "almanac.sunset": "20:32"}
+```
+
+Finally, in the template, wrap each tag in an element whose id is the tag, and
+add a few lines of javascript to fill those elements from loop-data.txt:
+
+```html
+Temperature: <span id="current.outTemp">$current.outTemp</span><br/>
+High today: <span id="day.outTemp.max">$day.outTemp.max</span><br/>
+Sunset: <span id="almanac.sunset">$almanac.sunset</span>
+
+<script>
+  async function updateLoopData() {
+    const response = await fetch('loop-data.txt', {cache: 'no-store'});
+    const data = await response.json();
+    for (const key in data) {
+      const element = document.getElementById(key);
+      if (element) element.innerHTML = data[key];
+    }
+  }
+  setInterval(updateLoopData, 2000);  // match your loop frequency
+</script>
+```
+
+The page loads showing the values Cheetah rendered at report time, then comes
+alive: every wrapped tag updates as fast as your station reports.  That is all
+there is to it.  The rest of this README is reference — the full field grammar
+(periods, aggregates, unit overrides, rounding, format specs), the live
+windrose, almanac fields, configuration and rsync to a remote web server —
+and "Using LoopData in Your Own Skin" below adds the production touches
+(error handling, missing fields, a LIVE indicator) to the javascript above.
 
 Note: As of version 4.0, the `sortedcontainers` package is no longer required
 (it was required by versions 3.0 through 3.9).

@@ -93,6 +93,11 @@ so it always fell back to its own assembly), and the fallback now disables
 ConfigObj interpolation exactly as WeeWX does.  Without this, the %(hour)d-style
 delta-time format strings misparse and long_form() cannot render.
 
+Docs: the README now opens with the point -- report tags updated on every
+loop packet -- and a four-step example (report tags, the same tags on the
+fields line, the loop-data.txt they produce, and the javascript that makes
+the page live).
+
 Internal: the per-aggregate dispatch in add_period_obstype was refactored into
 per-stats-kind extractor tables (SCALAR_AGGS/VEC_AGGS/FIRSTLAST_AGGS), and the
 grammar's set of valid aggregate types is now derived from those tables, so
