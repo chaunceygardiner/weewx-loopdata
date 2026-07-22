@@ -24,11 +24,11 @@ import tempfile
 import threading
 import time
 
-from collections import deque
+from collections import deque, namedtuple
 from datetime import date, datetime, timedelta
 from heapq import heapify, heappop, heappush
 from dataclasses import dataclass, field as dataclass_field
-from typing import Any, Deque, Dict, Generator, Generic, List, Optional, Set, Tuple, TypeVar, Union
+from typing import Any, Callable, Deque, Dict, FrozenSet, Generator, Generic, List, Optional, Set, Tuple, TypeVar, Union
 from enum import Enum
 
 import weewx
@@ -53,7 +53,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '5.0'
+LOOP_DATA_VERSION = '5.1'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -88,6 +88,7 @@ class CheetahName:
     period     : Optional[str] # current, 1m-1440m, 1h-24h, trend, hour, day, week, month, year, rainyear, alltime
     obstype    : str           # e.g,. outTemp
     agg_type   : Optional[str] # avg, sum, etc. (required if period, other than current, is specified, else None)
+    unit       : Optional[str] # unit override (e.g. degree_C, beaufort); None means the target report's unit for the obstype's group.  Grammar-ordered between agg_type and format_spec.  Value fields only -- never on the unit.label prefix form (WeeWX parity: $unit.label has no override).
     format_spec: Optional[str] # formatted (formatted value sans label), raw or ordinal_compass (could be on direction), or None
     def __hash__(self):
         return hash(self.field)
@@ -167,6 +168,65 @@ class Configuration:
     longitude                : float = 0.0 # station longitude in decimal degrees
     altitude_m               : float = 0.0 # station altitude in meters
     almanac_texts            : Dict[str, Any] = dataclass_field(default_factory=dict) # target report's [Almanac] section (moon_phases, ...)
+
+# ===============================================================================
+#                        Aggregate dispatch tables
+# ===============================================================================
+
+# getStatsTuple() is the one interface shared by weewx.accum.ScalarStats/VecStats
+# and their Continuous* counterparts: on the Continuous classes, min/mintime/max/
+# maxtime/count/max_dir are computed inside getStatsTuple() (from the MinMaxDict),
+# not stored as attributes, while avg/rms/vec_avg/vec_dir exist only as properties
+# on the objects.  Naming the tuple slots lets extractors read t.max instead of a
+# positional index (and avoids shadowing the builtins min/max/sum).
+ScalarStatsTuple = namedtuple('ScalarStatsTuple',
+    ['min', 'mintime', 'max', 'maxtime', 'sum', 'count', 'wsum', 'sumtime'])
+VecStatsTuple = namedtuple('VecStatsTuple',
+    ['min', 'mintime', 'max', 'maxtime', 'sum', 'count', 'wsum', 'sumtime',
+     'max_dir', 'xsum', 'ysum', 'dirsumtime', 'squaresum', 'wsquaresum'])
+
+# agg_type -> extractor, one table per stats kind.  These tables are the single
+# source of truth for which aggregate types exist: the grammar's accepted set
+# (AGG_TYPES, below) is their union, so an aggregate cannot parse unless a table
+# implements it.  Each extractor takes (s, t): s is the stats object (for the
+# computed properties), t is its ScalarStatsTuple/VecStatsTuple (for the
+# positional slots).
+SCALAR_AGGS: Dict[str, Callable[[Any, Any], Any]] = {
+    'min':     lambda s, t: t.min,
+    'mintime': lambda s, t: t.mintime,
+    'max':     lambda s, t: t.max,
+    'maxtime': lambda s, t: t.maxtime,
+    'sum':     lambda s, t: t.sum,
+    'count':   lambda s, t: t.count,
+    'avg':     lambda s, t: s.avg,
+}
+VEC_AGGS: Dict[str, Callable[[Any, Any], Any]] = {
+    'min':     lambda s, t: t.min,
+    'mintime': lambda s, t: t.mintime,
+    'max':     lambda s, t: t.max,
+    'maxtime': lambda s, t: t.maxtime,
+    'gustdir': lambda s, t: t.max_dir,
+    'count':   lambda s, t: t.count,
+    'avg':     lambda s, t: s.avg,
+    # NB: vec sum reads the OBJECT attribute (raw), while scalar sum reads the
+    # TUPLE slot (massage_near_zero'd on Continuous accums).  This asymmetry is
+    # longstanding shipped behavior -- do not "fix" it into consistency.
+    'sum':     lambda s, t: s.sum,
+    'rms':     lambda s, t: s.rms,
+    'vecavg':  lambda s, t: s.vec_avg,
+    'vecdir':  lambda s, t: s.vec_dir,
+}
+FIRSTLAST_AGGS: Dict[str, Callable[[Any, Any], Any]] = {
+    'first':     lambda s, t: s.first,
+    'last':      lambda s, t: s.last,
+    'firsttime': lambda s, t: s.firsttime,
+    'lasttime':  lambda s, t: s.lasttime,
+}
+
+# The grammar's valid aggregate types ARE the dispatch's -- derived, never
+# hand-listed.  parse_cname validates against this set.
+AGG_TYPES: FrozenSet[str] = (
+    frozenset(SCALAR_AGGS) | frozenset(VEC_AGGS) | frozenset(FIRSTLAST_AGGS))
 
 # ===============================================================================
 #                                  MinMaxDict
@@ -1064,6 +1124,26 @@ class LoopData(StdService):
             return True
         return False
 
+    # Set of every unit name WeeWX knows how to convert to/from, populated lazily
+    # on first use (after weewx.wxxtypes -- imported at module load -- has
+    # registered beaufort and friends into weewx.units.conversionDict).
+    _known_units: Optional[Set[str]] = None
+
+    @staticmethod
+    def is_valid_unit(unit: str) -> bool:
+        """Is unit a unit WeeWX recognizes (a valid override target)?  Drawn from
+        the conversion table (source and target units) plus the standard unit
+        systems, so e.g. degree_C, degree_F, knot, mile_per_hour and beaufort all
+        qualify."""
+        if LoopData._known_units is None:
+            units: Set[str] = set(weewx.units.conversionDict.keys())
+            for targets in weewx.units.conversionDict.values():
+                units |= set(targets.keys())
+            for unit_system in (weewx.units.USUnits, weewx.units.MetricUnits, weewx.units.MetricWXUnits):
+                units |= set(unit_system.values())
+            LoopData._known_units = units
+        return unit in LoopData._known_units
+
     @staticmethod
     def is_continuous_period(period: str)-> bool:
         if period == 'trend' or LoopData.is_minute_period(period) or LoopData.is_hour_period(period):
@@ -1601,10 +1681,6 @@ class LoopData(StdService):
     def parse_cname(field: str) -> Optional[CheetahName]:
         valid_prefixes    : List[str] = [ 'unit' ]
         valid_prefixes2   : List[str] = [ 'label' ]
-        valid_agg_types   : List[str] = [ 'max', 'min', 'maxtime', 'mintime',
-                                          'gustdir', 'avg', 'sum', 'count',
-                                          'first', 'last', 'firsttime', 'lasttime',
-                                          'vecavg', 'vecdir', 'rms' ]
         valid_format_specs: List[str] = [ 'formatted', 'raw', 'ordinal_compass',
                                           'desc', 'code' ]
 
@@ -1646,10 +1722,23 @@ class LoopData(StdService):
         if period is not None and period != 'current' and period != 'trend':
             if len(segment) <= next_seg:
                 return None
-            if segment[next_seg] not in valid_agg_types:
+            # AGG_TYPES is the union of the dispatch tables (SCALAR_AGGS et
+            # al.), so an aggregate can only parse if the dispatch implements it.
+            if segment[next_seg] not in AGG_TYPES:
                 return None
             agg_type = segment[next_seg]
             next_seg += 1
+
+        unit = None
+        # Optional unit override (value fields only, never the unit.label prefix
+        # form).  Sits between the agg_type and the format_spec, e.g.
+        # day.outTemp.avg.degree_C.formatted or current.windSpeed.beaufort.  A
+        # segment is a unit only if WeeWX knows it as one; format_specs are a
+        # disjoint set, so there is no ambiguity.
+        if prefix is None and len(segment) > next_seg:
+            if segment[next_seg] not in valid_format_specs and LoopData.is_valid_unit(segment[next_seg]):
+                unit = segment[next_seg]
+                next_seg += 1
 
         format_spec = None
         # check for a format spec
@@ -1674,6 +1763,7 @@ class LoopData(StdService):
             period      = period,
             obstype     = obstype,
             agg_type    = agg_type,
+            unit        = unit,
             format_spec = format_spec)
 
     # An almanac field segment: an identifier with an optional call suffix
@@ -2144,8 +2234,14 @@ class LoopProcessor:
             log.debug('%s not found in packet, skipping %s' % (cname.obstype, cname.field))
             return
 
-        value, unit_type, group_type = LoopProcessor.convert_current_obs(
-                converter, cname.obstype, pkt)
+        try:
+            value, unit_type, group_type = LoopProcessor.convert_current_obs(
+                    converter, cname.obstype, pkt, cname.unit)
+        except (KeyError, ValueError) as e:
+            # Unit override incompatible with the obstype's group (e.g. a
+            # temperature asked for in beaufort).  Skip the field.
+            log.debug('%s: cannot convert %s to %s: %s' % (cname.field, cname.obstype, cname.unit, e))
+            return
 
         if value is None:
             log.debug('%s not found in loop packet.' % cname.field)
@@ -2183,67 +2279,36 @@ class LoopProcessor:
 
         stats = period_accum[cname.obstype]
 
+        # The grammar guarantees an agg_type for every period that reaches this
+        # function, but the field is Optional; a None agg matches no dispatch
+        # table -- skip, exactly as the old else-branches did.
+        agg_type = cname.agg_type
+        if agg_type is None:
+            return
+
         if (isinstance(stats, weewx.accum.ScalarStats) or isinstance(stats, ContinuousScalarStats))  and stats.lasttime is not None:
-            min, mintime, max, maxtime, sum, count, wsum, sumtime = stats.getStatsTuple()
-            if cname.agg_type == 'min':
-                src_value = min
-            elif cname.agg_type == 'mintime':
-                src_value = mintime
-            elif cname.agg_type == 'max':
-                src_value = max
-            elif cname.agg_type == 'maxtime':
-                src_value = maxtime
-            elif cname.agg_type == 'sum':
-                src_value = sum
-            elif cname.agg_type == 'count':
-                src_value = count
-            elif cname.agg_type == 'avg':
-                src_value = stats.avg
-            else:
+            extractor = SCALAR_AGGS.get(agg_type)
+            if extractor is None:
+                # Aggregate not defined for scalar stats (e.g. vecdir on a
+                # scalar obstype) -- skip, as before.
                 return
+            src_value = extractor(stats, ScalarStatsTuple(*stats.getStatsTuple()))
 
         elif (isinstance(stats, weewx.accum.VecStats) or isinstance(stats, ContinuousVecStats)) and stats.count != 0:
-            min, mintime, max, maxtime, sum, count, wsum, sumtime, max_dir, xsum, ysum, dirsumtime, squaresum, wsquaresum = stats.getStatsTuple()
-            if cname.agg_type == 'maxtime':
-                src_value = maxtime
-            elif cname.agg_type == 'max':
-                src_value = max
-            elif cname.agg_type == 'gustdir':
-                src_value = max_dir
-            elif cname.agg_type == 'mintime':
-                src_value = mintime
-            elif cname.agg_type == 'min':
-                src_value = min
-            elif cname.agg_type == 'count':
-                src_value = count
-            elif cname.agg_type == 'avg':
-                src_value = stats.avg
-            elif cname.agg_type == 'sum':
-                src_value = stats.sum
-            elif cname.agg_type == 'rms':
-                src_value = stats.rms
-            elif cname.agg_type == 'vecavg':
-                src_value = stats.vec_avg
-            elif cname.agg_type == 'vecdir':
-                src_value = stats.vec_dir
-            else:
+            extractor = VEC_AGGS.get(agg_type)
+            if extractor is None:
                 return
+            src_value = extractor(stats, VecStatsTuple(*stats.getStatsTuple()))
 
         elif isinstance(stats, ContinuousFirstLastAccum) and stats.firsttime is not None:
             # FirstLastAccum may hold values of almost any type (weewx uses it
             # for string obstypes, but the value's native type is preserved).
             # Route through the shared convert/format block below; the default
             # branch handles strings (emit as-is) vs numerics (format).
-            if cname.agg_type == 'first':
-                src_value = stats.first
-            elif cname.agg_type == 'last':
-                src_value = stats.last
-            elif cname.agg_type == 'firsttime':
-                src_value = stats.firsttime
-            elif cname.agg_type == 'lasttime':
-                src_value = stats.lasttime
-            else:
+            extractor = FIRSTLAST_AGGS.get(agg_type)
+            if extractor is None:
                 return
+            src_value = extractor(stats, None)  # firstlast reads only object props
 
         else:
             # No stats available (e.g. empty accumulator).
@@ -2255,7 +2320,17 @@ class LoopProcessor:
 
         src_type, src_group = weewx.units.getStandardUnitType(period_accum.unit_system, cname.obstype, agg_type=cname.agg_type)
 
-        tgt_value, tgt_type, tgt_group = converter.convert((src_value, src_type, src_group))
+        try:
+            if cname.unit is None:
+                tgt_value, tgt_type, tgt_group = converter.convert((src_value, src_type, src_group))
+            else:
+                # Unit override: convert straight to the requested unit rather
+                # than the target report's unit for this group.
+                tgt_value, tgt_type, tgt_group = weewx.units.convert((src_value, src_type, src_group), cname.unit)
+        except (KeyError, ValueError) as e:
+            # Unit override incompatible with the obstype's group.  Skip the field.
+            log.debug('%s: cannot convert %s to %s: %s' % (cname.field, cname.obstype, cname.unit, e))
+            return
 
         if cname.format_spec == 'ordinal_compass':
             loopdata_pkt[cname.field] = formatter.to_ordinal_compass(
@@ -2291,7 +2366,13 @@ class LoopProcessor:
             log.debug('No %s stats for %s, skipping %s' % (cname.period, cname.obstype, cname.field))
             return
 
-        value, unit_type, group_type = LoopProcessor.get_trend(cname, pkt, accum, converter, time_delta, loop_frequency)
+        # A unit override re-targets the numeric trend.  For the barometer
+        # code/desc classifications there is no numeric output to re-unit, so any
+        # override is ignored there and the trend is computed in report units.
+        is_baro_code_desc = cname.obstype == 'barometer' and (cname.format_spec == 'code' or cname.format_spec == 'desc')
+        trend_unit = None if is_baro_code_desc else cname.unit
+
+        value, unit_type, group_type = LoopProcessor.get_trend(cname, pkt, accum, converter, time_delta, loop_frequency, trend_unit)
         if value is None:
             log.debug('add_trend_obstype: %s: get_trend returned None.' % cname.field)
             return
@@ -2324,12 +2405,20 @@ class LoopProcessor:
 
     @staticmethod
     def convert_current_obs(converter: weewx.units.Converter, obstype: str,
-            pkt: Dict[str, Any]) -> Tuple[Any, Any, Any]:
-        """ Returns value, format_str, label_str """
+            pkt: Dict[str, Any], target_unit: Optional[str] = None) -> Tuple[Any, Any, Any]:
+        """ Returns value, unit_type, group_type.
+
+        When target_unit is None the value is converted to the target report's
+        unit for the obstype's group (converter.convert).  When target_unit is
+        given (a unit override), the value is converted directly to that unit
+        (weewx.units.convert), which raises if the unit is incompatible with the
+        obstype's group -- callers guard for that. """
 
         v_t = weewx.units.as_value_tuple(pkt, obstype)
-        _, original_unit_type, original_group_type = v_t
-        value, unit_type, group_type = converter.convert(v_t)
+        if target_unit is None:
+            value, unit_type, group_type = converter.convert(v_t)
+        else:
+            value, unit_type, group_type = weewx.units.convert(v_t, target_unit)
 
         return value, unit_type, group_type
 
@@ -2513,7 +2602,8 @@ class LoopProcessor:
 
     @staticmethod
     def get_trend(cname: CheetahName, pkt: Dict[str, Any], accum: ContinuousAccum,
-            converter, time_delta: int, loop_frequency: float) -> Tuple[Optional[Any], Optional[str], Optional[str]]:
+            converter, time_delta: int, loop_frequency: float,
+            target_unit: Optional[str] = None) -> Tuple[Optional[Any], Optional[str], Optional[str]]:
         if not cname.obstype in accum:
             return None, None, None
         first = accum[cname.obstype].first
@@ -2526,11 +2616,15 @@ class LoopProcessor:
             # Need atleast two readings to get a trend.
             return None, None, None
         try:
-            # Trend needs to be in report target units.
+            # Convert the endpoints to the trend's output unit (target_unit when a
+            # unit override is in play, else the report target unit) BEFORE
+            # subtracting.  Doing it in this order is what makes a unit override
+            # correct for offset units like temperature: the offset cancels in the
+            # difference, so an X degree_F delta yields the right degree_C delta.
             start_value, unit_type, group_type = LoopProcessor.convert_current_obs(
-                converter, cname.obstype, { 'dateTime': firsttime, 'usUnits': pkt['usUnits'], cname.obstype: first })
+                converter, cname.obstype, { 'dateTime': firsttime, 'usUnits': pkt['usUnits'], cname.obstype: first }, target_unit)
             end_value, unit_type, group_type = LoopProcessor.convert_current_obs(
-                converter, cname.obstype, { 'dateTime': lasttime, 'usUnits': pkt['usUnits'], cname.obstype: last })
+                converter, cname.obstype, { 'dateTime': lasttime, 'usUnits': pkt['usUnits'], cname.obstype: last }, target_unit)
 
             log.debug('get_trend: %s: start_value: %s' % (cname.obstype, start_value))
             log.debug('get_trend: %s: end_value: %s' % (cname.obstype, end_value))

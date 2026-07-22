@@ -729,6 +729,80 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(
             user.loopdata.LoopData.parse_cname('unit.notlabel.outTemp'), None)
 
+        # --- unit override grammar (5.1) ---
+        # The optional unit segment sits between the agg_type and the
+        # format_spec: [period].obstype[.agg_type][.unit][.format_spec].
+
+        # current + unit override, no format_spec (windSpeed -> beaufort).
+        cname = user.loopdata.LoopData.parse_cname('current.windSpeed.beaufort')
+        assert cname is not None
+        self.assertEqual(cname.period, 'current')
+        self.assertEqual(cname.obstype, 'windSpeed')
+        self.assertEqual(cname.agg_type, None)
+        self.assertEqual(cname.unit, 'beaufort')
+        self.assertEqual(cname.format_spec, None)
+
+        # current + unit override + format_spec.
+        cname = user.loopdata.LoopData.parse_cname('current.windSpeed.beaufort.formatted')
+        assert cname is not None
+        self.assertEqual(cname.obstype, 'windSpeed')
+        self.assertEqual(cname.agg_type, None)
+        self.assertEqual(cname.unit, 'beaufort')
+        self.assertEqual(cname.format_spec, 'formatted')
+
+        # period + agg_type + unit override + format_spec (all four optionals).
+        cname = user.loopdata.LoopData.parse_cname('day.outTemp.avg.degree_C.formatted')
+        assert cname is not None
+        self.assertEqual(cname.period, 'day')
+        self.assertEqual(cname.obstype, 'outTemp')
+        self.assertEqual(cname.agg_type, 'avg')
+        self.assertEqual(cname.unit, 'degree_C')
+        self.assertEqual(cname.format_spec, 'formatted')
+
+        # period + agg_type + unit override, no format_spec.
+        cname = user.loopdata.LoopData.parse_cname('day.outTemp.avg.degree_C')
+        assert cname is not None
+        self.assertEqual(cname.agg_type, 'avg')
+        self.assertEqual(cname.unit, 'degree_C')
+        self.assertEqual(cname.format_spec, None)
+
+        # continuous period + agg_type + unit override + format_spec.
+        cname = user.loopdata.LoopData.parse_cname('10m.windGust.max.knot.raw')
+        assert cname is not None
+        self.assertEqual(cname.period, '10m')
+        self.assertEqual(cname.obstype, 'windGust')
+        self.assertEqual(cname.agg_type, 'max')
+        self.assertEqual(cname.unit, 'knot')
+        self.assertEqual(cname.format_spec, 'raw')
+
+        # trend + unit override + format_spec (trend takes no agg_type).
+        cname = user.loopdata.LoopData.parse_cname('trend.outTemp.degree_C.formatted')
+        assert cname is not None
+        self.assertEqual(cname.period, 'trend')
+        self.assertEqual(cname.obstype, 'outTemp')
+        self.assertEqual(cname.agg_type, None)
+        self.assertEqual(cname.unit, 'degree_C')
+        self.assertEqual(cname.format_spec, 'formatted')
+
+        # A format_spec is NOT mistaken for a unit: no override here.
+        cname = user.loopdata.LoopData.parse_cname('current.windSpeed.formatted')
+        assert cname is not None
+        self.assertEqual(cname.unit, None)
+        self.assertEqual(cname.format_spec, 'formatted')
+
+        # A non-unit, non-format_spec trailing segment is still rejected.
+        self.assertEqual(
+            user.loopdata.LoopData.parse_cname('current.windSpeed.notaunit'), None)
+
+        # Unit override then a garbage trailing segment -> rejected.
+        self.assertEqual(
+            user.loopdata.LoopData.parse_cname('current.windSpeed.beaufort.foo'), None)
+
+        # The unit.label prefix form takes NO override (WeeWX parity): the
+        # trailing unit segment makes it unexpected extra -> None.
+        self.assertEqual(
+            user.loopdata.LoopData.parse_cname('unit.label.outTemp.degree_C'), None)
+
     def test_compose_loop_data_dir(self) -> None:
         config_dict       : Dict[str, Any] = { 'WEEWX_ROOT'   : '/etc/weewx' }
         target_report_dict: Dict[str, Any] = { 'HTML_ROOT'    : 'public_html/weatherboard'}
@@ -978,44 +1052,47 @@ class ProcessPacketTests(unittest.TestCase):
         (fields_to_include, obstypes) = user.loopdata.LoopData.get_fields_to_include(specified_fields)
 
         self.assertEqual(len(fields_to_include), 19)
+        # Positional CheetahName args: field, prefix, prefix2, period, obstype,
+        # agg_type, unit, format_spec (unit -- the override -- sits between
+        # agg_type and format_spec; None here since none of these override).
         self.assertTrue(user.loopdata.CheetahName(
-            'current.dateTime.raw', None, None, 'current', 'dateTime', None, 'raw') in fields_to_include)
+            'current.dateTime.raw', None, None, 'current', 'dateTime', None, None, 'raw') in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
-            'current.outTemp', None, None, 'current', 'outTemp', None, None) in fields_to_include)
+            'current.outTemp', None, None, 'current', 'outTemp', None, None, None) in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
-            'trend.outTemp', None, None, 'trend', 'outTemp', None, None) in fields_to_include)
+            'trend.outTemp', None, None, 'trend', 'outTemp', None, None, None) in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
-            'trend.barometer.code', None, None, 'trend', 'barometer', None, 'code') in fields_to_include)
+            'trend.barometer.code', None, None, 'trend', 'barometer', None, None, 'code') in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
-            'trend.barometer.desc', None, None, 'trend', 'barometer', None, 'desc') in fields_to_include)
+            'trend.barometer.desc', None, None, 'trend', 'barometer', None, None, 'desc') in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
-            '2m.wind.max', None, None, '2m', 'wind', 'max', None) in fields_to_include)
+            '2m.wind.max', None, None, '2m', 'wind', 'max', None, None) in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
-            '2m.wind.gustdir', None, None, '2m', 'wind', 'gustdir', None) in fields_to_include)
+            '2m.wind.gustdir', None, None, '2m', 'wind', 'gustdir', None, None) in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
-            '10m.wind.max', None, None, '10m', 'wind', 'max', None) in fields_to_include)
+            '10m.wind.max', None, None, '10m', 'wind', 'max', None, None) in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
-            '10m.wind.gustdir', None, None, '10m', 'wind', 'gustdir', None) in fields_to_include)
+            '10m.wind.gustdir', None, None, '10m', 'wind', 'gustdir', None, None) in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
-            '10m.windSpeed.max', None, None, '10m', 'windSpeed', 'max', None) in fields_to_include)
+            '10m.windSpeed.max', None, None, '10m', 'windSpeed', 'max', None, None) in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
-            '10m.windDir.max', None, None, '10m', 'windDir', 'max', None) in fields_to_include)
+            '10m.windDir.max', None, None, '10m', 'windDir', 'max', None, None) in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
-            '24h.rain.sum', None, None, '24h', 'rain', 'sum', None) in fields_to_include)
+            '24h.rain.sum', None, None, '24h', 'rain', 'sum', None, None) in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
-            'hour.inTemp.min', None, None, 'hour', 'inTemp', 'min', None) in fields_to_include)
+            'hour.inTemp.min', None, None, 'hour', 'inTemp', 'min', None, None) in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
-            'hour.inTemp.mintime', None, None, 'hour', 'inTemp', 'mintime', None) in fields_to_include)
+            'hour.inTemp.mintime', None, None, 'hour', 'inTemp', 'mintime', None, None) in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
-            'day.barometer.min', None, None, 'day', 'barometer', 'min', None) in fields_to_include)
+            'day.barometer.min', None, None, 'day', 'barometer', 'min', None, None) in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
-            'day.barometer.max', None, None, 'day', 'barometer', 'max', None) in fields_to_include)
+            'day.barometer.max', None, None, 'day', 'barometer', 'max', None, None) in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
-            'day.wind.max', None, None, 'day', 'wind', 'max', None) in fields_to_include)
+            'day.wind.max', None, None, 'day', 'wind', 'max', None, None) in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
-            'day.wind.gustdir', None, None, 'day', 'wind', 'gustdir', None) in fields_to_include)
+            'day.wind.gustdir', None, None, 'day', 'wind', 'gustdir', None, None) in fields_to_include)
         self.assertTrue(user.loopdata.CheetahName(
-            'day.wind.maxtime', None, None, 'day', 'wind', 'maxtime', None) in fields_to_include)
+            'day.wind.maxtime', None, None, 'day', 'wind', 'maxtime', None, None) in fields_to_include)
 
         self.assertEqual(len(obstypes.current), 10)
         self.assertTrue('inTemp' in obstypes.current)
@@ -3481,6 +3558,113 @@ class ProcessPacketTests(unittest.TestCase):
                 cname_e, empty_accum, pkt_e, converter, formatter)
             self.assertNotIn('day.wind.max.raw', pkt_e)  # count==0 -> no output
 
+    def test_agg_type_grammar_is_dispatch_union(self) -> None:
+        # The grammar accepts exactly the aggregates the dispatch tables
+        # implement: AGG_TYPES is derived from SCALAR_AGGS/VEC_AGGS/
+        # FIRSTLAST_AGGS, and parse_cname validates against AGG_TYPES.  Pin the
+        # wiring: every implemented aggregate parses...
+        self.assertEqual(len(user.loopdata.AGG_TYPES), 15)
+        for agg in sorted(user.loopdata.AGG_TYPES):
+            self.assertIsNotNone(
+                user.loopdata.LoopData.parse_cname('day.outTemp.%s' % agg),
+                msg='implemented aggregate %r must parse' % agg)
+        # ...and plausible-but-unimplemented aggregates are rejected (guards
+        # against a relaxed membership check; not_null/diff/tderiv are real
+        # WeeWX aggregations that loopdata does not implement).
+        for fake in ['median', 'stdev', 'not_null', 'diff', 'tderiv']:
+            self.assertIsNone(
+                user.loopdata.LoopData.parse_cname('day.outTemp.%s' % fake),
+                msg='unimplemented aggregate %r must not parse' % fake)
+
+    def test_agg_extractors_reference_real_slots(self) -> None:
+        # Runs every extractor in the dispatch tables against populated stats
+        # objects of BOTH class families (weewx.accum and Continuous*), so a
+        # typo like t.maxx or s.vecdir raises here instead of silently dropping
+        # a field at runtime.  Values for the weewx family are hand-computed
+        # from the adds below.
+        import weewx.accum
+        US = weewx.units.unit_constants['US']
+
+        # weewx family: min/max via addHiLo, sums via addSum.
+        ws = weewx.accum.ScalarStats()
+        ws.addHiLo(50.0, 1000)
+        ws.addHiLo(80.0, 1010)
+        ws.addSum(50.0)
+        ws.addSum(80.0)
+        wv = weewx.accum.VecStats()
+        wv.addHiLo((10.0, 90.0), 1000)
+        wv.addHiLo((5.0, 180.0), 1010)
+        wv.addSum((10.0, 90.0))
+        wv.addSum((5.0, 180.0))
+
+        # Continuous family: same readings via ContinuousAccum.addRecord
+        # (which also builds the composite 'wind' vec stats).
+        cont = user.loopdata.ContinuousAccum(100000, US)
+        cont.addRecord({'dateTime': 1000, 'usUnits': 1, 'outTemp': 50.0,
+                        'windSpeed': 10.0, 'windDir': 90.0,
+                        'windGust': 12.0, 'windGustDir': 100.0})
+        cont.addRecord({'dateTime': 1010, 'usUnits': 1, 'outTemp': 80.0,
+                        'windSpeed': 5.0, 'windDir': 180.0,
+                        'windGust': 6.0, 'windGustDir': 190.0})
+        cs = cont['outTemp']
+        cv = cont['wind']
+        self.assertIsInstance(cs, user.loopdata.ContinuousScalarStats)
+        self.assertIsInstance(cv, user.loopdata.ContinuousVecStats)
+
+        # Every scalar/vec extractor must run without raising on both families.
+        for stats, tuple_cls, table in [
+                (ws, user.loopdata.ScalarStatsTuple, user.loopdata.SCALAR_AGGS),
+                (cs, user.loopdata.ScalarStatsTuple, user.loopdata.SCALAR_AGGS),
+                (wv, user.loopdata.VecStatsTuple, user.loopdata.VEC_AGGS),
+                (cv, user.loopdata.VecStatsTuple, user.loopdata.VEC_AGGS)]:
+            t = tuple_cls(*stats.getStatsTuple())
+            for agg, extractor in table.items():
+                extractor(stats, t)  # must not raise
+
+        # Spot-check hand-computed values on the weewx family (adds above:
+        # scalar 50 @ 1000, 80 @ 1010; weight 1 each).
+        st = user.loopdata.ScalarStatsTuple(*ws.getStatsTuple())
+        self.assertAlmostEqual(user.loopdata.SCALAR_AGGS['min'](ws, st), 50.0)
+        self.assertEqual(user.loopdata.SCALAR_AGGS['mintime'](ws, st), 1000)
+        self.assertAlmostEqual(user.loopdata.SCALAR_AGGS['max'](ws, st), 80.0)
+        self.assertEqual(user.loopdata.SCALAR_AGGS['maxtime'](ws, st), 1010)
+        self.assertAlmostEqual(user.loopdata.SCALAR_AGGS['sum'](ws, st), 130.0)
+        self.assertEqual(user.loopdata.SCALAR_AGGS['count'](ws, st), 2)
+        self.assertAlmostEqual(user.loopdata.SCALAR_AGGS['avg'](ws, st), 65.0)
+        # Vec: max speed 10 @ 1000 with dir 90 (gustdir); min speed 5 @ 1010.
+        vt = user.loopdata.VecStatsTuple(*wv.getStatsTuple())
+        self.assertAlmostEqual(user.loopdata.VEC_AGGS['max'](wv, vt), 10.0)
+        self.assertEqual(user.loopdata.VEC_AGGS['maxtime'](wv, vt), 1000)
+        self.assertAlmostEqual(user.loopdata.VEC_AGGS['gustdir'](wv, vt), 90.0)
+        self.assertAlmostEqual(user.loopdata.VEC_AGGS['min'](wv, vt), 5.0)
+        self.assertAlmostEqual(user.loopdata.VEC_AGGS['sum'](wv, vt), 15.0)
+
+        # firstlast extractors, against a Continuous firstlast accum (register
+        # a string obstype, mirroring test_firstlast_obstype_end_to_end).
+        weewx.accum.accum_dict.extend(
+            {'flType': {'accumulator': 'firstlast', 'extractor': 'last'}})
+        try:
+            fl_accum = user.loopdata.ContinuousAccum(100000, US)
+            fl_accum.addRecord({'dateTime': 1000, 'usUnits': 1, 'flType': 'alpha'})
+            fl_accum.addRecord({'dateTime': 2000, 'usUnits': 1, 'flType': 'omega'})
+            fl = fl_accum['flType']
+            self.assertIsInstance(fl, user.loopdata.ContinuousFirstLastAccum)
+            self.assertEqual(user.loopdata.FIRSTLAST_AGGS['first'](fl, None), 'alpha')
+            self.assertEqual(user.loopdata.FIRSTLAST_AGGS['last'](fl, None), 'omega')
+            self.assertEqual(user.loopdata.FIRSTLAST_AGGS['firsttime'](fl, None), 1000)
+            self.assertEqual(user.loopdata.FIRSTLAST_AGGS['lasttime'](fl, None), 2000)
+        finally:
+            # accum_dict is a ChainMap; the entry added by extend() may live in
+            # a layer that does not support del by key, so guard it (same idiom
+            # as the other firstlast tests).
+            try:
+                maps = getattr(weewx.accum.accum_dict, 'maps', [weewx.accum.accum_dict])
+                for m in maps:
+                    if 'flType' in m:
+                        del m['flType']
+            except Exception:
+                pass
+
     def test_add_current_obstype_format_spec_dispatch(self) -> None:
         # Pins the format_spec branches of add_current_obstype: 'raw' returns
         # the numeric value; 'formatted' returns the bare formatted string;
@@ -3564,6 +3748,163 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertAlmostEqual(loopdata_pkt['hour.outTemp.min.raw'], 60.0)
         # 'current' routed to the live packet, not an accum.
         self.assertAlmostEqual(loopdata_pkt['current.outTemp.raw'], 65.0)
+
+    def test_unit_override_current(self) -> None:
+        # Pins the unit-override path of add_current_obstype (5.1).  A US packet
+        # (windSpeed in mph, outTemp in degree_F) is asked for in overridden
+        # units.  Expected values are WeeWX's own conversions (parity is the
+        # spec).  An override incompatible with the obstype's group is dropped.
+        import weewx.units
+        from weewx.units import ValueTuple
+        specified_fields = ['current.windSpeed.beaufort',
+                            'current.windSpeed.beaufort.raw',
+                            'current.outTemp.degree_C.raw',
+                            'current.outTemp.beaufort.raw']
+        cfg = ProcessPacketTests._get_config('us', 10800, 1, 6, specified_fields)
+        converter = cfg.converter
+        formatter = cfg.formatter
+
+        pkt = {'dateTime': 1000, 'usUnits': 1, 'windSpeed': 25.0, 'outTemp': 68.0}
+
+        def field_value(field):
+            cname = user.loopdata.LoopData.parse_cname(field)
+            self.assertIsNotNone(cname, msg='parse failed %s' % field)
+            out = {}
+            user.loopdata.LoopProcessor.add_current_obstype(
+                cname, pkt, out, converter, formatter)
+            return out, cname.field
+
+        # windSpeed 25 mph -> beaufort, matching weewx.units.convert exactly.
+        expected_beaufort = weewx.units.convert(
+            ValueTuple(25.0, 'mile_per_hour', 'group_speed'), 'beaufort')[0]
+        self.assertEqual(expected_beaufort, 5)   # hand-check: 25 mph is force 5
+        out, key = field_value('current.windSpeed.beaufort.raw')
+        self.assertEqual(out[key], expected_beaufort)
+
+        # Default rendering (no format_spec) formats with beaufort's format
+        # string ('%d') -- a bare number string, beaufort has an empty label.
+        out, key = field_value('current.windSpeed.beaufort')
+        self.assertEqual(out[key], '5')
+
+        # outTemp 68 degree_F -> 20.0 degree_C.
+        out, key = field_value('current.outTemp.degree_C.raw')
+        self.assertAlmostEqual(out[key], 20.0)
+
+        # Incompatible override (a temperature in beaufort) is dropped, not
+        # emitted, and does not raise.
+        out, key = field_value('current.outTemp.beaufort.raw')
+        self.assertNotIn(key, out)
+
+    def test_unit_override_period(self) -> None:
+        # Pins the unit-override path of add_period_obstype (5.1).  A day accum
+        # of degree_F outTemp is read back with a degree_C override.  avg of
+        # 50 and 80 degree_F is 65 degree_F -> 18.3333 degree_C.  An incompatible
+        # override is dropped.  Uses the real SeasonsReport formatter (via
+        # _get_config) so the default-render assertion below exercises the
+        # overridden unit's real format string and label (a bare Formatter()
+        # carries neither and falls back to '%f' with no label).
+        import weewx.units
+        US = weewx.units.unit_constants['US']
+        cfg = ProcessPacketTests._get_config('us', 10800, 1, 6,
+                ['day.outTemp.avg.degree_C'])
+        converter = cfg.converter
+        formatter = cfg.formatter
+
+        day_accum = weewx.accum.Accum(
+            weeutil.weeutil.archiveDaySpan(1593630000), US)
+        day_accum.addRecord({'dateTime': 1593629000, 'usUnits': 1, 'outTemp': 50.0}, weight=300)
+        day_accum.addRecord({'dateTime': 1593630000, 'usUnits': 1, 'outTemp': 80.0}, weight=300)
+
+        def period_value(field):
+            cname = user.loopdata.LoopData.parse_cname(field)
+            self.assertIsNotNone(cname, msg='parse failed %s' % field)
+            out = {}
+            user.loopdata.LoopProcessor.add_period_obstype(
+                cname, day_accum, out, converter, formatter)
+            return out, cname.field
+
+        # avg 65 degree_F -> (65-32)*5/9 = 18.33333 degree_C.
+        out, key = period_value('day.outTemp.avg.degree_C.raw')
+        self.assertAlmostEqual(out[key], (65.0 - 32.0) * 5.0 / 9.0)
+
+        # Without the override, the same avg comes back in the report unit
+        # (degree_F, identity for a US config) -- proving the override actually
+        # re-targeted the conversion.
+        out, key = period_value('day.outTemp.avg.raw')
+        self.assertAlmostEqual(out[key], 65.0)
+
+        # Incompatible override (temperature in beaufort) is dropped.
+        out, key = period_value('day.outTemp.avg.beaufort.raw')
+        self.assertNotIn(key, out)
+
+        # Default rendering (no format_spec) with an override must format with
+        # the OVERRIDDEN unit's format string and label: 18.3°C, not 65.0°F.
+        # This is the only pin on the overridden unit's LABEL lookup -- the
+        # current-path beaufort test cannot catch a wrong-label bug because
+        # beaufort's label is empty.
+        out, key = period_value('day.outTemp.avg.degree_C')
+        self.assertEqual(out[key], '18.3°C')
+
+        # Continuous periods route through the same add_period_obstype; pin one
+        # end-to-end: max windGust 20 mph -> knots (20 * 0.868976242, WeeWX's
+        # mph->knot factor).
+        cont = user.loopdata.ContinuousAccum(100000, US)
+        cont.addRecord({'dateTime': 1000, 'usUnits': 1, 'windGust': 10.0})
+        cont.addRecord({'dateTime': 1010, 'usUnits': 1, 'windGust': 20.0})
+        cname = user.loopdata.LoopData.parse_cname('10m.windGust.max.knot.raw')
+        self.assertIsNotNone(cname)
+        out_c: dict = {}
+        user.loopdata.LoopProcessor.add_period_obstype(
+            cname, cont, out_c, converter, formatter)
+        self.assertAlmostEqual(out_c['10m.windGust.max.knot.raw'], 20.0 * 0.868976242)
+
+    def test_unit_override_trend_offset_unit(self) -> None:
+        # Pins the unit-override path of the trend machinery (5.1) for an OFFSET
+        # unit (temperature), where order matters: converting each endpoint to
+        # the override unit BEFORE subtracting makes the offset cancel, so a
+        # 9 degree_F trend is a 5 degree_C trend -- NOT the (wrong) 9-degree_F-as-
+        # a-temperature-converted-to-C that a convert-after-subtract would give.
+        import weewx.units
+        US = weewx.units.unit_constants['US']
+        converter = weewx.units.Converter(weewx.units.USUnits)
+        formatter = weewx.units.Formatter()
+        baro_descs = user.loopdata.LoopData.construct_baro_trend_descs({})
+
+        time_delta = 10800
+        loop_frequency = 2.0
+        t0 = 1000
+        t1 = t0 + (time_delta - loop_frequency)  # actual_time_delta == time_delta, adj == 1
+        accum = user.loopdata.ContinuousAccum(100000, US)
+        accum.addRecord({'dateTime': t0, 'usUnits': 1, 'outTemp': 50.0})
+        accum.addRecord({'dateTime': t1, 'usUnits': 1, 'outTemp': 59.0})
+
+        pkt = {'dateTime': t1, 'usUnits': 1, 'outTemp': 59.0}
+
+        def trend_value(field):
+            cname = user.loopdata.LoopData.parse_cname(field)
+            self.assertIsNotNone(cname, msg='parse failed %s' % field)
+            out = {}
+            user.loopdata.LoopProcessor.add_trend_obstype(
+                cname, accum, pkt, out, time_delta, loop_frequency,
+                baro_descs, converter, formatter)
+            return out.get(cname.field)
+
+        # Override to degree_C: 59F-50F = 9F trend -> 5C trend (offset cancels).
+        self.assertAlmostEqual(trend_value('trend.outTemp.degree_C.raw'), 5.0)
+
+        # No override: report unit (degree_F) -> 9F trend.
+        self.assertAlmostEqual(trend_value('trend.outTemp.raw'), 9.0)
+
+        # Guard against a convert-after-subtract regression: converting the 9
+        # degree_F *value* to degree_C as if it were a temperature would give
+        # (9-32)*5/9 = -12.78, which must NOT be the answer.
+        self.assertNotAlmostEqual(
+            trend_value('trend.outTemp.degree_C.raw'), (9.0 - 32.0) * 5.0 / 9.0)
+
+        # Incompatible override on a trend (temperature in beaufort) is dropped
+        # silently.  This drop happens inside get_trend's guard -- a different
+        # code path from the current/period drops -- so pin it separately.
+        self.assertIsNone(trend_value('trend.outTemp.beaufort.raw'))
 
     def test_add_trend_obstype_barometer_code_desc(self) -> None:
         # Pins add_trend_obstype's barometer code/desc routing: for

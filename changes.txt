@@ -1,6 +1,24 @@
 loopdata change history
 -----------------------
 
+5.1 Release 2026/07/21
+----------------------
+New: unit override in the fields grammar.  A field may now name an explicit
+unit between the aggregation and the format spec
+(period.obstype[.agg_type][.unit][.format_spec]), exactly as WeeWX report
+tags allow (e.g., current.windSpeed.beaufort, day.outTemp.avg.degree_C.raw,
+10m.windGust.max.knot.raw, trend.barometer.mbar.formatted).  Any unit WeeWX
+knows for the observation's unit group is accepted, regardless of the target
+report's configured units -- handy for gauges (e.g. Beaufort wind) that expect
+a fixed unit.  The override is on value fields only; the unit.label prefix form
+is unchanged (WeeWX parity: $unit.label is obstype-only).  A unit incompatible
+with the observation's group causes the field to be omitted.
+
+Internal: the per-aggregate dispatch in add_period_obstype was refactored into
+per-stats-kind extractor tables (SCALAR_AGGS/VEC_AGGS/FIRSTLAST_AGGS), and the
+grammar's set of valid aggregate types is now derived from those tables, so
+the parser and the dispatch can never drift apart.  No behavior change.
+
 5.0 Release 2026/07/19
 ----------------------
 New: almanac fields.  Any WeeWX report almanac tag can now be listed in

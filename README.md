@@ -177,6 +177,40 @@ If a field is requested, but the data is missing, the field will not be present
 in loop-data.txt.  Your JavaScript should expect this and react
 accordingly.
 
+### Overriding the unit of a field
+
+By default every field is converted to the unit the target report calls for.
+A field may instead name an explicit unit, exactly as WeeWX report tags allow
+(e.g. `$current.outTemp.degree_C`).  The unit goes between the aggregation and
+the optional format spec:
+
+```
+period.obstype[.agg_type][.unit][.format_spec]
+```
+
+Any unit WeeWX knows for the observation's unit group is accepted.  For example,
+regardless of the report's configured units:
+
+* `current.windSpeed.beaufort`           which might yield `5`
+* `current.windSpeed.beaufort.formatted` which might yield `5`
+* `day.outTemp.avg.degree_C`             which might yield `18.3°C`
+* `day.outTemp.avg.degree_C.raw`         which might yield `18.33`
+* `day.outTemp.avg.degree_F.raw`         which might yield `64.99`
+* `10m.windGust.max.knot.raw`            which might yield `6.18`
+* `trend.barometer.mbar.formatted`       which might yield `2.4`
+
+This is handy for gauges that expect a fixed unit (for example a Beaufort wind
+gauge) no matter what units the rest of the report uses.  The override applies
+to value fields only; the `unit.label` prefix form has no override (matching
+WeeWX, whose `$unit.label` is obstype-only).  If the named unit is incompatible
+with the observation's group (e.g. `day.outTemp.avg.beaufort`), the field is
+simply omitted from loop-data.txt.
+
+A unit must already be registered with WeeWX when LoopData starts: all of
+WeeWX's own units (including `beaufort`) always are, but a unit registered by
+another extension is recognized only if that extension initializes before
+LoopData.
+
 ### Using LoopData in Your Own Skin
 
 The recipe, demonstrated in full by the included sample skin (`skins/LoopData`),
