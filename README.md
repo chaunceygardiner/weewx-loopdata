@@ -428,7 +428,7 @@ extension (its GitHub repository is no longer available).
 
 ## WeeWX 5 Installation Instructions
 
-1. Download the release from the [github](https://github.com/chaunceygardiner/weewx-loopdata/releases/download/latest/weewx-loopdata.zip).
+1. Download the latest release, [weewx-loopdata.zip](https://github.com/chaunceygardiner/weewx-loopdata/releases/latest/download/weewx-loopdata.zip).
 
 1. Install the loopdata extension.
 
@@ -470,8 +470,7 @@ extension (its GitHub repository is no longer available).
 
 ## WeeWX 4 Installation Instructions
 
-1. Download the latest release, weewx-loopdata.zip, from the
-   [GitHub Repository](https://github.com/chaunceygardiner/weewx-loopdata).
+1. Download the latest release, [weewx-loopdata.zip](https://github.com/chaunceygardiner/weewx-loopdata/releases/latest/download/weewx-loopdata.zip).
 
 1. Run the following command.
 
