@@ -101,7 +101,10 @@ with the 3-hour trend drawn as an arc (chevron showing the direction of
 travel), rain and rain-rate dials that rescale themselves on a big day,
 UV, solar radiation and air quality (weewx-purple's pm2_5_aqi) -- in a few
 hundred lines of dependency-free javascript to crib from, replacing the
-old tables page.  Gauges for observations the station does not report
+old tables page.  The gauges scale with the window: the engine draws in a
+240-unit coordinate system stretched to the css size, so geometry and
+fonts grow together on a wide display (faces cap at 480px).  Gauges for
+observations the station does not report
 (UV/radiation/air quality without the sensor, feels-like without appTemp)
 hide themselves and reappear if the field shows up.  The .raw fields drive
 the geometry, report-formatted fields supply every readout, and unit.label

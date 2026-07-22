@@ -120,7 +120,10 @@
   var RAD_SCALE = { min: 0, max: 1200, major: 300, minor: 60, dec: 0 };
   var AQI_SCALE = { min: 0, max: 300, major: 50, minor: 10, dec: 0 };
 
-  // Crisp canvas on hi-dpi displays: scale the backing store, draw in css px.
+  // Resolution-independent canvases: CSS decides the displayed size, the
+  // backing store matches it at device resolution, and all drawing happens
+  // in a 240-unit coordinate system so geometry and fonts scale together.
+  var LOGICAL = 240;
   var ctxs = null;
   function context(id) {
     var canvas = document.getElementById(id);
@@ -128,16 +131,19 @@
       return null;
     }
     var dpr = window.devicePixelRatio || 1;
-    var w = canvas.width, h = canvas.height;
-    canvas.style.width = w + 'px';
-    canvas.style.height = h + 'px';
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
+    var size = canvas.clientWidth || LOGICAL;
+    canvas.width = size * dpr;
+    canvas.height = size * dpr;
     var ctx = canvas.getContext('2d');
-    ctx.scale(dpr, dpr);
-    ctx.w = w; ctx.h = h;
+    ctx.scale(size * dpr / LOGICAL, size * dpr / LOGICAL);
+    ctx.w = LOGICAL; ctx.h = LOGICAL;
+    ctx.cssSize = size;
+    ctx.canvas_el = canvas;
     return ctx;
   }
+  // Re-initialize on resize so the backing stores match the new displayed
+  // size (the next update redraws everything anyway).
+  window.addEventListener('resize', function () { ctxs = null; });
   function initCanvases() {
     if (ctxs !== null) {
       return true;
@@ -392,8 +398,11 @@
   // ---- The NOAA windrose: petals by direction, stacked by speed band. ------
   function drawRose(ctx, rose) {
     var W = ctx.w, H = ctx.h, cx = W / 2, cy = H / 2;
-    var rFace = Math.min(W, H) / 2 - 12;
-    var rMax = rFace - 22;                         // room for compass letters
+    // The rose's disc fills its face, so match the face to the dials'
+    // track ring (12 units inside their face) or the rose reads bigger;
+    // the compass letters sit outside the face in the reclaimed margin.
+    var rFace = Math.min(W, H) / 2 - 24;
+    var rMax = rFace - 8;
     var rCalm = 22;
     ctx.clearRect(0, 0, W, H);
     face(ctx, cx, cy, rFace);
@@ -446,14 +455,14 @@
       }
     }
 
-    // Compass letters at the rim.
+    // Compass letters just outside the face.
     ctx.font = '600 11px ' + SANS;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ['N', 'E', 'S', 'W'].forEach(function (d, i) {
       var a = rad(i * 90 - 90);
       ctx.fillStyle = i === 0 ? C.ink : C.muted;
-      ctx.fillText(d, cx + (rMax + 12) * Math.cos(a), cy + (rMax + 12) * Math.sin(a));
+      ctx.fillText(d, cx + (rFace + 12) * Math.cos(a), cy + (rFace + 12) * Math.sin(a));
     });
 
     // Calm share, center.
@@ -497,6 +506,12 @@
   }
 
   function updateGauges(result) {
+    // If layout has changed the displayed size since the backing stores
+    // were built (late layout, rotation), rebuild them at the new size.
+    if (ctxs !== null && ctxs.rose !== null &&
+        Math.abs(ctxs.rose.canvas_el.clientWidth - ctxs.rose.cssSize) > 2) {
+      ctxs = null;
+    }
     if (!initCanvases()) {
       return;
     }
