@@ -67,9 +67,14 @@ if weewx.__version__ < "4":
 windrun_bucket_suffixes: List[str] = [ 'N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
                                        'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW' ]
 
-# Set up windrun_<dir> observation types.
-for suffix in windrun_bucket_suffixes:
-    weewx.units.obs_group_dict['windrun_%s' % suffix] = 'group_distance'
+# The 'windrose' obstype: a NOAA-style rose accumulated per period as 16
+# compass bins (windrun_bucket_suffixes order, N clockwise) by N speed bands.
+WINDROSE_BINS: int = len(windrun_bucket_suffixes)
+
+# Default band edges for windrose, in meter_per_second: the classic
+# WRPLOT/NOAA bands.  The first edge doubles as the calm threshold.
+# [LoopData] windrose_bands overrides, in the target report's windSpeed unit.
+WINDROSE_DEFAULT_BANDS_MPS: List[float] = [0.5, 2.1, 3.6, 5.7, 8.8, 11.1]
 
 def reraise_if_terminate(e: BaseException) -> None:
     """weewxd stops by raising Terminate from its SIGTERM signal handler --
@@ -169,6 +174,9 @@ class Configuration:
     obstypes                 : ObsTypes
     baro_trend_descs         : Any # Dict[BarometerTrend, str]
     almanac_fields           : List[AlmanacField] = dataclass_field(default_factory=list)
+    windrose_bands           : List[float] = dataclass_field(default_factory=list) # band edges, target report windSpeed units
+    windrose_span_periods    : Set[str] = dataclass_field(default_factory=set)
+    windrose_continuous_periods : Set[str] = dataclass_field(default_factory=set)
     latitude                 : float = 0.0 # station latitude in decimal degrees
     longitude                : float = 0.0 # station longitude in decimal degrees
     altitude_m               : float = 0.0 # station altitude in meters
@@ -232,6 +240,10 @@ FIRSTLAST_AGGS: Dict[str, Callable[[Any, Any], Any]] = {
 # hand-listed.  parse_cname validates against this set.
 AGG_TYPES: FrozenSet[str] = (
     frozenset(SCALAR_AGGS) | frozenset(VEC_AGGS) | frozenset(FIRSTLAST_AGGS))
+
+# windrose has its own aggregate set: projections of a WindRoseAccum's cells
+# (see LoopProcessor.add_windrose_obstype), not stats-table extractors.
+WINDROSE_AGG_TYPES: FrozenSet[str] = frozenset(('sum', 'time', 'banded', 'calm'))
 
 # ===============================================================================
 #                          Format-spec renderers
@@ -1087,6 +1099,139 @@ def get_add_function(obs_type):
     # If we don't know this nickname, then fail hard with a KeyError
     return ADD_FUNCTIONS[add_nickname]
 
+# ===============================================================================
+#                             WindRose accumulators
+# ===============================================================================
+
+@dataclass
+class WindRoseBanding:
+    """Banding parameters shared by every WindRoseAccum, in the ACCUMULATORS'
+    unit system: the band edges (windSpeed units, ascending; edges[0] doubles
+    as the calm threshold) and the divisor turning windSpeed x seconds into
+    the unit system's distance unit (WXXTypes.calc_windrun parity:
+    US mph*s/3600 -> miles, METRIC km/h*s/3600 -> km, METRICWX m/s*s/1000 -> km)."""
+    unit_system         : int
+    edges               : List[float]
+    seconds_per_distance: float
+
+    def classify(self, wind_speed: float, wind_dir: Optional[float]) -> Tuple[int, int]:
+        """(bin, band) for a sample; (-1, -1) for calm -- speed below the calm
+        threshold, or no wind direction (a vane reading means nothing then)."""
+        band = -1
+        for edge in self.edges:
+            if wind_speed < edge:
+                break
+            band += 1
+        if band < 0 or wind_dir is None:
+            return -1, -1
+        return LoopProcessor.get_windrun_bucket(wind_dir), band
+
+    def distance(self, wind_speed: float, seconds: float) -> float:
+        return wind_speed * seconds / self.seconds_per_distance
+
+class WindRoseAccum:
+    """NOAA-style windrose accumulator: 16 compass bins x N speed bands, each
+    cell holding seconds and distance (sum of speed*dt), plus a directionless
+    calm cell (seconds).  Every windrose field is a projection of these cells:
+    .banded (the seconds matrix), .time (per-bin seconds), .sum (per-bin
+    distance -- windrun parity), .calm.  Deliberately OUTSIDE the weewx.accum
+    machinery: windrose is not a packet obstype, so nothing is registered in
+    obs_group_dict and no keys are injected into packets."""
+
+    def __init__(self, banding: WindRoseBanding) -> None:
+        self.banding = banding
+        self.reset()
+
+    def reset(self) -> None:
+        n_bands = len(self.banding.edges)
+        self.time_bins = [[0.0] * n_bands for _ in range(WINDROSE_BINS)]
+        self.dist_bins = [[0.0] * n_bands for _ in range(WINDROSE_BINS)]
+        self.calm_seconds = 0.0
+
+    def _credit(self, bkt: int, band: int, seconds: float, dist: float) -> None:
+        """Add (or, negated, subtract) one sample's contribution.  bkt -1 is
+        the calm cell: seconds only -- sub-threshold distance is dropped, it
+        has no usable direction to attribute it to."""
+        if bkt < 0:
+            self.calm_seconds += seconds
+        else:
+            self.time_bins[bkt][band] += seconds
+            self.dist_bins[bkt][band] += dist
+
+    def _sample(self, wind_speed: float, wind_dir: Optional[float],
+            weight: float) -> Tuple[int, int, float]:
+        bkt, band = self.banding.classify(wind_speed, wind_dir)
+        dist = 0.0 if bkt < 0 else self.banding.distance(wind_speed, weight)
+        return bkt, band, dist
+
+    def add(self, ts: int, wind_speed: float, wind_dir: Optional[float],
+            weight: float) -> None:
+        raise NotImplementedError
+
+    def bin_times(self) -> List[float]:
+        return [sum(bands) for bands in self.time_bins]
+
+    def bin_distances(self) -> List[float]:
+        return [sum(bands) for bands in self.dist_bins]
+
+class WindRoseSpanAccum(WindRoseAccum):
+    """Windrose over a WeeWX span period (hour/day/week/.../alltime).  Cells
+    only grow; a packet outside the span resets to the packet's span (no
+    OutOfSpan dance -- there are no merged stats to rebuild).  alltime
+    (span_fn None) never resets."""
+
+    def __init__(self, banding: WindRoseBanding,
+            span_fn: Optional[Callable[[int], weeutil.weeutil.TimeSpan]],
+            ts: int) -> None:
+        super().__init__(banding)
+        self.span_fn = span_fn
+        self.timespan: Optional[weeutil.weeutil.TimeSpan] = \
+            span_fn(ts) if span_fn is not None else None
+
+    def add(self, ts: int, wind_speed: float, wind_dir: Optional[float],
+            weight: float) -> None:
+        if self.timespan is not None and not self.timespan.includesArchiveTime(ts):
+            assert self.span_fn is not None
+            self.timespan = self.span_fn(ts)
+            self.reset()
+        bkt, band, dist = self._sample(wind_speed, wind_dir, weight)
+        self._credit(bkt, band, weight, dist)
+
+@dataclass
+class WindRoseDebit:
+    expiration: float
+    bkt       : int
+    band      : int
+    seconds   : float
+    dist      : float
+
+class WindRoseContinuousAccum(WindRoseAccum):
+    """Windrose over a rolling timelength window: every credit is also queued
+    as a future debit (the ContinuousScalarStats pattern) and
+    trimExpiredEntries subtracts contributions that age out."""
+
+    def __init__(self, banding: WindRoseBanding, timelength: int) -> None:
+        super().__init__(banding)
+        self.timelength = timelength
+        self.future_debits: Deque[WindRoseDebit] = deque()
+
+    def add(self, ts: int, wind_speed: float, wind_dir: Optional[float],
+            weight: float) -> None:
+        bkt, band, dist = self._sample(wind_speed, wind_dir, weight)
+        self._credit(bkt, band, weight, dist)
+        self.future_debits.append(WindRoseDebit(
+            expiration = ts + self.timelength,
+            bkt        = bkt,
+            band       = band,
+            seconds    = weight,
+            dist       = dist))
+        self.trimExpiredEntries(ts)
+
+    def trimExpiredEntries(self, ts: float) -> None:
+        while len(self.future_debits) > 0 and self.future_debits[0].expiration <= ts:
+            debit = self.future_debits.popleft()
+            self._credit(debit.bkt, debit.band, -debit.seconds, -debit.dist)
+
 @dataclass
 class Accumulators:
     alltime_accum        : Optional[weewx.accum.Accum]
@@ -1097,6 +1242,8 @@ class Accumulators:
     day_accum            : weewx.accum.Accum
     hour_accum           : Optional[weewx.accum.Accum]
     continuous           : Dict[str, ContinuousAccum] # e.g., continuous_accums['24h'], or ['trend']
+    windrose_span        : Dict[str, WindRoseSpanAccum] = dataclass_field(default_factory=dict)
+    windrose_continuous  : Dict[str, WindRoseContinuousAccum] = dataclass_field(default_factory=dict)
 
 class BarometerTrend(Enum):
     RISING_VERY_RAPIDLY  =  4
@@ -1128,7 +1275,6 @@ class LoopData(StdService):
             raise Exception("Python 3 is required for the loopdata plugin.")
 
         self.loop_processor_started = False
-        self.day_packets: List[Dict[str, Any]] = []
 
         station_dict             = config_dict.get('Station', {})
         std_archive_dict         = config_dict.get('StdArchive', {})
@@ -1148,8 +1294,6 @@ class LoopData(StdService):
         unit_system = dbm.std_unit_system
         if unit_system is None:
             unit_system = weewx.units.unit_constants[self.config_dict['StdConvert'].get('target_unit', 'US').upper()]
-        # Get the column names of the archive table.
-        self.archive_columns: List[str] = dbm.connection.columnsOf('archive')
 
         # Get a target report dictionary we can use for converting units and formatting.
         target_report = formatting_spec_dict.get('target_report', 'LoopDataReport')
@@ -1174,9 +1318,20 @@ class LoopData(StdService):
         # Get [possibly localized] strings for trend.barometer.desc
         baro_trend_descs = LoopData.construct_baro_trend_descs(baro_trend_trans_dict)
 
+        formatter = weewx.units.Formatter.fromSkinDict(target_report_dict)
+        converter = weewx.units.Converter.fromSkinDict(target_report_dict)
+
         # Process fields line of LoopData section.
         specified_fields = include_spec_dict.get('fields', [])
         (fields_to_include, obstypes) = LoopData.get_fields_to_include(specified_fields)
+
+        # windrose: the band edges ([LoopData] windrose_bands, in the target
+        # report's windSpeed unit; default WRPLOT classic) and the periods that
+        # carry a windrose accumulator.
+        windrose_bands = LoopData.parse_windrose_bands(
+            loop_config_dict.get('windrose_bands'), converter)
+        windrose_span_periods, windrose_continuous_periods = \
+            LoopData.get_windrose_periods(fields_to_include)
 
         # Almanac fields (almanac.sunrise, almanac(horizon=-6).sun(use_center=1).rise, ...)
         # are evaluated against weewx.almanac rather than the loop packet.
@@ -1216,8 +1371,8 @@ class LoopData(StdService):
             loop_frequency           = loop_frequency,
             specified_fields         = specified_fields,
             fields_to_include        = fields_to_include,
-            formatter                = weewx.units.Formatter.fromSkinDict(target_report_dict),
-            converter                = weewx.units.Converter.fromSkinDict(target_report_dict),
+            formatter                = formatter,
+            converter                = converter,
             tmpname                  = tmp.name,
             enable                   = to_bool(rsync_spec_dict.get('enable')),
             remote_server            = rsync_spec_dict.get('remote_server'),
@@ -1236,6 +1391,9 @@ class LoopData(StdService):
             obstypes                 = obstypes,
             baro_trend_descs         = baro_trend_descs,
             almanac_fields           = almanac_fields,
+            windrose_bands           = windrose_bands,
+            windrose_span_periods    = windrose_span_periods,
+            windrose_continuous_periods = windrose_continuous_periods,
             latitude                 = engine.stn_info.latitude_f,
             longitude                = engine.stn_info.longitude_f,
             altitude_m               = altitude_m if altitude_m is not None else 0.0,
@@ -1398,6 +1556,13 @@ class LoopData(StdService):
         period_obstypes: Set[str] = set()
         for cname in fields_to_include:
             if cname.period == period:
+                if cname.obstype == 'windrose':
+                    # windrose rides its own accumulators (WindRoseAccum), not
+                    # the period accums; only the observations it consumes
+                    # must survive pruning into the packet.
+                    period_obstypes.add('windSpeed')
+                    period_obstypes.add('windDir')
+                    continue
                 period_obstypes.add(cname.obstype)
                 if cname.obstype == 'wind':
                     period_obstypes.add('windSpeed')
@@ -1482,37 +1647,6 @@ class LoopData(StdService):
         self.loop_processor_started = True
 
         try:
-            binder = weewx.manager.DBBinder(self.config_dict)
-            binding = self.config_dict.get('StdReport')['data_binding']
-            dbm = binder.get_manager(binding)
-
-            # Get archive packets to prime accumulators.  First find earliest
-            # record we need to fetch.
-
-            # Fetch them just once with the greatest time period.
-            now = time.time()
-
-            # We want the earliest time needed.
-            start_of_day: int = weeutil.weeutil.startOfDay(now)
-            log.debug('Earliest time selected is %s' % timestamp_to_string(start_of_day))
-
-            # Fetch the records.
-            start = time.time()
-            archive_pkts: List[Dict[str, Any]] = LoopData.get_archive_packets(
-                dbm, self.archive_columns, start_of_day)
-
-            # Save packets as appropriate.
-            pkt_count: int = 0
-            for pkt in archive_pkts:
-                pkt_time = pkt['dateTime']
-                if 'windrun' in pkt and 'windDir' in pkt and pkt['windDir'] is not None:
-                    bkt = LoopProcessor.get_windrun_bucket(pkt['windDir'])
-                    pkt['windrun_%s' % windrun_bucket_suffixes[bkt]] = pkt['windrun']
-                if len(self.cfg.obstypes.day) > 0 and pkt_time >= start_of_day:
-                    self.day_packets.append(pkt)
-                pkt_count += 1
-            log.debug('Collected %d archive packets in %f seconds.' % (pkt_count, time.time() - start))
-
             # accumulator_payload_sent is used to only create accumulators on first new_loop packet
             self.accumulator_payload_sent = False
             lp: LoopProcessor = LoopProcessor(self.cfg)
@@ -1585,15 +1719,6 @@ class LoopData(StdService):
             day_accum = weewx.accum.Accum(timespan, unit_system=self.cfg.unit_system)
             for k in day_summary:
                 day_accum.set_stats(k, day_summary[k].getStatsTuple())
-            # Need to add the windrun_<bucket> accumulators.
-            for pkt in self.day_packets:
-                if day_accum.timespan.includesArchiveTime(pkt['dateTime']):
-                    for suffix in windrun_bucket_suffixes:
-                        obs = 'windrun_%s' % suffix
-                        if obs in pkt:
-                            day_accum.add_value(pkt, obs, True, pkt['interval'] * 60)
-                            continue
-            self.day_packets = []
 
             # Create fixed accums
             alltime_accum, self.cfg.obstypes.alltime = LoopData.create_alltime_accum(
@@ -1626,15 +1751,22 @@ class LoopData(StdService):
                 if cont_accum:
                     continuous_accums[per], self.cfg.obstypes.continuous[per]  = cont_accum, obstypes
 
+            # Create windrose accums (span periods seeded by one SQL GROUP BY
+            # each, continuous periods by archive replay).
+            windrose_span_accums, windrose_continuous_accums = \
+                LoopData.create_windrose_accums(self.cfg, dbm, pkt_time)
+
             self.cfg.queue.put(Accumulators(
-                alltime_accum  = alltime_accum,
-                rainyear_accum = rainyear_accum,
-                year_accum     = year_accum,
-                month_accum    = month_accum,
-                week_accum     = week_accum,
-                day_accum      = day_accum,
-                hour_accum     = hour_accum,
-                continuous     = continuous_accums))
+                alltime_accum       = alltime_accum,
+                rainyear_accum      = rainyear_accum,
+                year_accum          = year_accum,
+                month_accum         = month_accum,
+                week_accum          = week_accum,
+                day_accum           = day_accum,
+                hour_accum          = hour_accum,
+                continuous          = continuous_accums,
+                windrose_span       = windrose_span_accums,
+                windrose_continuous = windrose_continuous_accums))
         self.cfg.queue.put(event)
 
     @staticmethod
@@ -1831,6 +1963,184 @@ class LoopData(StdService):
         return accum, valid_obstypes
 
     @staticmethod
+    def parse_windrose_bands(spec: Any,
+            converter: weewx.units.Converter) -> List[float]:
+        """Band edges for windrose, in the target report's windSpeed unit.
+        spec is the [LoopData] windrose_bands value (a list, or a string for a
+        single edge) or None; an invalid spec logs and falls back to the
+        default: the classic WRPLOT/NOAA bands (WINDROSE_DEFAULT_BANDS_MPS)
+        converted to the report unit and rounded to one decimal -- banding
+        applies exactly the edges the page's legend will show."""
+        tgt_unit, _ = converter.getTargetUnit('windSpeed')
+        if spec is not None:
+            try:
+                edges = [float(s) for s in ([spec] if isinstance(spec, str) else spec)]
+                if len(edges) > 0 and edges[0] >= 0.0 and \
+                        all(a < b for a, b in zip(edges, edges[1:])):
+                    return edges
+                log.error('Ignoring windrose_bands (need ascending, non-negative edges): %s' % (spec,))
+            except (TypeError, ValueError):
+                log.error('Ignoring non-numeric windrose_bands: %s' % (spec,))
+        return [round(weewx.units.convert(
+                (edge, 'meter_per_second', 'group_speed'), tgt_unit)[0], 1)
+            for edge in WINDROSE_DEFAULT_BANDS_MPS]
+
+    @staticmethod
+    def get_windrose_periods(fields_to_include: Set[CheetahName]
+            ) -> Tuple[Set[str], Set[str]]:
+        """The periods needing a windrose accumulator: (span, continuous)."""
+        span_periods: Set[str] = set()
+        continuous_periods: Set[str] = set()
+        for cname in fields_to_include:
+            if cname.obstype == 'windrose' and cname.period is not None:
+                if LoopData.is_continuous_period(cname.period):
+                    continuous_periods.add(cname.period)
+                else:
+                    span_periods.add(cname.period)
+        return span_periods, continuous_periods
+
+    @staticmethod
+    def windrose_span_fn(period: str, week_start: int, rainyear_start: int
+            ) -> Optional[Callable[[int], weeutil.weeutil.TimeSpan]]:
+        """ts -> the period's span, for WindRoseSpanAccum's self-reset; None
+        for alltime (never resets)."""
+        if period == 'alltime':
+            return None
+        if period == 'hour':
+            return weeutil.weeutil.archiveHoursAgoSpan
+        if period == 'day':
+            return weeutil.weeutil.archiveDaySpan
+        if period == 'week':
+            return lambda ts: weeutil.weeutil.archiveWeekSpan(ts, week_start)
+        if period == 'month':
+            return weeutil.weeutil.archiveMonthSpan
+        if period == 'year':
+            return weeutil.weeutil.archiveYearSpan
+        assert period == 'rainyear'
+        return lambda ts: weeutil.weeutil.archiveRainYearSpan(ts, rainyear_start)
+
+    @staticmethod
+    def create_windrose_banding(cfg: 'Configuration') -> WindRoseBanding:
+        """cfg.windrose_bands is in the target report's windSpeed unit;
+        banding runs in the accumulators' unit system."""
+        tgt_unit, _ = cfg.converter.getTargetUnit('windSpeed')
+        accum_speed_unit = weewx.units.getStandardUnitType(cfg.unit_system, 'windSpeed')[0]
+        return WindRoseBanding(
+            unit_system          = cfg.unit_system,
+            edges                = [weewx.units.convert(
+                (edge, tgt_unit, 'group_speed'), accum_speed_unit)[0]
+                for edge in cfg.windrose_bands],
+            seconds_per_distance = 1000.0 if cfg.unit_system == weewx.METRICWX else 3600.0)
+
+    @staticmethod
+    def create_windrose_accums(cfg: 'Configuration', dbm, pkt_time: int
+            ) -> Tuple[Dict[str, WindRoseSpanAccum], Dict[str, WindRoseContinuousAccum]]:
+        """Create and seed the windrose accumulators for the configured
+        periods.  Called from new_loop, after cfg.unit_system is final (the
+        day accumulator may have overridden it)."""
+        if len(cfg.windrose_span_periods) == 0 and len(cfg.windrose_continuous_periods) == 0:
+            return {}, {}
+
+        banding = LoopData.create_windrose_banding(cfg)
+        now = time.time()
+        span_accums: Dict[str, WindRoseSpanAccum] = {}
+        for period in cfg.windrose_span_periods:
+            accum = WindRoseSpanAccum(banding,
+                LoopData.windrose_span_fn(period, cfg.week_start, cfg.rainyear_start),
+                pkt_time)
+            earliest = accum.timespan.start if accum.timespan is not None else 0
+            # Reject future-dated records, as the other accum seeding does.
+            latest = int(now) + cfg.archive_delay
+            if accum.timespan is not None:
+                latest = min(latest, accum.timespan.stop)
+            start = time.time()
+            LoopData.seed_windrose_span_accum(accum, dbm, earliest, latest)
+            log.debug('Seeded windrose(%s) accum in %f seconds.' % (period, time.time() - start))
+            span_accums[period] = accum
+
+        continuous_accums: Dict[str, WindRoseContinuousAccum] = {}
+        for period in cfg.windrose_continuous_periods:
+            timelength = int(period[:-1]) * (3600 if period.endswith('h') else 60)
+            continuous_accums[period] = WindRoseContinuousAccum(banding, timelength)
+        LoopData.seed_windrose_continuous_accums(
+            continuous_accums, dbm, cfg.unit_system, now, cfg.archive_delay)
+
+        return span_accums, continuous_accums
+
+    @staticmethod
+    def seed_windrose_span_accum(accum: WindRoseSpanAccum, dbm,
+            earliest: int, latest: int) -> None:
+        """Fill a span windrose from the archive with one GROUP BY: rows
+        bucket by compass bin (calm rows -- windSpeed below the calm threshold
+        in db units, or null windDir -- to -1) and by speed band, summing
+        seconds and windSpeed*seconds.  The per-cell sums convert to the
+        accumulator's unit system afterward, so even alltime stays a single
+        SQL aggregate scan.  CASE ladders, not CAST/FLOOR: portable across
+        sqlite and MySQL."""
+        db_unit_system = dbm.std_unit_system
+        if db_unit_system is None:
+            # Brand new database: nothing to seed.
+            return
+        banding = accum.banding
+        db_speed_unit = weewx.units.getStandardUnitType(db_unit_system, 'windSpeed')[0]
+        accum_speed_unit = weewx.units.getStandardUnitType(banding.unit_system, 'windSpeed')[0]
+        db_edges = [weewx.units.convert(
+            (edge, accum_speed_unit, 'group_speed'), db_speed_unit)[0]
+            for edge in banding.edges]
+        db_dist_unit = weewx.units.getStandardUnitType(db_unit_system, 'windrun')[0]
+        accum_dist_unit = weewx.units.getStandardUnitType(banding.unit_system, 'windrun')[0]
+        db_divisor = 1000.0 if db_unit_system == weewx.METRICWX else 3600.0
+
+        # Compass bins per get_windrun_bucket: bin i covers
+        # [i*22.5 - 11.25, i*22.5 + 11.25), with >= 348.75 wrapping to N.
+        bkt_expr = 'CASE WHEN windDir IS NULL OR windSpeed < %.9f THEN -1' % db_edges[0]
+        for i in range(WINDROSE_BINS):
+            bkt_expr += ' WHEN windDir < %.9f THEN %d' % (11.25 + i * 22.5, i)
+        bkt_expr += ' ELSE 0 END'
+        band_expr = 'CASE'
+        for i in range(len(db_edges) - 1, 0, -1):
+            band_expr += ' WHEN windSpeed >= %.9f THEN %d' % (db_edges[i], i)
+        band_expr += ' ELSE 0 END'
+        sql = ('SELECT %s AS bkt, %s AS band,'
+               ' SUM(`interval` * 60.0), SUM(windSpeed * `interval` * 60.0)'
+               ' FROM archive'
+               ' WHERE dateTime > %d AND dateTime <= %d AND windSpeed IS NOT NULL'
+               ' GROUP BY bkt, band' % (bkt_expr, band_expr, earliest, latest))
+        for bkt, band, seconds, speed_seconds in dbm.genSql(sql):
+            if seconds is None:
+                continue
+            dist = weewx.units.convert(
+                (speed_seconds / db_divisor, db_dist_unit, 'group_distance'),
+                accum_dist_unit)[0]
+            accum._credit(bkt, band, seconds, dist)
+
+    @staticmethod
+    def seed_windrose_continuous_accums(
+            accums: Dict[str, WindRoseContinuousAccum], dbm, unit_system: int,
+            now: float, archive_delay: int) -> None:
+        """Prime the continuous windroses by replaying archive records (a
+        rolling window must expire its seed later, so aggregated seeding
+        won't do -- every contribution needs its timestamp)."""
+        if len(accums) == 0:
+            return
+        earliest = int(now) - max(a.timelength for a in accums.values())
+        archive_columns: List[str] = dbm.connection.columnsOf('archive')
+        for pkt in LoopData.get_archive_packets(dbm, archive_columns, earliest):
+            if pkt['dateTime'] >= now + archive_delay:
+                log.warning('Ignoring future-dated archive record: %s'
+                    % timestamp_to_string(pkt['dateTime']))
+                continue
+            cvt_pkt = weewx.units.StdUnitConverters[unit_system].convertDict(pkt)
+            wind_speed = cvt_pkt.get('windSpeed')
+            if wind_speed is None:
+                continue
+            weight = to_float(pkt['interval']) * 60.0
+            for accum in accums.values():
+                if pkt['dateTime'] > now - accum.timelength:
+                    accum.add(pkt['dateTime'], wind_speed,
+                        cvt_pkt.get('windDir'), weight)
+
+    @staticmethod
     def parse_cname(field: str) -> Optional[CheetahName]:
         valid_prefixes    : List[str] = [ 'unit' ]
         valid_prefixes2   : List[str] = [ 'label' ]
@@ -1877,8 +2187,12 @@ class LoopData(StdService):
             if len(segment) <= next_seg:
                 return None
             # AGG_TYPES is the union of the dispatch tables (SCALAR_AGGS et
-            # al.), so an aggregate can only parse if the dispatch implements it.
-            if segment[next_seg] not in AGG_TYPES:
+            # al.), so an aggregate can only parse if the dispatch implements
+            # it.  windrose has its own aggregate set (projections of a
+            # WindRoseAccum, dispatched in add_windrose_obstype).
+            valid_aggs: FrozenSet[str] = \
+                WINDROSE_AGG_TYPES if obstype == 'windrose' else AGG_TYPES
+            if segment[next_seg] not in valid_aggs:
                 return None
             agg_type = segment[next_seg]
             next_seg += 1
@@ -1923,10 +2237,19 @@ class LoopData(StdService):
                     format_spec, format_kwargs = parsed_call
                     next_seg += 1
 
-        # windrun_<dir> is not supported for week, month, year, rainyear and alltime
-        if obstype.startswith('windrun_') and (
-                period == 'week' or period == 'month' or period == 'year' or period == 'rainyear' or period == 'alltime'):
-            return None
+        # windrose: not defined for current (a single sample is not a rose) or
+        # trend (a delta of a histogram is meaningless).  Unit override and
+        # .formatted apply only to .sum -- the other projections are seconds;
+        # no call-syntax specs and no compass/baro specs (arrays, not scalars).
+        if obstype == 'windrose' and prefix is None:
+            if period == 'current' or period == 'trend':
+                return None
+            if format_kwargs is not None:
+                return None
+            if format_spec is not None and format_spec not in ('raw', 'formatted'):
+                return None
+            if agg_type != 'sum' and (unit is not None or format_spec == 'formatted'):
+                return None
 
         if len(segment) > next_seg:
             # There is more.  This is unexpected.
@@ -2401,9 +2724,6 @@ class LoopProcessor:
                 try:
                     windrun_val = weewx.wxxtypes.WXXTypes.calc_windrun('windrun', pkt)
                     pkt['windrun'] = windrun_val[0]
-                    if windrun_val[0] > 0.00 and 'windDir' in pkt and pkt['windDir'] is not None:
-                        bkt = LoopProcessor.get_windrun_bucket(pkt['windDir'])
-                        pkt['windrun_%s' % windrun_bucket_suffixes[bkt]] = windrun_val[0]
                 except weewx.CannotCalculate:
                     log.info('Cannot calculate windrun.')
                     pass
@@ -2522,6 +2842,19 @@ class LoopProcessor:
             pruned_pkt = LoopProcessor.prune_period_packet(pkt, cfg.obstypes.continuous[per])
             accums.continuous[per].addRecord(pruned_pkt, weight=cfg.loop_frequency)
 
+        # Feed the windrose accumulators straight from the converted packet --
+        # windrose is not a packet obstype and never rides the weewx.accum
+        # machinery (compute_period_obstypes keeps windSpeed/windDir alive
+        # in the packet for it).
+        if len(accums.windrose_span) > 0 or len(accums.windrose_continuous) > 0:
+            wr_speed = pkt.get('windSpeed')
+            if wr_speed is not None:
+                wr_dir = pkt.get('windDir')
+                for wr_accum in itertools.chain(
+                        accums.windrose_span.values(),
+                        accums.windrose_continuous.values()):
+                    wr_accum.add(pkt['dateTime'], wr_speed, wr_dir, cfg.loop_frequency)
+
         # Create the loopdata dictionary.
         loopdata_pkt = LoopProcessor.create_loopdata_packet(pkt, cfg, accums)
 
@@ -2540,7 +2873,10 @@ class LoopProcessor:
         if cname.prefix2 == 'label':
             # agg_type not allowed
             # tgt_type, tgt_group = converter.getTargetUnit(cname.obstype, agg_type=cname.agg_type)
-            tgt_type, tgt_group = converter.getTargetUnit(cname.obstype)
+            # windrose is loopdata's own composite; its .sum values are
+            # distances (WeeWX's windrun group), so the label is windrun's.
+            obstype = 'windrun' if cname.obstype == 'windrose' else cname.obstype
+            tgt_type, tgt_group = converter.getTargetUnit(obstype)
             loopdata_pkt[cname.field] = formatter.get_label_string(tgt_type)
 
     @staticmethod
@@ -2702,6 +3038,66 @@ class LoopProcessor:
             loopdata_pkt, formatter, time_context=time_context)
 
     @staticmethod
+    def add_windrose_obstype(cname: CheetahName, accums: Accumulators,
+            loopdata_pkt: Dict[str, Any], converter: weewx.units.Converter,
+            formatter: weewx.units.Formatter) -> None:
+        """Render a windrose field: a projection of the period's
+        WindRoseAccum.  .calm is a scalar (seconds); .time a 16-array of
+        seconds; .banded the 16xN seconds matrix; .sum a 16-array of distances
+        converted to the target report's (or the override's) distance unit.
+        Arrays emit raw numbers -- charting js wants numbers -- with round(n)
+        applied per element; .formatted (sum only) emits the report-formatted
+        strings.  Bin order is windrun_bucket_suffixes (N clockwise)."""
+        # The grammar guarantees a period (the unit.label form dispatches to
+        # add_unit_obstype before this is reached).
+        assert cname.period is not None
+        accum: Optional[WindRoseAccum] = \
+            accums.windrose_span.get(cname.period) \
+            or accums.windrose_continuous.get(cname.period)
+        if accum is None:
+            log.debug('No windrose accumulator for %s, skipping %s' % (cname.period, cname.field))
+            return
+
+        def rnd(value: float) -> Any:
+            if cname.round_ndigits is None:
+                return value
+            return weeutil.weeutil.rounder(value, cname.round_ndigits)
+
+        if cname.agg_type == 'calm':
+            loopdata_pkt[cname.field] = rnd(accum.calm_seconds)
+            return
+        if cname.agg_type == 'time':
+            loopdata_pkt[cname.field] = [rnd(v) for v in accum.bin_times()]
+            return
+        if cname.agg_type == 'banded':
+            loopdata_pkt[cname.field] = \
+                [[rnd(v) for v in bands] for bands in accum.time_bins]
+            return
+
+        # sum: per-bin distance, unit-converted like any group_distance value.
+        assert cname.agg_type == 'sum'
+        src_unit = weewx.units.getStandardUnitType(
+            accum.banding.unit_system, 'windrun')[0]
+        values: List[float] = []
+        tgt_unit: Optional[str] = None
+        try:
+            for v in accum.bin_distances():
+                if cname.unit is None:
+                    tgt_value, tgt_unit, _ = converter.convert((v, src_unit, 'group_distance'))
+                else:
+                    tgt_value, tgt_unit, _ = weewx.units.convert((v, src_unit, 'group_distance'), cname.unit)
+                values.append(tgt_value)
+        except (KeyError, ValueError) as e:
+            # Unit override incompatible with group_distance.  Skip the field.
+            log.debug('%s: cannot convert windrose to %s: %s' % (cname.field, cname.unit, e))
+            return
+        if cname.format_spec == 'formatted':
+            fmt_str = formatter.get_format_string(tgt_unit)
+            loopdata_pkt[cname.field] = [fmt_str % rnd(v) for v in values]
+        else:
+            loopdata_pkt[cname.field] = [rnd(v) for v in values]
+
+    @staticmethod
     def add_trend_obstype(cname: CheetahName, accum: ContinuousAccum,
             pkt: Dict[str, Any], loopdata_pkt: Dict[str, Any], time_delta: int,
             loop_frequency: float, baro_trend_descs, converter: weewx.units.Converter,
@@ -2771,6 +3167,11 @@ class LoopProcessor:
                 LoopProcessor.add_unit_obstype(cname, loopdata_pkt, cfg.converter, cfg.formatter)
                 continue
 
+            if cname.obstype == 'windrose':
+                LoopProcessor.add_windrose_obstype(cname, accums, loopdata_pkt,
+                    cfg.converter, cfg.formatter)
+                continue
+
             if cname.period == 'current':
                 LoopProcessor.add_current_obstype(cname, pkt, loopdata_pkt, cfg.converter, cfg.formatter)
                 continue
@@ -2807,6 +3208,12 @@ class LoopProcessor:
                     else:
                         LoopProcessor.add_period_obstype(cname,  accum, loopdata_pkt, cfg.converter, cfg.formatter)
                 continue
+
+        if len(accums.windrose_span) > 0 or len(accums.windrose_continuous) > 0:
+            # Legend helper: the band edges, in the target report's windSpeed
+            # unit -- exactly the values banding applies, so a page never
+            # hardcodes them.
+            loopdata_pkt['windrose.bands'] = cfg.windrose_bands
 
         return loopdata_pkt
 

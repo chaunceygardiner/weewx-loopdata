@@ -6,26 +6,26 @@
 #    ----------------------
 #    Run from the repository root (~/software/weewx-loopdata), NOT from the
 #    tests directory.  The harness loads its config files via paths relative
-#    to the current directory (e.g. 'bin/user/tests/weewx.conf.us'), so the
+#    to the current directory (e.g. 'tests/weewx.conf.us'), so the
 #    working directory must be the repo root or every config-loading test
 #    fails with KeyError: 'StdConvert' (an empty config from a missing file).
 #
 #    Activate the weewx venv first so weewx/weeutil import.
 #
-#    Both 'bin' and 'bin/user/tests' must be on PYTHONPATH:
-#      - bin             -> resolves 'import user.loopdata'
-#      - bin/user/tests  -> resolves the packet-data modules
-#                           (cc3000_packets, ip100_packets, etc.)
+#    Both 'bin' and 'tests' must be on PYTHONPATH:
+#      - bin   -> resolves 'import user.loopdata'
+#      - tests -> resolves the packet-data modules
+#               (cc3000_packets, ip100_packets, etc.)
 #
 #    Command (uses Python's built-in unittest runner; pytest not required):
 #
 #      cd ~/software/weewx-loopdata
-#      PYTHONPATH=bin:bin/user/tests python3 bin/user/tests/test_process_packet.py
+#      PYTHONPATH=bin:tests python3 tests/test_process_packet.py
 #
 #    Add -v for per-test names, or append a test name to run just one, e.g.:
 #
-#      PYTHONPATH=bin:bin/user/tests python3 bin/user/tests/test_process_packet.py -v
-#      PYTHONPATH=bin:bin/user/tests python3 bin/user/tests/test_process_packet.py \
+#      PYTHONPATH=bin:tests python3 tests/test_process_packet.py -v
+#      PYTHONPATH=bin:tests python3 tests/test_process_packet.py \
 #          ProcessPacketTests.test_wind
 #
 """Test processing packets."""
@@ -234,20 +234,59 @@ class ProcessPacketTests(unittest.TestCase):
         cname = user.loopdata.LoopData.parse_cname('week.outTemp')
         self.assertEqual(cname, None)
 
-        cname = user.loopdata.LoopData.parse_cname('week.windrun_ENE.sum.formatted')
-        self.assertEqual(cname, None)
+        # --- windrose grammar ---
+        # Every span period accepts windrose (the old windrun_<dir> types
+        # were day/hour-only; windrose is not), as do continuous periods.
+        for period in ['hour', 'day', 'week', 'month', 'year', 'rainyear',
+                'alltime', '10m', '24h']:
+            for agg in ['sum', 'time', 'banded', 'calm']:
+                cname = user.loopdata.LoopData.parse_cname('%s.windrose.%s' % (period, agg))
+                assert cname is not None, '%s.windrose.%s should parse' % (period, agg)
+                self.assertEqual(cname.period, period)
+                self.assertEqual(cname.obstype, 'windrose')
+                self.assertEqual(cname.agg_type, agg)
 
-        cname = user.loopdata.LoopData.parse_cname('month.windrun_ENE.sum.formatted')
-        self.assertEqual(cname, None)
+        # Not defined for current (one sample is not a rose) or trend (a
+        # delta of a histogram is meaningless); an aggregate is required and
+        # must be a windrose aggregate.
+        self.assertEqual(user.loopdata.LoopData.parse_cname('current.windrose'), None)
+        self.assertEqual(user.loopdata.LoopData.parse_cname('trend.windrose'), None)
+        self.assertEqual(user.loopdata.LoopData.parse_cname('day.windrose'), None)
+        self.assertEqual(user.loopdata.LoopData.parse_cname('day.windrose.max'), None)
+        self.assertEqual(user.loopdata.LoopData.parse_cname('day.windrose.avg'), None)
+        # 'time'/'banded'/'calm' exist only for windrose.
+        self.assertEqual(user.loopdata.LoopData.parse_cname('day.outTemp.banded'), None)
+        self.assertEqual(user.loopdata.LoopData.parse_cname('day.windSpeed.calm'), None)
 
-        cname = user.loopdata.LoopData.parse_cname('year.windrun_ENE.sum.formatted')
-        self.assertEqual(cname, None)
+        # Unit override, round(n) and raw/formatted compose on .sum.
+        cname = user.loopdata.LoopData.parse_cname('day.windrose.sum.km.round(1).formatted')
+        assert cname is not None
+        self.assertEqual(cname.agg_type, 'sum')
+        self.assertEqual(cname.unit, 'km')
+        self.assertEqual(cname.round_ndigits, 1)
+        self.assertEqual(cname.format_spec, 'formatted')
+        # The seconds projections take round(n) and raw, but no unit override
+        # and no .formatted (they are not group_distance values).
+        cname = user.loopdata.LoopData.parse_cname('24h.windrose.banded.round(0)')
+        assert cname is not None
+        self.assertEqual(cname.round_ndigits, 0)
+        cname = user.loopdata.LoopData.parse_cname('day.windrose.calm.raw')
+        assert cname is not None
+        self.assertEqual(cname.format_spec, 'raw')
+        self.assertEqual(user.loopdata.LoopData.parse_cname('day.windrose.time.mile'), None)
+        self.assertEqual(user.loopdata.LoopData.parse_cname('day.windrose.time.formatted'), None)
+        self.assertEqual(user.loopdata.LoopData.parse_cname('day.windrose.calm.formatted'), None)
+        # No call-syntax specs and no compass/baro specs (arrays, not scalars).
+        self.assertEqual(user.loopdata.LoopData.parse_cname('day.windrose.sum.format("%.1f")'), None)
+        self.assertEqual(user.loopdata.LoopData.parse_cname('day.windrose.sum.ordinal_compass'), None)
+        self.assertEqual(user.loopdata.LoopData.parse_cname('day.windrose.sum.desc'), None)
 
-        cname = user.loopdata.LoopData.parse_cname('rainyear.windrun_ENE.sum.formatted')
-        self.assertEqual(cname, None)
-
-        cname = user.loopdata.LoopData.parse_cname('alltime.windrun_ENE.sum.formatted')
-        self.assertEqual(cname, None)
+        # The unit.label prefix form works (windrose distances label).
+        cname = user.loopdata.LoopData.parse_cname('unit.label.windrose')
+        assert cname is not None
+        self.assertEqual(cname.prefix, 'unit')
+        self.assertEqual(cname.prefix2, 'label')
+        self.assertEqual(cname.obstype, 'windrose')
 
         cname = user.loopdata.LoopData.parse_cname('week.outTemp.avg')
         assert cname is not None
@@ -898,6 +937,139 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(L.get_windrun_bucket(359.9), 0)
         self.assertEqual(L.get_windrun_bucket(360.0), 0)
         self.assertEqual(L.get_windrun_bucket(0.0), 0)
+
+    def test_windrose_banding(self) -> None:
+        # Spec: classify() maps (speed, dir) to (compass bin, speed band):
+        # band i covers [edges[i], edges[i+1]), the last band is unbounded,
+        # and calm -- speed below edges[0] OR no direction -- is (-1, -1).
+        # distance() is calc_windrun parity: speed * seconds / divisor.
+        WRB = user.loopdata.WindRoseBanding
+        banding = WRB(unit_system=weewx.US, edges=[1.0, 5.0, 10.0],
+                      seconds_per_distance=3600.0)
+
+        self.assertEqual(banding.classify(0.5, 90.0), (-1, -1))   # below calm threshold
+        self.assertEqual(banding.classify(12.0, None), (-1, -1))  # no direction
+        self.assertEqual(banding.classify(1.0, 90.0), (4, 0))     # edge is inclusive
+        self.assertEqual(banding.classify(4.99, 90.0), (4, 0))
+        self.assertEqual(banding.classify(5.0, 0.0), (0, 1))
+        self.assertEqual(banding.classify(30.0, 355.0), (0, 2))   # top band unbounded; N wrap
+
+        # 10 mph for 360 seconds = 1 mile.
+        self.assertAlmostEqual(banding.distance(10.0, 360.0), 1.0)
+        # METRICWX divisor: 5 m/s for 200 seconds = 1000 m = 1 km.
+        banding_mwx = WRB(unit_system=weewx.METRICWX, edges=[0.5],
+                          seconds_per_distance=1000.0)
+        self.assertAlmostEqual(banding_mwx.distance(5.0, 200.0), 1.0)
+
+    def test_parse_windrose_bands(self) -> None:
+        # Spec: [LoopData] windrose_bands is a list of ascending, non-negative
+        # edges in the target report's windSpeed unit; anything else falls
+        # back to the default -- the WRPLOT classic bands (0.5, 2.1, 3.6, 5.7,
+        # 8.8, 11.1 m/s) converted to the report unit, rounded to 1 decimal.
+        # Expected defaults computed by hand: m/s * 2.236936 (mph),
+        # m/s * 3.6 (km/h).
+        L = user.loopdata.LoopData
+        us_converter = ProcessPacketTests._get_config(
+            'us', 10800, 1, 6, []).converter
+        metric_converter = ProcessPacketTests._get_config(
+            'metric', 10800, 1, 6, []).converter
+
+        self.assertEqual(L.parse_windrose_bands(None, us_converter),
+                         [1.1, 4.7, 8.1, 12.8, 19.7, 24.8])
+        self.assertEqual(L.parse_windrose_bands(None, metric_converter),
+                         [1.8, 7.6, 13.0, 20.5, 31.7, 40.0])
+
+        # Explicit edges pass through verbatim (already in report units);
+        # ConfigObj yields a plain string for a single edge.
+        self.assertEqual(L.parse_windrose_bands(['1', '4', '8.5'], us_converter),
+                         [1.0, 4.0, 8.5])
+        self.assertEqual(L.parse_windrose_bands('5', us_converter), [5.0])
+        # A zero calm threshold is allowed (nothing is calm but null windDir).
+        self.assertEqual(L.parse_windrose_bands(['0', '5'], us_converter),
+                         [0.0, 5.0])
+
+        # Invalid: not ascending, negative, non-numeric, empty -> default.
+        default = [1.1, 4.7, 8.1, 12.8, 19.7, 24.8]
+        self.assertEqual(L.parse_windrose_bands(['5', '3'], us_converter), default)
+        self.assertEqual(L.parse_windrose_bands(['-1', '3'], us_converter), default)
+        self.assertEqual(L.parse_windrose_bands(['abc'], us_converter), default)
+        self.assertEqual(L.parse_windrose_bands([], us_converter), default)
+
+    def test_get_windrose_periods(self) -> None:
+        # windrose fields split into span periods (own accumulators, SQL
+        # seeded) and continuous periods (rolling window); the unit.label
+        # form names no period and lands in neither.
+        fields = ['day.windrose.banded', 'month.windrose.sum', 'day.windrose.calm',
+                  '30m.windrose.time', '2h.windrose.sum', 'unit.label.windrose',
+                  'day.outTemp.max']
+        (fields_to_include, _) = user.loopdata.LoopData.get_fields_to_include(fields)
+        span, continuous = user.loopdata.LoopData.get_windrose_periods(fields_to_include)
+        self.assertEqual(span, {'day', 'month'})
+        self.assertEqual(continuous, {'30m', '2h'})
+
+    def test_windrose_span_accum(self) -> None:
+        # Spec: cells accumulate seconds and distance per (bin, band); calm
+        # takes seconds only; a packet outside the span resets to the packet's
+        # span; alltime (span_fn None) never resets.
+        os.environ['TZ'] = 'America/Los_Angeles'
+        time.tzset()
+        banding = user.loopdata.WindRoseBanding(
+            unit_system=weewx.US, edges=[1.0, 5.0, 10.0], seconds_per_distance=3600.0)
+        noon = 1593630000  # 2020-07-01 12:00 PDT
+        accum = user.loopdata.WindRoseSpanAccum(
+            banding, weeutil.weeutil.archiveDaySpan, noon)
+
+        accum.add(noon, 7.2, 90.0, 500.0)        # bin 4 (E), band 1
+        accum.add(noon + 10, 0.5, 90.0, 300.0)   # calm: below threshold
+        accum.add(noon + 20, 12.0, None, 100.0)  # calm: no direction
+        self.assertAlmostEqual(accum.time_bins[4][1], 500.0)
+        self.assertAlmostEqual(accum.dist_bins[4][1], 1.0)  # 7.2 mph * 500s / 3600
+        self.assertAlmostEqual(accum.calm_seconds, 400.0)
+        self.assertAlmostEqual(accum.bin_times()[4], 500.0)
+        self.assertAlmostEqual(accum.bin_distances()[4], 1.0)
+
+        # Next local day: self-reset, then the new sample is the only content.
+        accum.add(noon + 86400, 3.0, 180.0, 200.0)  # bin 8 (S), band 0
+        self.assertAlmostEqual(accum.calm_seconds, 0.0)
+        self.assertAlmostEqual(accum.time_bins[4][1], 0.0)
+        self.assertAlmostEqual(accum.time_bins[8][0], 200.0)
+        self.assertTrue(accum.timespan.includesArchiveTime(noon + 86400))
+
+        # alltime: no span function, never resets.
+        alltime = user.loopdata.WindRoseSpanAccum(banding, None, noon)
+        alltime.add(noon, 7.2, 90.0, 500.0)
+        alltime.add(noon + 86400 * 400, 3.0, 180.0, 200.0)
+        self.assertAlmostEqual(alltime.time_bins[4][1], 500.0)
+        self.assertAlmostEqual(alltime.time_bins[8][0], 200.0)
+
+    def test_windrose_continuous_accum(self) -> None:
+        # Spec: a rolling window; every credit expires timelength seconds
+        # after its timestamp (expiration <= now trims, the
+        # ContinuousScalarStats convention), including calm credits.
+        banding = user.loopdata.WindRoseBanding(
+            unit_system=weewx.US, edges=[1.0, 5.0, 10.0], seconds_per_distance=3600.0)
+        accum = user.loopdata.WindRoseContinuousAccum(banding, 600)
+
+        accum.add(1000, 7.2, 90.0, 500.0)   # bin 4, band 1; expires at 1600
+        accum.add(1300, 0.5, 90.0, 300.0)   # calm; expires at 1900
+        accum.add(1599, 3.0, 90.0, 100.0)   # bin 4, band 0; expires at 2199
+        self.assertAlmostEqual(accum.time_bins[4][1], 500.0)
+        self.assertAlmostEqual(accum.dist_bins[4][1], 1.0)
+        self.assertAlmostEqual(accum.time_bins[4][0], 100.0)
+        self.assertAlmostEqual(accum.calm_seconds, 300.0)
+        self.assertEqual(len(accum.future_debits), 3)
+
+        # At 1600 the first credit ages out; the others survive.
+        accum.add(1600, 20.0, 355.0, 100.0)  # bin 0, band 2
+        self.assertAlmostEqual(accum.time_bins[4][1], 0.0)
+        self.assertAlmostEqual(accum.dist_bins[4][1], 0.0)
+        self.assertAlmostEqual(accum.calm_seconds, 300.0)
+        self.assertAlmostEqual(accum.time_bins[0][2], 100.0)
+
+        # At 2000 the calm credit has aged out too.
+        accum.trimExpiredEntries(2000)
+        self.assertAlmostEqual(accum.calm_seconds, 0.0)
+        self.assertAlmostEqual(accum.time_bins[4][0], 100.0)  # expires at 2199
 
     def test_massage_near_zero(self) -> None:
         # Values within +/-1e-10 of zero are clamped to exactly 0.0; everything
@@ -6035,15 +6207,30 @@ class ProcessPacketTests(unittest.TestCase):
                 timelength = int(per[:-1])*60
             accums.continuous[per]   = user.loopdata.ContinuousAccum(timelength, cfg.unit_system)
 
+        # Make windrose accums (unseeded; seeding is create_windrose_accums'
+        # job and needs a database).
+        if len(cfg.windrose_span_periods) > 0 or len(cfg.windrose_continuous_periods) > 0:
+            banding = user.loopdata.LoopData.create_windrose_banding(cfg)
+            for per in cfg.windrose_span_periods:
+                accums.windrose_span[per] = user.loopdata.WindRoseSpanAccum(
+                    banding, user.loopdata.LoopData.windrose_span_fn(
+                        per, cfg.week_start, cfg.rainyear_start), pkt_time)
+            for per in cfg.windrose_continuous_periods:
+                timelength = int(per[:-1]) * (3600 if per.endswith('h') else 60)
+                accums.windrose_continuous[per] = user.loopdata.WindRoseContinuousAccum(
+                    banding, timelength)
+
         return accums
 
     @staticmethod
     def _get_config(config_dict_kind, time_delta, rainyear_start, week_start, specified_fields) -> user.loopdata.Configuration:
         os.environ['TZ'] = 'America/Los_Angeles'
-        config_dict: Dict[str, Any] = configobj.ConfigObj('bin/user/tests/weewx.conf.%s' % config_dict_kind, encoding='utf-8')
+        config_dict: Dict[str, Any] = configobj.ConfigObj('tests/weewx.conf.%s' % config_dict_kind, encoding='utf-8')
         unit_system: int = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
         std_archive_dict: Dict[str, Any] = config_dict.get('StdArchive', {})
         (fields_to_include, obstypes) = user.loopdata.LoopData.get_fields_to_include(specified_fields)
+        windrose_span_periods, windrose_continuous_periods = \
+            user.loopdata.LoopData.get_windrose_periods(fields_to_include)
 
         # Get converter and formatter from SeasonsReport.
         target_report_dict: Dict[str, Any] = user.loopdata.LoopData.get_target_report_dict(config_dict, 'SeasonsReport')
@@ -6081,7 +6268,10 @@ class ProcessPacketTests(unittest.TestCase):
             week_start               = week_start,
             rainyear_start           = rainyear_start,
             obstypes                 = obstypes,
-            baro_trend_descs         = user.loopdata.LoopData.construct_baro_trend_descs({}))
+            baro_trend_descs         = user.loopdata.LoopData.construct_baro_trend_descs({}),
+            windrose_bands           = user.loopdata.LoopData.parse_windrose_bands(None, converter),
+            windrose_span_periods    = windrose_span_periods,
+            windrose_continuous_periods = windrose_continuous_periods)
 
     @staticmethod
     def _get_specified_fields() -> List[str]:
@@ -6479,6 +6669,160 @@ class ProcessPacketTests(unittest.TestCase):
             if dbm is not None:
                 dbm.close()
             shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_windrose_seed_from_database(self) -> None:
+        # Spec test against a REAL sqlite archive: seed_windrose_span_accum's
+        # GROUP BY must reproduce, per (bin, band) cell, the by-hand sums of
+        # seconds and windSpeed*seconds -- including calm routing (speed below
+        # the calm threshold OR null windDir), exclusion of null-windSpeed
+        # rows, unit conversion of distances to the accumulator's system, and
+        # compass wraparound.  Continuous seeding replays the same records
+        # with per-record timestamps (so they can later expire).
+        unit_system = weewx.US
+        tmpdir = tempfile.mkdtemp()
+        dbm = None
+        try:
+            db_dict = {
+                'database_name': os.path.join(tmpdir, 'test.sdb'),
+                'driver': 'weedb.sqlite'}
+            dbm = weewx.manager.DaySummaryManager.open_with_create(
+                db_dict, table_name='archive', schema=wview_extended_schema)
+
+            t0 = 1665750000
+            # (offset, windSpeed mph, windDir) -- interval 5 minutes = 300s.
+            recs = [
+                (300,  4.0,  80.0),   # bin 4 (E),  band 0: 300s, 4*300 mph*s
+                (600,  6.0,  85.0),   # bin 4 (E),  band 1: 300s, 6*300
+                (900,  0.5,  90.0),   # calm (below 1.0 threshold): 300s
+                (1200, 12.0, None),   # calm (no direction): 300s
+                (1500, None, 100.0),  # excluded entirely (no windSpeed)
+                (1800, 20.0, 350.0),  # bin 0 (N, wraparound), band 2: 300s, 20*300
+            ]
+            dbm.addRecord([
+                {'dateTime': t0 + off, 'usUnits': 1, 'interval': 5,
+                 'windSpeed': ws, 'windDir': wd} for off, ws, wd in recs])
+
+            banding = user.loopdata.WindRoseBanding(
+                unit_system=unit_system, edges=[1.0, 5.0, 10.0],
+                seconds_per_distance=3600.0)
+            accum = user.loopdata.WindRoseSpanAccum(banding, None, t0)
+            user.loopdata.LoopData.seed_windrose_span_accum(
+                accum, dbm, 0, t0 + 86400)
+
+            self.assertAlmostEqual(accum.time_bins[4][0], 300.0)
+            self.assertAlmostEqual(accum.dist_bins[4][0], 4.0 * 300 / 3600)   # 1/3 mile
+            self.assertAlmostEqual(accum.time_bins[4][1], 300.0)
+            self.assertAlmostEqual(accum.dist_bins[4][1], 0.5)
+            self.assertAlmostEqual(accum.time_bins[0][2], 300.0)
+            self.assertAlmostEqual(accum.dist_bins[0][2], 20.0 * 300 / 3600)  # 5/3 mile
+            self.assertAlmostEqual(accum.calm_seconds, 600.0)
+            # Nothing leaked anywhere else.
+            self.assertAlmostEqual(sum(accum.bin_times()), 900.0)
+            self.assertAlmostEqual(sum(accum.bin_distances()), (4.0 + 6.0 + 20.0) * 300 / 3600)
+
+            # db US -> METRIC accumulator: edges convert into db units for the
+            # query, distances convert out of them; times are unit-free.
+            kmh = lambda mph: weewx.units.convert(
+                (mph, 'mile_per_hour', 'group_speed'), 'km_per_hour')[0]
+            banding_m = user.loopdata.WindRoseBanding(
+                unit_system=weewx.METRIC,
+                edges=[kmh(1.0), kmh(5.0), kmh(10.0)],
+                seconds_per_distance=3600.0)
+            accum_m = user.loopdata.WindRoseSpanAccum(banding_m, None, t0)
+            user.loopdata.LoopData.seed_windrose_span_accum(
+                accum_m, dbm, 0, t0 + 86400)
+            self.assertAlmostEqual(accum_m.time_bins[4][0], 300.0)
+            self.assertAlmostEqual(accum_m.calm_seconds, 600.0)
+            self.assertAlmostEqual(
+                accum_m.dist_bins[4][0], (4.0 * 300 / 3600) * 1.609344, places=5)
+
+            # Continuous: a 900s window ending at t0+2100 replays only records
+            # newer than t0+1200 -- the null-windSpeed row is skipped, leaving
+            # exactly the t0+1800 record, queued as a future debit.
+            caccum = user.loopdata.WindRoseContinuousAccum(banding, 900)
+            user.loopdata.LoopData.seed_windrose_continuous_accums(
+                {'15m': caccum}, dbm, unit_system, float(t0 + 2100), 15)
+            self.assertAlmostEqual(caccum.time_bins[0][2], 300.0)
+            self.assertAlmostEqual(caccum.dist_bins[0][2], 20.0 * 300 / 3600)
+            self.assertAlmostEqual(caccum.calm_seconds, 0.0)
+            self.assertAlmostEqual(sum(caccum.bin_times()), 300.0)
+            self.assertEqual(len(caccum.future_debits), 1)
+
+        finally:
+            if dbm is not None:
+                dbm.close()
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_windrose_end_to_end(self) -> None:
+        # Feed loop packets through generate_loopdata_dictionary with windrose
+        # fields configured and verify every projection of the output json:
+        # .sum (distances in report units), .time, .banded, .calm, the
+        # windrose.bands legend helper and unit.label.windrose.  Expected
+        # values are by-hand: default US bands are 1.1, 4.7, 8.1, 12.8, 19.7,
+        # 24.8 mph; each loop packet weighs loop_frequency = 2.0 seconds.
+        specified_fields = [
+            'day.windrose.sum.round(3)',
+            'day.windrose.sum.km.round(3)',
+            'day.windrose.sum.formatted',
+            'day.windrose.time',
+            'day.windrose.banded',
+            'day.windrose.calm',
+            '30m.windrose.time',
+            'unit.label.windrose',
+        ]
+        cfg = ProcessPacketTests._get_config('us', 10800, 1, 6, specified_fields)
+        self.assertEqual(cfg.windrose_span_periods, {'day'})
+        self.assertEqual(cfg.windrose_continuous_periods, {'30m'})
+        # windrose needs the underlying observations in the packet.
+        self.assertIn('windSpeed', cfg.obstypes.current)
+        self.assertIn('windDir', cfg.obstypes.current)
+
+        pkt_time = 1593630000  # noon PDT, 2020-07-01 (TZ set by _get_config)
+        accums = ProcessPacketTests._get_accums(cfg, pkt_time)
+        self.assertIn('day', accums.windrose_span)
+        self.assertIn('30m', accums.windrose_continuous)
+
+        pkts = [
+            {'dateTime': pkt_time,     'usUnits': 1, 'windSpeed': 7.2,  'windDir': 90.0},   # bin 4, band 1
+            {'dateTime': pkt_time + 2, 'usUnits': 1, 'windSpeed': 0.5,  'windDir': 90.0},   # calm
+            {'dateTime': pkt_time + 4, 'usUnits': 1, 'windSpeed': 20.0, 'windDir': 350.0},  # bin 0, band 4
+        ]
+        for pkt in pkts:
+            loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+                pkt, cfg, accums)
+
+        expected_e = 7.2 * 2.0 / 3600.0    # 0.004 miles east
+        expected_n = 20.0 * 2.0 / 3600.0   # 0.0111... miles north
+        sums = loopdata_pkt['day.windrose.sum.round(3)']
+        self.assertEqual(len(sums), 16)
+        self.assertAlmostEqual(sums[4], round(expected_e, 3))
+        self.assertAlmostEqual(sums[0], round(expected_n, 3))
+        self.assertEqual(sum(1 for v in sums if v != 0.0), 2)
+
+        sums_km = loopdata_pkt['day.windrose.sum.km.round(3)']
+        self.assertAlmostEqual(sums_km[4], round(expected_e * 1.609344, 3))
+
+        fmt = cfg.formatter.get_format_string('mile')
+        formatted = loopdata_pkt['day.windrose.sum.formatted']
+        self.assertEqual(formatted[4], fmt % expected_e)
+
+        times = loopdata_pkt['day.windrose.time']
+        self.assertAlmostEqual(times[4], 2.0)
+        self.assertAlmostEqual(times[0], 2.0)
+        self.assertAlmostEqual(sum(times), 4.0)
+
+        banded = loopdata_pkt['day.windrose.banded']
+        self.assertEqual(len(banded), 16)
+        self.assertEqual(len(banded[0]), 6)
+        self.assertAlmostEqual(banded[4][1], 2.0)
+        self.assertAlmostEqual(banded[0][4], 2.0)
+
+        self.assertAlmostEqual(loopdata_pkt['day.windrose.calm'], 2.0)
+        self.assertEqual(loopdata_pkt['30m.windrose.time'], times)
+        self.assertEqual(loopdata_pkt['windrose.bands'],
+                         [1.1, 4.7, 8.1, 12.8, 19.7, 24.8])
+        self.assertEqual(loopdata_pkt['unit.label.windrose'],
+                         cfg.formatter.get_label_string('mile'))
 
 
 if __name__ == '__main__':

@@ -172,6 +172,7 @@
           document.getElementById("$(archive).rain.sum.formatted").innerHTML = '';
         }
         #end for
+        drawWindrose(result);
       } catch (e) {
         console.log(e);
       }
@@ -191,5 +192,111 @@
     var green = (i & 0xFF00) >> 8;
     var blue  = i & 0xFF;
     return `rgb(${red},${green},${blue})`
+  }
+
+  // NOAA-style windrose from day.windrose.banded (16 compass bins x N speed
+  // bands, seconds per cell) and day.windrose.calm (seconds).  Petal length is
+  // the direction's share of the windiest direction; segments stack by speed
+  // band, low to high.  Speed is a magnitude, so the bands wear a single-hue
+  // ramp, dim to bright (bright = fast on this dark page), with the band edges
+  // (windrose.bands, report units) as the legend.
+  var windroseBandColors = ['#0f3e49', '#145661', '#196f79', '#1f8992', '#26a4ab', '#3fc0c3', '#63dcda'];
+  function drawWindrose(result) {
+    var canvas = document.getElementById('windrose');
+    if (canvas === null || !canvas.getContext) {
+      return;
+    }
+    var banded = result['day.windrose.banded'];
+    if (banded === undefined) {
+      return;
+    }
+    var calm = result['day.windrose.calm'] || 0;
+    var edges = result['windrose.bands'] || [];
+    var speedLabel = result['unit.label.windSpeed'] || '';
+    var ctx = canvas.getContext('2d');
+    var W = canvas.width, H = canvas.height;
+    var cx = W / 2, cy = H / 2;
+    var rCalm = 24;                              // center calm circle
+    var rMax = Math.min(W, H) / 2 - 24;          // room for compass letters
+    ctx.clearRect(0, 0, W, H);
+
+    // Totals: overall (for the calm percentage) and the windiest direction
+    // (sets the radial scale).
+    var total = calm, maxBin = 0;
+    var binTotals = banded.map(function(bands) {
+      var t = bands.reduce(function(a, b) { return a + b; }, 0);
+      total += t;
+      if (t > maxBin) { maxBin = t; }
+      return t;
+    });
+
+    // Reference rings (recessive), behind the petals.
+    ctx.strokeStyle = '#0a3a3a';
+    ctx.lineWidth = 1;
+    [1 / 3, 2 / 3, 1].forEach(function(f) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, rCalm + (rMax - rCalm) * f, 0, 2 * Math.PI);
+      ctx.stroke();
+    });
+
+    // Petals: bin i is centered on i*22.5 deg clockwise from north; canvas
+    // angles run from +x, so north is -90 deg.  A 2px background stroke keeps
+    // a gap between stacked segments.
+    for (var i = 0; i < banded.length; i++) {
+      if (binTotals[i] <= 0 || maxBin <= 0) { continue; }
+      var a0 = (i * 22.5 - 90 - 8.5) * Math.PI / 180;
+      var a1 = (i * 22.5 - 90 + 8.5) * Math.PI / 180;
+      var r = rCalm;
+      var petal = (rMax - rCalm) * binTotals[i] / maxBin;
+      for (var b = 0; b < banded[i].length; b++) {
+        if (banded[i][b] <= 0) { continue; }
+        var seg = petal * banded[i][b] / binTotals[i];
+        ctx.beginPath();
+        ctx.arc(cx, cy, r + seg, a0, a1);
+        ctx.arc(cx, cy, r, a1, a0, true);
+        ctx.closePath();
+        ctx.fillStyle = windroseBandColors[b % windroseBandColors.length];
+        ctx.fill();
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        r += seg;
+      }
+    }
+
+    // Compass letters.
+    ctx.fillStyle = '#00FFFF';
+    ctx.font = '14px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ['N', 'E', 'S', 'W'].forEach(function(dir, i) {
+      var a = (i * 90 - 90) * Math.PI / 180;
+      ctx.fillText(dir, cx + (rMax + 13) * Math.cos(a), cy + (rMax + 13) * Math.sin(a));
+    });
+
+    // Calm: percentage of total time, in the center.
+    ctx.beginPath();
+    ctx.arc(cx, cy, rCalm, 0, 2 * Math.PI);
+    ctx.fillStyle = '#000000';
+    ctx.fill();
+    ctx.strokeStyle = '#0a3a3a';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    if (total > 0) {
+      ctx.fillStyle = '#00FFFF';
+      ctx.font = '11px monospace';
+      ctx.fillText(Math.round(100 * calm / total) + '%', cx, cy);
+    }
+
+    // Legend: one row per band, chip + edge range in text ink.
+    ctx.textAlign = 'left';
+    ctx.font = '11px monospace';
+    for (var e = 0; e < edges.length; e++) {
+      ctx.fillStyle = windroseBandColors[e % windroseBandColors.length];
+      ctx.fillRect(4, 6 + e * 15, 10, 10);
+      ctx.fillStyle = '#00FFFF';
+      var hi = (e + 1 < edges.length) ? '-' + edges[e + 1] : '+';
+      ctx.fillText(edges[e] + hi + speedLabel, 19, 11 + e * 15);
+    }
   }
 </script>

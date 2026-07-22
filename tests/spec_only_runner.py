@@ -63,6 +63,13 @@ SPEC_TESTS = [
     'test_period_accum_wrappers_use_correct_spans',
     'test_create_hour_accum_from_database',
     'test_create_continuous_accum_from_database',
+    'test_windrose_banding',
+    'test_parse_windrose_bands',
+    'test_get_windrose_periods',
+    'test_windrose_span_accum',
+    'test_windrose_continuous_accum',
+    'test_windrose_seed_from_database',
+    'test_windrose_end_to_end',
 ]
 
 suite = unittest.TestSuite([T.ProcessPacketTests(name) for name in SPEC_TESTS])

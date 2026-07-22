@@ -1,8 +1,41 @@
 loopdata change history
 -----------------------
 
-6.0 Release 2026/07/21
+6.0 Release 2026/07/22
 ----------------------
+Removed (action required if you used them): the experimental windrun_<dir>
+observation types (windrun_N ... windrun_NNW) are gone, replaced by the
+first-class windrose observation below.  Fields naming them are now ignored.
+To migrate: day.windrun_N.sum is element 0 of day.windrose.sum,
+day.windrun_NNE.sum element 1, and so on clockwise through NNW (element 15).
+The windrun_<dir> types were always documented as experimental and likely to
+change; this is that change.
+
+New: windrose.  A NOAA-style windrose for any period except current and trend
+-- including week, month, year, rainyear and alltime, which windrun_<dir>
+never supported.  Per period, loopdata accumulates 16 compass bins x N speed
+bands, each cell tracking both seconds and distance, plus a directionless
+calm total (wind below the calm threshold, or no wind direction).  Four
+aggregates project the matrix into json: .sum (16 distances -- windrun
+parity, unit-convertible, .formatted-able; sub-calm-threshold wind counts as
+calm time, not distance), .time (16 durations in seconds),
+.banded (the 16xN seconds matrix -- the NOAA rose), .calm (scalar seconds).
+Arrays emit json numbers; .round(n) applies per element.  A windrose.bands
+key (band edges, target report windSpeed units) is emitted automatically so
+page legends never hardcode the bands, and unit.label.windrose gives the
+distance label.  Band edges default to the classic WRPLOT/NOAA bands (0.5,
+2.1, 3.6, 5.7, 8.8, 11.1 m/s, shown in report units); override with
+[LoopData] windrose_bands (ascending edges in the target report's windSpeed
+unit; the first edge is the calm threshold).  Span periods seed at startup
+with a single SQL aggregate per period, so even alltime.windrose starts fully
+primed.  The sample LoopData skin now draws a live canvas windrose.
+
+Fixed (via the windrose rework): after a weewxd restart, hour-period and
+continuous-period (1m-1440m/1h-24h) windrun_<dir> buckets started EMPTY and
+silently filled as packets arrived -- archive-replay priming never carried
+the bucketed values.  windrose accumulators seed every period from the
+archive at startup.
+
 Changed (check your pages): time-of-event fields (maxtime, mintime,
 firsttime, lasttime) now format with the field's period as the time context,
 exactly as WeeWX report tags do -- the target report's [Units][TimeFormats]
@@ -70,6 +103,9 @@ period and trend paths is now a single renderer dispatching through a
 FORMAT_SPECS table, and the grammar's set of valid format specs (and the
 almanac grammar's) is derived from that table, just like the aggregate
 types.  No behavior change.
+
+Internal: the test suite moved from bin/user/tests to a top-level tests
+directory.  No change to the installed extension.
 
 5.0 Release 2026/07/19
 ----------------------

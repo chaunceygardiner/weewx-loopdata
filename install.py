@@ -116,6 +116,9 @@ class LoopDataInstaller(ExtensionInstaller):
                             'day.wind.rms.formatted',
                             'day.windGust.max',
                             'day.windGust.max.formatted',
+                            'day.windrose.banded',
+                            'day.windrose.calm',
+                            'unit.label.windSpeed',
 
                             'week.outTemp.max.formatted',
                             'week.outTemp.min.formatted',
