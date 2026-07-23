@@ -3,6 +3,16 @@ loopdata change history
 
 6.0 Release 2026/07/22
 ----------------------
+Action required if you publish the sample report: upgrading replaces the
+sample skin's page with the new instrument panel (below) but keeps your
+existing [LoopData] fields line, and the panel reads fields the old default
+never included (.raw geometry, unit.label scales, day.windrose.*) -- so with
+an old fields line the new page serves half-dead: text readouts but no
+needles, min-max bands or windrose.  Replace the fields line under
+[LoopData] [[Include]] with the one in the README's sample configuration
+(exactly the fields the panel reads; append any fields other pages of yours
+use) and restart weewxd.  Fresh installs get it by default.
+
 Removed (action required if you used them): the experimental windrun_<dir>
 observation types (windrun_N ... windrun_NNW) are gone, replaced by the
 first-class windrose observation below.  Fields naming them are now ignored.
@@ -110,9 +120,8 @@ hide themselves and reappear if the field shows up.  The .raw fields drive
 the geometry, report-formatted fields supply every readout, and unit.label
 fields pick the dial scales, so the panel follows the target report's
 units (metric or US) automatically.  Fresh installs get the fields line
-the panel needs; UPGRADING INSTALLS KEEP THEIR EXISTING fields LINE -- to
-adopt the new page, replace it with the fields line shown in the README's
-sample configuration.
+the panel needs; upgrading installs keep their existing fields line -- see
+the action-required item at the top of this release.
 
 Docs: the README now opens with the point -- report tags updated on every
 loop packet -- and a four-step example (report tags, the same tags on the

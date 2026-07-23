@@ -518,6 +518,14 @@ extension (its GitHub repository is no longer available).
 1. After a reporting cycle runs, navigate to `<weewx-url>/loopdata/` in your browser
    to see the default loopdata report. (Reports typically run every 5 minutes.)
 
+## Sample configuration
+
+Fresh installs add the following `[LoopData]` section to `weewx.conf`.  The
+`fields` line is exactly the fields the sample report's instrument panel
+reads.  Upgrading installs keep whatever `fields` line is already in
+`weewx.conf` — to adopt the new panel, replace your `fields` line with this
+one (appending any fields other pages of yours use).
+
 ```
 [LoopData]
     [[FileSpec]]
