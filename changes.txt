@@ -1,6 +1,19 @@
 loopdata change history
 -----------------------
 
+6.2 Release 2026/07/24
+----------------------
+The sample skin's LIVE indicator now reports a failed loop-data fetch.
+When the poll for loop_data_file returns anything but the json -- the
+classic being the web server's 404 page because loopdata writes outside
+HTML_ROOT (say /dev/shm) with nothing serving it -- the indicator reads
+"NO DATA (HTTP 404) -- check loop_data_file" (or "BAD DATA -- check
+loop_data_file" for a 200 that isn't json); a network-level failure shows
+OFFLINE.  Previously the only trace was a JSON.parse error in the browser
+console and a silently dead panel.  A later successful poll rewrites the
+indicator to LIVE as always.  (Same change as weewx-celestial 7.1, which
+shares the poll's ancestry.)
+
 6.1 Release 2026/07/24
 ----------------------
 Fixed: a dead or hanging rsync remote could stall loop processing for
