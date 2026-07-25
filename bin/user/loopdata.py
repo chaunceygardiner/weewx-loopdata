@@ -54,7 +54,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '6.0'
+LOOP_DATA_VERSION = '6.1'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -1359,6 +1359,10 @@ class LoopData(StdService):
         except KeyError:
             rainyear_start = 1
 
+        # The rsync timeout also drives the ssh-side time bounds folded into
+        # ssh_options (see compose_ssh_options), so resolve it first.
+        rsync_timeout: int = to_int(rsync_spec_dict.get('timeout', 1))
+
         self.cfg: Configuration = Configuration(
             queue                    = queue.SimpleQueue(),
             config_dict              = config_dict,
@@ -1382,8 +1386,9 @@ class LoopData(StdService):
             remote_dir               = rsync_spec_dict.get('remote_dir'),
             compress                 = to_bool(rsync_spec_dict.get('compress')),
             log_success              = to_bool(rsync_spec_dict.get('log_success')),
-            ssh_options              = rsync_spec_dict.get('ssh_options', '-o ConnectTimeout=1'),
-            timeout                  = to_int(rsync_spec_dict.get('timeout', 1)),
+            ssh_options              = LoopData.compose_ssh_options(
+                                       rsync_spec_dict.get('ssh_options', ''), rsync_timeout),
+            timeout                  = rsync_timeout,
             skip_if_older_than       = to_int(rsync_spec_dict.get('skip_if_older_than', 3)),
             time_delta               = time_delta,
             week_start               = week_start,
@@ -1421,6 +1426,31 @@ class LoopData(StdService):
         html_root    : str = str(target_report_dict.get('HTML_ROOT'))
         loop_data_dir: str = str(file_spec_dict.get('loop_data_dir', '.'))
         return os.path.join(weewx_root, html_root, loop_data_dir)
+
+    @staticmethod
+    def compose_ssh_options(user_options: str, timeout: int) -> str:
+        """The ssh options for the rsync transport.  rsync's --timeout bounds
+        only rsync protocol I/O; the phases ssh owns can each hang the
+        LoopProcessor thread for minutes against a dead remote, so each gets
+        its own bound: ConnectTimeout for connect and the initial handshake,
+        ServerAliveInterval/CountMax for a session that dies mid-transfer, and
+        BatchMode for an interactive auth prompt (unanswerable under weewxd,
+        so it must fail rather than wait).  A default is appended only when
+        user_options doesn't already set that keyword, so anything the user
+        wrote wins; timeout <= 0 (rsync's "no timeout") omits the time bounds
+        but still sets BatchMode."""
+        options = user_options.strip()
+        defaults = ['BatchMode=yes']
+        if timeout > 0:
+            defaults = ['ConnectTimeout=%d' % timeout,
+                        'ServerAliveInterval=%d' % timeout,
+                        'ServerAliveCountMax=2',
+                        'BatchMode=yes']
+        for default in defaults:
+            keyword = default.split('=')[0]
+            if keyword.lower() not in options.lower():
+                options = ('%s -o %s' % (options, default)).strip()
+        return options
 
     @staticmethod
     def is_valid_period(period: str)-> bool:

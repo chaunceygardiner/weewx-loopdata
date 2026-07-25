@@ -542,7 +542,6 @@ one (appending any fields other pages of yours use).
         remote_dir = /var/www/html
         compress = False
         log_success = False
-        ssh_options = "-o ConnectTimeout=1"
         timeout = 1
         skip_if_older_than = 3
     [[Include]]
@@ -585,9 +584,15 @@ one (appending any fields other pages of yours use).
  * `compress`          : True to compress the file before sending.  Default is False.
  * `log_success`       : True to write success with timing messages to the log (for debugging).
                          Default is False.
- * `ssh_options`       : ssh options Default is '-o ConnectTimeout=1' (When connecting, time out in
-                         1 second.)
+ * `ssh_options`       : Extra options for the ssh transport (e.g., a key file or port).
+                         Whether or not this is set, LoopData appends safety bounds for any
+                         keyword you don't set yourself: `-o ConnectTimeout=<timeout>`,
+                         `-o ServerAliveInterval=<timeout>`, `-o ServerAliveCountMax=2` and
+                         `-o BatchMode=yes`, so a dead or hanging remote cannot stall the
+                         loop processing thread (an option you set always wins).
  * `timeout`           : I/O timeout. Default is 1.  (When sending, timeout in 1 second.)
+                         Also used for the ssh ConnectTimeout and ServerAliveInterval
+                         bounds described under `ssh_options`.  0 disables all time bounds.
  * `skip_if_older_than`: Don't bother to rsync if greater than this number of seconds.  Default is 3.
                          (Skip this and move on to the next if this data is older than 3 seconds.)
  * `fields`            : Used to specify which fields to include in the file.

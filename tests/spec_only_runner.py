@@ -9,6 +9,7 @@ import test_process_packet as T
 SPEC_TESTS = [
     'test_parse_cname',
     'test_compose_loop_data_dir',
+    'test_compose_ssh_options',
     'test_period_classification',
     'test_get_windrun_bucket',
     'test_massage_near_zero',

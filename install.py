@@ -31,7 +31,7 @@ def loader():
 class LoopDataInstaller(ExtensionInstaller):
     def __init__(self):
         super(LoopDataInstaller, self).__init__(
-            version = "6.0",
+            version = "6.1",
             name = 'loopdata',
             description = 'Loop statistics for real time reporting.',
             author = "John A Kline",
@@ -53,7 +53,6 @@ class LoopDataInstaller(ExtensionInstaller):
                         'remote_dir': '/home/weewx/loop-data',
                         'compress': 'false',
                         'log_success': 'false',
-                        'ssh_options': '-o ConnectTimeout=1',
                         'timeout': '1',
                         'skip_if_older_than': '3'},
                     'Include': {

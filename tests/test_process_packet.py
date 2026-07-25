@@ -859,6 +859,42 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(user.loopdata.LoopData.compose_loop_data_dir(
             config_dict, target_report_dict, {'loop_data_dir':'foobar'}), '/etc/weewx/public_html/weatherboard/foobar')
 
+    def test_compose_ssh_options(self) -> None:
+        compose = user.loopdata.LoopData.compose_ssh_options
+
+        # No user options: all four ssh-side bounds, timed ones from timeout.
+        self.assertEqual(compose('', 1),
+            '-o ConnectTimeout=1 -o ServerAliveInterval=1'
+            ' -o ServerAliveCountMax=2 -o BatchMode=yes')
+        self.assertEqual(compose('', 5),
+            '-o ConnectTimeout=5 -o ServerAliveInterval=5'
+            ' -o ServerAliveCountMax=2 -o BatchMode=yes')
+
+        # User options come first and unrelated ones don't suppress defaults.
+        self.assertEqual(compose('-i /home/weewx/.ssh/id_ed25519 -p 2222', 1),
+            '-i /home/weewx/.ssh/id_ed25519 -p 2222'
+            ' -o ConnectTimeout=1 -o ServerAliveInterval=1'
+            ' -o ServerAliveCountMax=2 -o BatchMode=yes')
+
+        # A keyword the user sets wins: no duplicate is appended, case-blind
+        # (ssh keywords are case-insensitive).
+        self.assertEqual(compose('-o ConnectTimeout=30', 1),
+            '-o ConnectTimeout=30 -o ServerAliveInterval=1'
+            ' -o ServerAliveCountMax=2 -o BatchMode=yes')
+        self.assertEqual(compose('-o connecttimeout=30 -o batchmode=no', 1),
+            '-o connecttimeout=30 -o batchmode=no'
+            ' -o ServerAliveInterval=1 -o ServerAliveCountMax=2')
+        self.assertEqual(compose('-o ServerAliveInterval=10', 2),
+            '-o ServerAliveInterval=10 -o ConnectTimeout=2'
+            ' -o ServerAliveCountMax=2 -o BatchMode=yes')
+
+        # timeout <= 0 (rsync "no timeout"): no time bounds, BatchMode stays.
+        self.assertEqual(compose('', 0), '-o BatchMode=yes')
+        self.assertEqual(compose('-o BatchMode=no', 0), '-o BatchMode=no')
+
+        # Whitespace-only user options behave like none at all.
+        self.assertEqual(compose('  ', 0), '-o BatchMode=yes')
+
     def test_period_classification(self) -> None:
         # Pure-function coverage for the period-classification helpers:
         # is_minute_period, is_hour_period, is_continuous_period, is_valid_period.

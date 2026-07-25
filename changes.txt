@@ -1,6 +1,23 @@
 loopdata change history
 -----------------------
 
+6.1 Release 2026/07/24
+----------------------
+Fixed: a dead or hanging rsync remote could stall loop processing for
+minutes per attempt despite timeout = 1.  That setting only reached rsync's
+--timeout, which bounds rsync protocol I/O, not the phases ssh owns: a
+black-holed TCP connect, a stalled handshake, or an auth prompt could each
+block the LoopProcessor thread far longer (the file kept its full age
+backlog: written minutes after the packet inside it was stamped, dial pages
+frozen).  LoopData now folds ssh-side bounds into the rsync transport --
+ConnectTimeout=<timeout>, ServerAliveInterval=<timeout>,
+ServerAliveCountMax=2 and BatchMode=yes -- each applied only if your own
+ssh_options doesn't set that keyword, so anything you set wins.  Previously
+the ConnectTimeout=1 default lived in the ssh_options default value itself,
+so setting ssh_options at all (a key file, a port) silently discarded it.
+Setting timeout = 0 disables the time bounds (BatchMode is still applied:
+an interactive prompt can never be answered under weewxd).
+
 6.0 Release 2026/07/22
 ----------------------
 Action required if you publish the sample report: upgrading replaces the
