@@ -759,9 +759,11 @@ formatted with the full set of formatting calls.  What remains report-only:
 * The introspection helpers `.json`, `.exists` and `.has_data` (a field with
   missing data is simply absent from loop-data.txt — or always emitted, via
   `string()`).
-* Non-observation tags: `$station`, `$latitude`, `$longitude`, `$altitude`,
-  `$Extras`, `$gettext`, `$obs`, and the like.  The one exception is
-  `$unit.label.<obs>`, supported as `unit.label.<obs>` above.
+* Non-observation tags: `$latitude`, `$longitude`, `$altitude`, `$Extras`,
+  `$gettext`, `$obs`, and the like.  The exceptions are `$unit.label.<obs>`,
+  supported as `unit.label.<obs>` above, and `$station`, supported as
+  station fields (see "Station fields" below — `$latitude` et al. have
+  `$station` equivalents).
 
 ## Almanac fields
 
@@ -825,6 +827,44 @@ has an almanac equivalent (e.g., `current.sunrise.raw` → `almanac.sunrise.raw`
 `almanac(days=1).sunrise.raw`).  The only derivation left to the page is waxing/waning:
 the moon is waxing when `almanac.next_full_moon.raw` < `almanac.next_new_moon.raw`.
 Note that distances arrive in AU (as reports show them) rather than miles/km.
+
+## Station fields
+
+Any `$station` report tag can be listed as a field, written with the `$` removed.  The
+values are evaluated against the exact object behind the report tag
+(`weewx.station.Station`), so they render as the report would render them.  Examples:
+
+```
+station.uptime.raw                WeeWX uptime in seconds
+station.uptime.long_form()        e.g., 25 days, 21 hours, 15 minutes
+station.os_uptime.raw             server uptime in seconds
+station.os_uptime.long_form()
+station.version                   the WeeWX version, e.g., 5.4.0
+station.python_version
+station.hardware                  e.g., Vantage
+station.location                  [Station] location from weewx.conf
+station.altitude                  e.g., 700 feet
+station.altitude.meter.raw        unit conversions work as in report tags
+station.latitude                  ["37", "24.00", "N"] — the same (degrees,
+                                  minutes, hemisphere) parts the report tag
+                                  exposes, as a json array
+```
+
+The point of station fields is `uptime` and `os_uptime`: they are recomputed on every
+loop packet, so a live uptime readout is correct within a packet or two of a weewxd or
+server restart.  (The report-cycle alternative — shipping `$station.uptime.raw` in a
+template and extrapolating in javascript — shows the pre-restart uptime still climbing
+until the next report cycle runs.)  Every other `$station` attribute is constant for
+the life of the weewxd process; loopdata computes those once and repeats the value in
+every write, so a page that is not itself a WeeWX report can still show them.
+
+Notes:
+* Station fields are current-only: no period prefix, no aggregate.
+* `round(n)` and the format specs/calls work as on observation and almanac fields:
+  `.raw` on `uptime`/`os_uptime`/`altitude` (ValueHelpers), identity on plain
+  values (`station.week_start.raw`); `.formatted`, `format(...)`, `nolabel(...)`,
+  `string(...)`, `long_form(...)` on the ValueHelpers only.
+* The json key is the field entry verbatim, so element ids can match keys as usual.
 
 ## Rsync isn't Working for me, help!
 LoopData uses WeeWX's `weeutil.rsyncupload.RsyncUpload` utility.  If you have rsync working

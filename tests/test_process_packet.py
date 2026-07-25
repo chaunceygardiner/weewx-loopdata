@@ -46,6 +46,7 @@ import weewx
 import weewx.accum
 import weewx.almanac
 import weewx.manager
+import weewx.station
 import weewx.units
 from weewx.schemas.wview_extended import schema as wview_extended_schema
 from weeutil.weeutil import to_int
@@ -1595,6 +1596,165 @@ class ProcessPacketTests(unittest.TestCase):
             # Civil dawn precedes sunrise.
             self.assertLess(loopdata_pkt['almanac(horizon=-6).sun(use_center=1).rise.raw'],
                 loopdata_pkt['almanac.sunrise.raw'])
+
+    def test_parse_station_field(self) -> None:
+        parse = user.loopdata.LoopData.parse_station_field
+
+        sf = parse('station.uptime')
+        assert sf is not None
+        self.assertEqual(sf.field, 'station.uptime')
+        self.assertEqual(sf.chain, ['uptime'])
+        self.assertEqual(sf.format_spec, None)
+        self.assertEqual(sf.format_kwargs, None)
+        self.assertEqual(sf.round_ndigits, None)
+
+        sf = parse('station.uptime.raw')
+        assert sf is not None
+        self.assertEqual(sf.chain, ['uptime'])
+        self.assertEqual(sf.format_spec, 'raw')
+
+        sf = parse('station.os_uptime.long_form()')
+        assert sf is not None
+        self.assertEqual(sf.chain, ['os_uptime'])
+        self.assertEqual(sf.format_spec, 'long_form')
+        self.assertEqual(sf.format_kwargs, {})
+
+        sf = parse('station.uptime.nolabel("%.0f")')
+        assert sf is not None
+        self.assertEqual(sf.chain, ['uptime'])
+        self.assertEqual(sf.format_spec, 'nolabel')
+        self.assertEqual(sf.format_kwargs, {'format_string': '%.0f'})
+
+        sf = parse('station.version')
+        assert sf is not None
+        self.assertEqual(sf.chain, ['version'])
+        self.assertEqual(sf.format_spec, None)
+
+        # A chain: later names are ValueHelper attributes (unit conversion).
+        sf = parse('station.altitude.meter.raw')
+        assert sf is not None
+        self.assertEqual(sf.chain, ['altitude', 'meter'])
+        self.assertEqual(sf.format_spec, 'raw')
+
+        sf = parse('station.altitude.meter.round(0).formatted')
+        assert sf is not None
+        self.assertEqual(sf.chain, ['altitude', 'meter'])
+        self.assertEqual(sf.round_ndigits, 0)
+        self.assertEqual(sf.format_spec, 'formatted')
+
+        # An unknown attribute parses (it fails at evaluation, like a report
+        # tag would); only the shape is validated here.
+        sf = parse('station.no_such_attr')
+        assert sf is not None
+        self.assertEqual(sf.chain, ['no_such_attr'])
+
+        # Malformed entries.
+        self.assertIsNone(parse('station'))
+        self.assertIsNone(parse('station.'))
+        self.assertIsNone(parse('station..uptime'))
+        self.assertIsNone(parse('station(days=1).uptime'))
+        self.assertIsNone(parse('station.9lives'))
+        self.assertIsNone(parse('station.uptime(1)'))
+        self.assertIsNone(parse('station.up-time'))
+
+    def test_get_station_fields(self) -> None:
+        specified_fields = [
+            'current.outTemp',
+            'station.uptime.raw',
+            'day.outTemp.max',
+            'station.version',
+            'station.uptime.raw',      # duplicate: dropped
+            'station.uptime(1)',       # malformed: dropped
+            'almanac.sunrise.raw',
+            'trend.barometer.desc',
+        ]
+        station_fields = user.loopdata.LoopData.get_station_fields(specified_fields)
+        self.assertEqual([ f.field for f in station_fields ],
+            ['station.uptime.raw', 'station.version'])
+
+        # Station entries must not leak into the observation-field or
+        # almanac-field parses.
+        (fields_to_include, _) = user.loopdata.LoopData.get_fields_to_include(set(specified_fields))
+        self.assertEqual({ cname.field for cname in fields_to_include },
+            {'current.outTemp', 'day.outTemp.max', 'trend.barometer.desc'})
+        almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
+        self.assertEqual([ f.field for f in almanac_fields ], ['almanac.sunrise.raw'])
+
+    def test_station_field_evaluator(self) -> None:
+        specified_fields = [
+            'current.outTemp',
+            'station.uptime.raw',                  # dynamic, ticks per packet
+            'station.uptime.long_form()',          # the report's $station.uptime.long_form()
+            'station.os_uptime.raw',               # dynamic
+            'station.version',                     # static, computed once
+            'station.hardware',
+            'station.location',
+            'station.week_start',                  # plain int, via StationInfo passthrough
+            'station.rain_year_str',
+            'station.altitude',                    # ValueHelper default rendering
+            'station.altitude.raw',
+            'station.altitude.meter.round(0).raw', # unit-conversion chain
+            'station.latitude',                    # (deg, min, hemisphere) parts as json array
+            'station.version.formatted',           # invalid: str endpoint, skipped
+            'station.no_such_attr',                # unknown: skipped
+        ]
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, specified_fields)
+        cfg.station_fields = user.loopdata.LoopData.get_station_fields(specified_fields)
+        self.assertEqual(len(cfg.station_fields), len(specified_fields) - 1) # less current.outTemp
+
+        # The Station exactly as LoopData.__init__ builds it: the engine's
+        # StationInfo plus the target report's formatter/converter/skin dict.
+        config_dict: Dict[str, Any] = configobj.ConfigObj('tests/weewx.conf.us', encoding='utf-8')
+        target_report_dict = user.loopdata.LoopData.get_target_report_dict(config_dict, 'SeasonsReport')
+        stn_info = weewx.station.StationInfo(altitude=['700', 'foot'],
+            latitude='37.4', longitude='-122.1', location='Palo Alto, California',
+            station_type='Vantage', week_start='6', rain_year_start='10')
+        cfg.station = weewx.station.Station(stn_info, cfg.formatter, cfg.converter,
+            target_report_dict)
+
+        saved_launchtime = weewx.launchtime_ts
+        # 1 day, 1 hour, 1 minute, 1 second ago: one second past the minute,
+        # so long_form stays stable for the duration of the test.
+        weewx.launchtime_ts = time.time() - 90061
+        try:
+            evaluator = user.loopdata.StationFieldEvaluator(cfg.station_fields, cfg.station)
+
+            # Through generate_loopdata_dictionary, as LoopProcessor drives it.
+            pkt: Dict[str, Any] = {'dateTime': int(time.time()), 'usUnits': 1, 'outTemp': 77.4}
+            accums: user.loopdata.Accumulators = ProcessPacketTests._get_accums(cfg, pkt['dateTime'])
+            loopdata_pkt = user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+                pkt, cfg, accums, None, evaluator)
+
+            self.assertEqual(loopdata_pkt['current.outTemp'], '77.4°F')
+            self.assertAlmostEqual(loopdata_pkt['station.uptime.raw'], 90061, delta=10)
+            self.assertEqual(loopdata_pkt['station.uptime.long_form()'], '1 day, 1 hour, 1 minute')
+            # /proc/uptime is the same source weewx.station._os_uptime reads on Linux.
+            with open('/proc/uptime') as f:
+                os_uptime = float(f.read().split()[0])
+            self.assertAlmostEqual(loopdata_pkt['station.os_uptime.raw'], os_uptime, delta=10)
+            self.assertEqual(loopdata_pkt['station.version'], weewx.__version__)
+            self.assertEqual(loopdata_pkt['station.hardware'], 'Vantage')
+            self.assertEqual(loopdata_pkt['station.location'], 'Palo Alto, California')
+            self.assertEqual(loopdata_pkt['station.week_start'], 6)
+            self.assertEqual(loopdata_pkt['station.rain_year_str'], 'Oct')
+            self.assertEqual(loopdata_pkt['station.altitude'], '700 feet')
+            self.assertEqual(loopdata_pkt['station.altitude.raw'], 700.0)
+            # 700 feet = 213.36 meters, rounded to 0 digits.
+            self.assertEqual(loopdata_pkt['station.altitude.meter.round(0).raw'], 213.0)
+            # 37.4 degrees = 37 degrees 24.00 minutes North.
+            self.assertEqual(loopdata_pkt['station.latitude'], ['37', '24.00', 'N'])
+            self.assertNotIn('station.version.formatted', loopdata_pkt)
+            self.assertNotIn('station.no_such_attr', loopdata_pkt)
+
+            # Static values are computed once and cached; dynamic values tick.
+            cfg.station.version = 'bogus'
+            weewx.launchtime_ts -= 3600
+            loopdata_pkt2: Dict[str, Any] = {}
+            evaluator.insert_fields(loopdata_pkt2)
+            self.assertEqual(loopdata_pkt2['station.version'], weewx.__version__)
+            self.assertAlmostEqual(loopdata_pkt2['station.uptime.raw'], 93661, delta=10)
+        finally:
+            weewx.launchtime_ts = saved_launchtime
 
     def test_get_barometer_trend_mbar(self) -> None:
         # Forecast descriptions for the 3 hour change in barometer readings.

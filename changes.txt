@@ -1,6 +1,27 @@
 loopdata change history
 -----------------------
 
+6.3 Release 2026/07/25
+----------------------
+New: station fields.  Any $station report tag can be listed as a field
+with the $ removed: station.uptime.raw, station.uptime.long_form(),
+station.os_uptime.raw, station.version, station.location,
+station.altitude.meter.raw, ...  Values are evaluated against
+weewx.station.Station -- the exact object behind the report's $station
+tag -- with loopdata's usual round(n) and format specs.  uptime and
+os_uptime are recomputed every packet, so a live uptime readout is
+correct within one packet of a weewxd or server restart (the report-cycle
+workaround -- extrapolating from an uptime frozen at generation time --
+shows the pre-restart uptime still climbing until the next report cycle).
+Every other $station attribute is constant for the life of the process
+and is computed once.
+
+A field whose endpoint is a tuple of scalars is now emitted as a json
+array instead of Python's str() of the tuple: station.latitude renders as
+["37", "24.00", "N"] -- the same (degrees, minutes, hemisphere) parts a
+template indexes -- and an almanac field ending in, e.g., moon_phases
+gets the same treatment.
+
 6.2 Release 2026/07/24
 ----------------------
 The sample skin's LIVE indicator now reports a failed loop-data fetch.

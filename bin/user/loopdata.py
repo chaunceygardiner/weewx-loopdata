@@ -37,6 +37,7 @@ import weewx.almanac
 import weewx.defaults
 import weewx.manager
 import weewx.reportengine
+import weewx.station
 import weewx.units
 import weewx.wxxtypes
 import weeutil.config
@@ -54,7 +55,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '6.2'
+LOOP_DATA_VERSION = '6.3'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -131,6 +132,25 @@ class AlmanacField:
         return hash(self.field)
 
 @dataclass
+class StationField:
+    """A parsed station entry from the fields line.  The grammar is a WeeWX
+    report $station tag with the $ removed (station.uptime.raw,
+    station.version, station.altitude.meter.raw): station, then an attribute
+    chain walked against weewx.station.Station exactly as Cheetah would walk
+    the tag (the first name is the Station attribute, later names are
+    ValueHelper attributes such as a unit conversion), then loopdata's
+    optional round(n) and format spec.  uptime and os_uptime tick, so they
+    are recomputed every packet; every other attribute is constant for the
+    life of the weewxd process and is computed once."""
+    field        : str                   # station.uptime.raw
+    chain        : List[str]             # attribute chain after station
+    format_spec  : Optional[str]         # formatted, raw, ordinal_compass, a call spec, or None
+    format_kwargs: Optional[Dict[str, Any]] = None # call-syntax specs only (see CheetahName.format_kwargs)
+    round_ndigits: Optional[int] = None  # round(n) transform (see CheetahName.round_ndigits)
+    def __hash__(self):
+        return hash(self.field)
+
+@dataclass
 class ObsTypes:
     current         : Set[str]
     alltime         : Set[str]
@@ -181,6 +201,8 @@ class Configuration:
     longitude                : float = 0.0 # station longitude in decimal degrees
     altitude_m               : float = 0.0 # station altitude in meters
     almanac_texts            : Dict[str, Any] = dataclass_field(default_factory=dict) # target report's [Almanac] section (moon_phases, ...)
+    station_fields           : List[StationField] = dataclass_field(default_factory=list)
+    station                  : Optional[Any] = None # weewx.station.Station (the report's $station); set when station_fields is non-empty
 
 # ===============================================================================
 #                        Aggregate dispatch tables
@@ -1338,6 +1360,11 @@ class LoopData(StdService):
         almanac_fields = LoopData.get_almanac_fields(specified_fields)
         altitude_m = weewx.units.convert(engine.stn_info.altitude_vt, 'meter')[0]
 
+        # Station fields (station.uptime.raw, station.version, ...) are
+        # evaluated against weewx.station.Station -- the exact object behind
+        # the report's $station tag -- rather than the loop packet.
+        station_fields = LoopData.get_station_fields(specified_fields)
+
         # Get the time_delta (number of seconds) to use for trend_accum.
         try:
             time_delta: int = to_int(target_report_dict['Units']['Trend']['time_delta'])
@@ -1402,7 +1429,11 @@ class LoopData(StdService):
             latitude                 = engine.stn_info.latitude_f,
             longitude                = engine.stn_info.longitude_f,
             altitude_m               = altitude_m if altitude_m is not None else 0.0,
-            almanac_texts            = dict(target_report_dict.get('Almanac', {})))
+            almanac_texts            = dict(target_report_dict.get('Almanac', {})),
+            station_fields           = station_fields,
+            station                  = weewx.station.Station(engine.stn_info,
+                                       formatter, converter, target_report_dict)
+                                       if len(station_fields) > 0 else None)
 
         log.info('LoopData file is: %s' % os.path.join(self.cfg.loop_data_dir, self.cfg.filename))
 
@@ -2561,6 +2592,119 @@ class LoopData(StdService):
             format_kwargs  = format_kwargs,
             round_ndigits  = round_ndigits)
 
+    @staticmethod
+    def is_station_field(field: str) -> bool:
+        return field == 'station' or field.startswith('station.')
+
+    @staticmethod
+    def get_station_fields(specified_fields: List[str]) -> List[StationField]:
+        station_fields: List[StationField] = []
+        seen: Set[str] = set()
+        for field in specified_fields:
+            if not LoopData.is_station_field(field):
+                continue
+            station_field = LoopData.parse_station_field(field)
+            if station_field is None:
+                log.error('Ignoring malformed station field: %s' % field)
+                continue
+            if station_field.field not in seen:
+                seen.add(station_field.field)
+                station_fields.append(station_field)
+        return station_fields
+
+    @staticmethod
+    def parse_station_field(field: str) -> Optional[StationField]:
+        segments = LoopData.split_field_segments(field)
+        if segments is None or len(segments) < 2:
+            return None
+
+        # The leading segment must be exactly station -- unlike almanac,
+        # Station takes no call suffix.
+        if segments[0] != 'station':
+            return None
+
+        # As with almanac fields, a trailing format spec is loopdata's:
+        # the renderer specs (FORMAT_SPECS keys) and the call-syntax specs
+        # (CALL_FORMAT_SPECS) -- never code/desc, which are trend.barometer
+        # classifications -- because the evaluator renders each as the
+        # ValueHelper attribute of the same name.
+        chain_segments = segments[1:]
+        format_spec = None
+        format_kwargs = None
+        if len(chain_segments) >= 2:
+            if chain_segments[-1] in FORMAT_SPECS:
+                format_spec = chain_segments[-1]
+                chain_segments = chain_segments[:-1]
+            else:
+                parsed_call = LoopData.parse_call_spec(chain_segments[-1])
+                if parsed_call is not None:
+                    format_spec, format_kwargs = parsed_call
+                    chain_segments = chain_segments[:-1]
+        # An optional round(n) transform sits before the format spec
+        # (station.altitude.meter.round(0).raw), so peel it after the spec.
+        round_ndigits = None
+        if len(chain_segments) >= 2:
+            parsed_round = LoopData.parse_round_spec(chain_segments[-1])
+            if parsed_round is not None:
+                round_ndigits = parsed_round[0]
+                chain_segments = chain_segments[:-1]
+
+        if len(chain_segments) == 0 or not all(
+                segment.isidentifier() for segment in chain_segments):
+            return None
+
+        return StationField(
+            field         = field,
+            chain         = chain_segments,
+            format_spec   = format_spec,
+            format_kwargs = format_kwargs,
+            round_ndigits = round_ndigits)
+
+def render_endpoint_value(field: str, chain_desc: str, format_spec: Optional[str],
+        format_kwargs: Optional[Dict[str, Any]], round_ndigits: Optional[int],
+        obj: Any) -> Any:
+    """Apply a field's format spec to an evaluated endpoint (ValueHelpers
+    format exactly as the report tag would render) and coerce to a
+    json-serializable value.  Shared by the almanac and station field
+    evaluators; chain_desc names the attribute chain in the error raised
+    when a spec is applied to a value that cannot take it."""
+    if isinstance(obj, weewx.units.ValueHelper):
+        if round_ndigits is not None:
+            # round(n) first: ValueHelper.round returns a new ValueHelper
+            # with the value rounded, then the spec (or str()) renders it,
+            # exactly as the report tag chain does.
+            obj = obj.round(round_ndigits)
+        if format_spec is not None:
+            # ValueHelper exposes every format spec as an attribute of
+            # the same name; the parser admits nothing else here.  Call
+            # specs (format/nolabel/string/long_form) are methods, called
+            # with the field's bound kwargs; a bare spec that is callable
+            # (ordinal_compass) is called with none, as Cheetah's
+            # auto-call renders it.
+            value = getattr(obj, format_spec)
+            if callable(value):
+                value = value(**(format_kwargs or {}))
+        else:
+            value = str(obj)
+    elif round_ndigits is not None or (
+            format_spec is not None and format_spec != 'raw'):
+        # round and formatted/ordinal_compass/the calls need a
+        # ValueHelper; .raw is allowed as identity on plain values
+        # (almanac.moon_index.raw).
+        raise TypeError('%s: %s returned %s, which does not support .%s'
+            % (field, chain_desc, type(obj).__name__, format_spec or 'round'))
+    else:
+        value = obj
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, (tuple, list)) and all(
+            v is None or isinstance(v, (bool, int, float, str)) for v in value):
+        # Emit a tuple of scalars as a json array, preserving the parts the
+        # report tag exposes -- $station.latitude is ('37', '24.00', 'N'),
+        # indexed by templates exactly as page javascript would index this.
+        return list(value)
+    return str(value)
+
 class AlmanacFieldEvaluator:
     """Evaluates almanac fields against weewx.almanac (whatever AlmanacTypes
     are registered: weewx-skyfield, PyEphem, or the built-in fallback) and
@@ -2646,38 +2790,10 @@ class AlmanacFieldEvaluator:
     def to_json_value(self, almanac_field: AlmanacField, obj: Any) -> Any:
         """Apply the format spec (ValueHelpers format exactly as the report
         tag would render) and coerce to a json-serializable value."""
-        if isinstance(obj, weewx.units.ValueHelper):
-            if almanac_field.round_ndigits is not None:
-                # round(n) first: ValueHelper.round returns a new ValueHelper
-                # with the value rounded, then the spec (or str()) renders it,
-                # exactly as the report tag chain does.
-                obj = obj.round(almanac_field.round_ndigits)
-            if almanac_field.format_spec is not None:
-                # ValueHelper exposes every format spec as an attribute of
-                # the same name; the parser admits nothing else here.  Call
-                # specs (format/nolabel/string/long_form) are methods, called
-                # with the field's bound kwargs; a bare spec that is callable
-                # (ordinal_compass) is called with none, as Cheetah's
-                # auto-call renders it.
-                value = getattr(obj, almanac_field.format_spec)
-                if callable(value):
-                    value = value(**(almanac_field.format_kwargs or {}))
-            else:
-                value = str(obj)
-        elif almanac_field.round_ndigits is not None or (
-                almanac_field.format_spec is not None
-                and almanac_field.format_spec != 'raw'):
-            # round and formatted/ordinal_compass/the calls need a
-            # ValueHelper; .raw is allowed as identity on plain values
-            # (almanac.moon_index.raw).
-            raise TypeError('%s: %s returned %s, which does not support .%s'
-                % (almanac_field.field, '.'.join(seg.name for seg in almanac_field.chain),
-                   type(obj).__name__, almanac_field.format_spec or 'round'))
-        else:
-            value = obj
-        if value is None or isinstance(value, (bool, int, float, str)):
-            return value
-        return str(value)
+        return render_endpoint_value(almanac_field.field,
+            '.'.join(seg.name for seg in almanac_field.chain),
+            almanac_field.format_spec, almanac_field.format_kwargs,
+            almanac_field.round_ndigits, obj)
 
     def compute(self, almanac_field: AlmanacField, base_almanac: weewx.almanac.Almanac,
             pkt_time: int) -> None:
@@ -2724,12 +2840,69 @@ class AlmanacFieldEvaluator:
             if value is not None and value is not AlmanacFieldEvaluator.SKIP:
                 loopdata_pkt[almanac_field.field] = value
 
+class StationFieldEvaluator:
+    """Evaluates station fields against weewx.station.Station -- the exact
+    object behind the report's $station tag -- and inserts the results into
+    the loopdata packet.  Runs on the LoopProcessor thread.  uptime and
+    os_uptime tick, so they are recomputed every packet; every other
+    attribute is constant for the life of the weewxd process and is computed
+    once, on the first packet that needs it."""
+
+    # Station attributes whose value changes packet to packet.
+    DYNAMIC_ATTRS = frozenset(('uptime', 'os_uptime'))
+
+    # Sentinel cached for a field whose evaluation failed, so it is not
+    # retried (and re-logged) every packet.
+    SKIP = object()
+
+    def __init__(self, fields: List[StationField], station: Any) -> None:
+        self.fields = fields
+        self.station = station
+        self.static_values: Dict[str, Any] = {}   # field -> json value or SKIP
+        self.warned: Set[str] = set()
+
+    def compute(self, station_field: StationField) -> Any:
+        """Walk the attribute chain exactly as Cheetah would walk the report
+        tag, including auto-calling a callable result, and render per the
+        field's format spec.  Returns SKIP (logged once) on any failure."""
+        try:
+            obj: Any = self.station
+            for name in station_field.chain:
+                obj = getattr(obj, name)
+            if callable(obj):
+                obj = obj()
+            return render_endpoint_value(station_field.field,
+                '.'.join(station_field.chain), station_field.format_spec,
+                station_field.format_kwargs, station_field.round_ndigits, obj)
+        except Exception as e:
+            reraise_if_terminate(e)
+            if station_field.field not in self.warned:
+                self.warned.add(station_field.field)
+                log.info('Cannot evaluate station field %s: %s'
+                    % (station_field.field, e))
+            return StationFieldEvaluator.SKIP
+
+    def insert_fields(self, loopdata_pkt: Dict[str, Any]) -> None:
+        for station_field in self.fields:
+            if station_field.chain[0] in StationFieldEvaluator.DYNAMIC_ATTRS:
+                value = self.compute(station_field)
+            else:
+                if station_field.field not in self.static_values:
+                    self.static_values[station_field.field] = \
+                        self.compute(station_field)
+                value = self.static_values[station_field.field]
+            if value is not None and value is not StationFieldEvaluator.SKIP:
+                loopdata_pkt[station_field.field] = value
+
 class LoopProcessor:
     def __init__(self, cfg: Configuration):
         self.cfg = cfg
         self.archive_start: float = time.time()
         self.almanac_eval: Optional[AlmanacFieldEvaluator] = \
             AlmanacFieldEvaluator(cfg) if len(cfg.almanac_fields) > 0 else None
+        self.station_eval: Optional[StationFieldEvaluator] = \
+            StationFieldEvaluator(cfg.station_fields, cfg.station) \
+            if len(cfg.station_fields) > 0 and cfg.station is not None else None
 
     def process_queue(self) -> None:
         try:
@@ -2767,7 +2940,8 @@ class LoopProcessor:
 
                 # Process new packet.
                 loopdata_pkt = LoopProcessor.generate_loopdata_dictionary(
-                    pkt, self.cfg, self.accumulators, self.almanac_eval)
+                    pkt, self.cfg, self.accumulators, self.almanac_eval,
+                    self.station_eval)
                 # Write the loop-data.txt file.
                 LoopProcessor.write_packet_to_file(loopdata_pkt,
                     self.cfg.tmpname, self.cfg.loop_data_dir, self.cfg.filename)
@@ -2788,7 +2962,8 @@ class LoopProcessor:
 
     @staticmethod
     def generate_loopdata_dictionary(in_pkt: Dict[str, Any], cfg: Configuration, accums: Accumulators,
-            almanac_eval: Optional[AlmanacFieldEvaluator] = None) -> Dict[str, Any]:
+            almanac_eval: Optional[AlmanacFieldEvaluator] = None,
+            station_eval: Optional[StationFieldEvaluator] = None) -> Dict[str, Any]:
 
         # pkt needs to be in the units that the accumulators are expecting.
         pruned_pkt = LoopProcessor.prune_period_packet(in_pkt, cfg.obstypes.current)
@@ -2892,6 +3067,10 @@ class LoopProcessor:
         # time, temperature and pressure, not from accumulators.
         if almanac_eval is not None:
             almanac_eval.insert_fields(loopdata_pkt, in_pkt)
+
+        # Station fields depend on nothing in the packet.
+        if station_eval is not None:
+            station_eval.insert_fields(loopdata_pkt)
 
         return loopdata_pkt
 
@@ -3304,6 +3483,8 @@ class LoopProcessor:
             log.info('latitude                : %f' % cfg.latitude)
             log.info('longitude               : %f' % cfg.longitude)
             log.info('altitude_m              : %f' % cfg.altitude_m)
+        if len(cfg.station_fields) > 0:
+            log.info('station_fields          : %s' % [ f.field for f in cfg.station_fields ])
 
     @staticmethod
     def rsync_data(pktTime: int, skip_if_older_than: int, loop_data_dir: str,
