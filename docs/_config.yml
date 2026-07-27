@@ -1,0 +1,34 @@
+title: WeeWX LoopData
+description: >-
+  Live loop-packet data for WeeWX skins — current, trend, rolling-window,
+  span, windrose, almanac and station values, unit-converted and formatted
+  per your report, written to a json file on every loop packet.
+url: "https://chaunceygardiner.github.io"
+baseurl: "/weewx-loopdata"
+
+remote_theme: just-the-docs/just-the-docs
+plugins:
+  - jekyll-remote-theme
+
+search_enabled: true
+heading_anchors: true
+
+aux_links:
+  "weewx-loopdata on GitHub":
+    - "https://github.com/chaunceygardiner/weewx-loopdata"
+aux_links_new_tab: true
+
+callouts:
+  note:
+    title: Note
+    color: blue
+  important:
+    title: Important
+    color: red
+  tip:
+    title: Tip
+    color: green
+
+footer_content: >-
+  weewx-loopdata is Copyright &copy; 2020&ndash;2026 John A Kline and is
+  licensed under the GNU Public License v3.

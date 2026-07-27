@@ -4,6 +4,8 @@ Copyright (C)2022-2026 by John A Kline (john@johnkline.com)
 
 **This extension requires Python 3.7 or later and WeeWX 4 or 5.**
 
+**Full manual:** [chaunceygardiner.github.io/weewx-loopdata](https://chaunceygardiner.github.io/weewx-loopdata/)
+
 ## Description
 
 With LoopData, the tags in your WeeWX reports can be updated on every LOOP
@@ -413,9 +415,12 @@ them.
 ### Example of LoopData in Action
 
 See weewx-loopdata in action with a WeatherBoard&trade; skin at
-[www.paloaltoweather.com/weatherboard/](https://www.paloaltoweather.com/weatherboard/)
-and in a "LiveSeasons" skin at
-[www.paloaltoweather.com/](https://www.paloaltoweather.com/).
+[www.paloaltoweather.com/weatherboard/](https://www.paloaltoweather.com/weatherboard/),
+in a "LiveSeasons" skin at
+[www.paloaltoweather.com/](https://www.paloaltoweather.com/), and driving
+[weewx-celestial](https://github.com/chaunceygardiner/weewx-celestial)'s
+live sky at
+[www.paloaltoweather.com/celestial/](https://www.paloaltoweather.com/celestial/).
 
 A WeatherBoard&trade; screenshot is below.
 
@@ -794,6 +799,13 @@ almanac(horizon=-6).sun(use_center=1).set.raw        civil dusk
 almanac(horizon=-12).sun(use_center=1).rise.raw      nautical dawn
 almanac(horizon=-18).sun(use_center=1).rise.raw      astronomical dawn
 ```
+
+For a complete live sky built from these fields, see
+[weewx-celestial](https://github.com/chaunceygardiner/weewx-celestial): its
+Geocentric panel — every body placed by compass bearing and distance, the moon
+at its true phase, odometer distance readouts ticking between loop packets —
+is drawn entirely from loopdata almanac fields.  See it live at
+[www.paloaltoweather.com/celestial/](https://www.paloaltoweather.com/celestial/).
 
 One loopdata extension to the report grammar: `almanac(days=±N)` evaluates the almanac at the
 same wall-clock time N *local calendar* days away.  For example, `almanac(days=1).sunrise.raw`
