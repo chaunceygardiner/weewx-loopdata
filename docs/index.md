@@ -7,6 +7,10 @@ permalink: /
 
 # WeeWX LoopData — make your skins come alive
 
+[View on GitHub](https://github.com/chaunceygardiner/weewx-loopdata){: .btn .btn-primary }
+[Download weewx-loopdata.zip](https://github.com/chaunceygardiner/weewx-loopdata/releases/latest/download/weewx-loopdata.zip){: .btn }
+[Report an issue](https://github.com/chaunceygardiner/weewx-loopdata/issues){: .btn }
+
 With LoopData, the tags in your WeeWX reports can be updated on every LOOP
 packet — typically every few seconds — instead of waiting for the next archive
 interval and page reload.  This works for nearly every tag you would use in a

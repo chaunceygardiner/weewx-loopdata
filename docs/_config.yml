@@ -18,6 +18,13 @@ aux_links:
     - "https://github.com/chaunceygardiner/weewx-loopdata"
 aux_links_new_tab: true
 
+# External links shown at the bottom of the left sidebar nav, on every page.
+nav_external_links:
+  - title: weewx-loopdata on GitHub
+    url: https://github.com/chaunceygardiner/weewx-loopdata
+  - title: Download weewx-loopdata.zip
+    url: https://github.com/chaunceygardiner/weewx-loopdata/releases/latest/download/weewx-loopdata.zip
+
 callouts:
   note:
     title: Note
