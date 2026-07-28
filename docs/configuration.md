@@ -75,24 +75,23 @@ an almanac tag with two keywords — must be quoted, or ConfigObj will split
 the entry at the comma into two bogus fields:
 `fields = ..., 'day.rain.sum.format("%.2f", add_label=False)', ...`
 
-## `[[BarometerTrendDescriptions]]`
+## Translating `trend.barometer.desc`
 
-The descriptions associated with `trend.barometer.desc`.  Localize as
-necessary:
+As of 6.4 the descriptions served for `trend.barometer.desc` (`Falling
+Slowly`, `Steady`, …) are gettext-style keys into the **target report's**
+`[Texts]` — translate them in the target report's lang file (the sample
+report's shipped `lang/de.conf` already carries all nine), or override a
+description without touching any skin file:
 
 ```
-[LoopData]
-    [[BarometerTrendDescriptions]]
-        RISING_VERY_RAPIDLY = Rising Very Rapidly
-        RISING_QUICKLY = Rising Quickly
-        RISING = Rising
-        RISING_SLOWLY = Rising Slowly
-        STEADY = Steady
-        FALLING_SLOWLY = Falling Slowly
-        FALLING = Falling
-        FALLING_QUICKLY = Falling Quickly
-        FALLING_VERY_RAPIDLY = Falling Very Rapidly
+[StdReport]
+    [[LoopDataReport]]
+        [[[Texts]]]
+            "Steady" = "Holding steady"
 ```
+
+The pre-6.4 `[LoopData]` `[[BarometerTrendDescriptions]]` section is gone
+and now ignored — delete it from weewx.conf.
 
 `trend.barometer.code` (an integer from `-4` through `4`) is the
 language-neutral companion; see
@@ -158,14 +157,4 @@ pages of yours use).
         skip_if_older_than = 3
     [[Include]]
         fields = current.dateTime.raw, current.outTemp, current.outTemp.raw, day.outTemp.min.raw, day.outTemp.max.raw, day.outTemp.min.formatted, day.outTemp.max.formatted, current.outHumidity, current.outHumidity.raw, day.outHumidity.min.raw, day.outHumidity.max.raw, current.windSpeed, current.windSpeed.raw, current.windDir.raw, current.windDir.ordinal_compass, 10m.windGust.max, 10m.wind.gustdir.raw, 10m.wind.gustdir.ordinal_compass, current.barometer, current.barometer.raw, trend.barometer.raw, trend.barometer.desc, current.rainRate, current.rainRate.raw, day.rain.sum, day.rain.sum.raw, day.rainRate.max, day.rainRate.max.raw, current.dewpoint, current.dewpoint.raw, day.dewpoint.min.raw, day.dewpoint.max.raw, day.dewpoint.min.formatted, day.dewpoint.max.formatted, current.appTemp, current.appTemp.raw, day.appTemp.min.raw, day.appTemp.max.raw, day.appTemp.min.formatted, day.appTemp.max.formatted, current.UV, current.UV.raw, day.UV.max, current.radiation, current.radiation.raw, day.radiation.max, current.pm2_5, current.pm2_5_aqi.raw, current.pm2_5_aqi.formatted, day.windrose.banded, day.windrose.calm, unit.label.outTemp, unit.label.barometer, unit.label.rain, unit.label.rainRate, unit.label.windSpeed
-    [[BarometerTrendDescriptions]]
-        RISING_VERY_RAPIDLY = Rising Very Rapidly
-        RISING_QUICKLY = Rising Quickly
-        RISING = Rising
-        RISING_SLOWLY = Rising Slowly
-        STEADY = Steady
-        FALLING_SLOWLY = Falling Slowly
-        FALLING = Falling
-        FALLING_QUICKLY = Falling Quickly
-        FALLING_VERY_RAPIDLY = Falling Very Rapidly
 ```

@@ -4,7 +4,7 @@
 #errorCatcher Echo
 #encoding UTF-8
 <!DOCTYPE html>
-<html lang="en">
+<html lang="$lang">
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -14,7 +14,7 @@
     #else
       <title>$station.location</title>
     #end if
-    <meta name="description" content="Up to date weather readings for $station.location.">
+    <meta name="description" content="$gettext('Up to date weather readings for {location}.').format(location=$station.location)">
     <style>
       :root {
         --ground: #10141c;
@@ -106,7 +106,7 @@
       </header>
       <div class="gauges">
         <div class="gauge">
-          <h2>Today&#39;s Windrose</h2>
+          <h2>$gettext("Today's Windrose")</h2>
           <canvas id="gauge-rose" width="240" height="240"></canvas>
           <div class="legend" id="rose-legend"></div>
           <div class="fields">
@@ -115,7 +115,7 @@
           </div>
         </div>
         <div class="gauge">
-          <h2>Wind</h2>
+          <h2>$gettext("Wind")</h2>
           <canvas id="gauge-wind" width="240" height="240"></canvas>
           <div class="fields">
             current.windSpeed &middot; current.windDir.raw<br>
@@ -123,7 +123,7 @@
           </div>
         </div>
         <div class="gauge">
-          <h2>Temperature</h2>
+          <h2>$gettext("Temperature")</h2>
           <canvas id="gauge-temp" width="240" height="240"></canvas>
           <div class="fields">
             current.outTemp &middot; current.outTemp.raw<br>
@@ -131,7 +131,7 @@
           </div>
         </div>
         <div class="gauge">
-          <h2>Dew Point</h2>
+          <h2>$gettext("Dew Point")</h2>
           <canvas id="gauge-dew" width="240" height="240"></canvas>
           <div class="fields">
             current.dewpoint &middot; current.dewpoint.raw<br>
@@ -139,7 +139,7 @@
           </div>
         </div>
         <div class="gauge">
-          <h2>Humidity</h2>
+          <h2>$gettext("Humidity")</h2>
           <canvas id="gauge-hum" width="240" height="240"></canvas>
           <div class="fields">
             current.outHumidity &middot; current.outHumidity.raw<br>
@@ -147,7 +147,7 @@
           </div>
         </div>
         <div class="gauge">
-          <h2>Barometer</h2>
+          <h2>$gettext("Barometer")</h2>
           <canvas id="gauge-baro" width="240" height="240"></canvas>
           <div class="fields">
             current.barometer &middot; trend.barometer.raw<br>
@@ -155,7 +155,7 @@
           </div>
         </div>
         <div class="gauge">
-          <h2>Rain</h2>
+          <h2>$gettext("Rain")</h2>
           <canvas id="gauge-rain" width="240" height="240"></canvas>
           <div class="fields">
             day.rain.sum &middot; day.rain.sum.raw<br>
@@ -163,7 +163,7 @@
           </div>
         </div>
         <div class="gauge">
-          <h2>Rain Rate</h2>
+          <h2>$gettext("Rain Rate")</h2>
           <canvas id="gauge-rrate" width="240" height="240"></canvas>
           <div class="fields">
             current.rainRate &middot; current.rainRate.raw<br>
@@ -171,7 +171,7 @@
           </div>
         </div>
         <div class="gauge" id="cell-feel">
-          <h2>Feels Like</h2>
+          <h2>$gettext("Feels Like")</h2>
           <canvas id="gauge-feel" width="240" height="240"></canvas>
           <div class="fields">
             current.appTemp &middot; current.appTemp.raw<br>
@@ -179,7 +179,7 @@
           </div>
         </div>
         <div class="gauge" id="cell-uv">
-          <h2>UV Index</h2>
+          <h2>$gettext("UV Index")</h2>
           <canvas id="gauge-uv" width="240" height="240"></canvas>
           <div class="fields">
             current.UV &middot; current.UV.raw<br>
@@ -187,7 +187,7 @@
           </div>
         </div>
         <div class="gauge" id="cell-rad">
-          <h2>Solar Radiation</h2>
+          <h2>$gettext("Solar Radiation")</h2>
           <canvas id="gauge-rad" width="240" height="240"></canvas>
           <div class="fields">
             current.radiation &middot; current.radiation.raw<br>
@@ -195,7 +195,7 @@
           </div>
         </div>
         <div class="gauge" id="cell-aqi">
-          <h2>Air Quality</h2>
+          <h2>$gettext("Air Quality")</h2>
           <canvas id="gauge-aqi" width="240" height="240"></canvas>
           <div class="fields">
             current.pm2_5_aqi.raw &middot; current.pm2_5_aqi.formatted<br>

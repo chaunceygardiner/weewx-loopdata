@@ -35,6 +35,7 @@ import logging
 import os
 import queue
 import random
+import re
 import shutil
 import tempfile
 import time
@@ -1131,16 +1132,24 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(L.massage_near_zero(-9.99e-11), 0.0)
 
     def test_construct_baro_trend_descs(self) -> None:
-        # Builds a BarometerTrend -> description map.  Supplied translations
-        # override; missing keys fall back to the English defaults.
+        # Builds a BarometerTrend -> description map from the TARGET report's
+        # [Texts]: each English description is a gettext-style key (6.4
+        # replaced the old [LoopData] [[BarometerTrendDescriptions]] section
+        # with this); missing keys fall back to the English one at a time.
         L = user.loopdata.LoopData
         BT = user.loopdata.BarometerTrend
 
-        # Empty translation dict -> all defaults present for all nine trends.
+        # The default table covers all nine trends, one distinct English
+        # description each.
+        defaults = user.loopdata.BARO_TREND_DESCS
+        self.assertEqual(set(defaults), set(BT))
+        self.assertEqual(len(set(defaults.values())), 9)
+
+        # Empty [Texts] -> the English defaults for all nine trends.
         descs = L.construct_baro_trend_descs({})
         self.assertEqual(len(descs), 9)
-        # Assert ALL nine mappings (each is a distinct line in the function;
-        # asserting only a few lets mutations to the others survive).
+        # Assert ALL nine mappings (asserting only a few lets mutations to
+        # the others survive).
         self.assertEqual(descs[BT.RISING_VERY_RAPIDLY], 'Rising Very Rapidly')
         self.assertEqual(descs[BT.RISING_QUICKLY], 'Rising Quickly')
         self.assertEqual(descs[BT.RISING], 'Rising')
@@ -1151,33 +1160,39 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(descs[BT.FALLING_QUICKLY], 'Falling Quickly')
         self.assertEqual(descs[BT.FALLING_VERY_RAPIDLY], 'Falling Very Rapidly')
 
-        # Partial override: supplied keys win, the rest keep defaults.
+        # Partial [Texts]: supplied keys win, the rest keep English --
+        # exactly the per-string fallback of every other translated string.
         descs = L.construct_baro_trend_descs({
-            'STEADY': 'Holding',
-            'RISING': 'Going Up'})
-        self.assertEqual(descs[BT.STEADY], 'Holding')
-        self.assertEqual(descs[BT.RISING], 'Going Up')
-        self.assertEqual(descs[BT.FALLING], 'Falling')  # untouched default
+            'Steady': 'gleichbleibend',
+            'Rising': 'steigend',
+            'unrelated page string': 'x'})
+        self.assertEqual(descs[BT.STEADY], 'gleichbleibend')
+        self.assertEqual(descs[BT.RISING], 'steigend')
+        self.assertEqual(descs[BT.FALLING], 'Falling')  # untouched English
 
-        # To kill mutations of the lookup KEYS (e.g. 'RISING_QUICKLY' ->
-        # corrupted), supply a translation dict containing EVERY key with a
-        # distinct sentinel value.  A corrupted key would miss the dict and fall
-        # back to the English default, producing a different string -- so each
-        # mapping line is independently pinned.
-        keys = ['RISING_VERY_RAPIDLY', 'RISING_QUICKLY', 'RISING',
-                'RISING_SLOWLY', 'STEADY', 'FALLING_SLOWLY', 'FALLING',
-                'FALLING_QUICKLY', 'FALLING_VERY_RAPIDLY']
-        full = {k: 'X_' + k for k in keys}
+        # To kill mutations of the lookup KEYS, supply a [Texts] containing
+        # EVERY English description with a distinct sentinel value.  A
+        # corrupted key would miss the dict and fall back to English,
+        # producing a different string -- each mapping independently pinned.
+        full = {english: 'X_' + english for english in defaults.values()}
         d2 = L.construct_baro_trend_descs(full)
-        self.assertEqual(d2[BT.RISING_VERY_RAPIDLY], 'X_RISING_VERY_RAPIDLY')
-        self.assertEqual(d2[BT.RISING_QUICKLY], 'X_RISING_QUICKLY')
-        self.assertEqual(d2[BT.RISING], 'X_RISING')
-        self.assertEqual(d2[BT.RISING_SLOWLY], 'X_RISING_SLOWLY')
-        self.assertEqual(d2[BT.STEADY], 'X_STEADY')
-        self.assertEqual(d2[BT.FALLING_SLOWLY], 'X_FALLING_SLOWLY')
-        self.assertEqual(d2[BT.FALLING], 'X_FALLING')
-        self.assertEqual(d2[BT.FALLING_QUICKLY], 'X_FALLING_QUICKLY')
-        self.assertEqual(d2[BT.FALLING_VERY_RAPIDLY], 'X_FALLING_VERY_RAPIDLY')
+        for trend, english in defaults.items():
+            self.assertEqual(d2[trend], 'X_' + english)
+
+        # The shipped lang files carry exactly the nine keys, translated.
+        for name in ('en.conf', 'de.conf'):
+            conf = self.i18n_lang_conf(
+                os.path.join(self.I18N_SKIN_DIR, 'lang'), name)
+            d3 = L.construct_baro_trend_descs(dict(conf['Texts']))
+            self.assertEqual(len(d3), 9, name)
+            for trend, english in defaults.items():
+                self.assertEqual(d3[trend], conf['Texts'][english], name)
+        # ...and German translates every one of them away from English.
+        de = self.i18n_lang_conf(os.path.join(self.I18N_SKIN_DIR, 'lang'),
+                                 'de.conf')
+        d4 = L.construct_baro_trend_descs(dict(de['Texts']))
+        for trend, english in defaults.items():
+            self.assertNotEqual(d4[trend], english, english)
 
     def test_compute_period_obstypes(self) -> None:
         # For a given period, collect the obstypes of fields in that period and
@@ -7019,6 +7034,165 @@ class ProcessPacketTests(unittest.TestCase):
                          [1.1, 4.7, 8.1, 12.8, 19.7, 24.8])
         self.assertEqual(loopdata_pkt['unit.label.windrose'],
                          cfg.formatter.get_label_string('mile'))
+
+    # ---- Sample-report i18n (6.4) -----------------------------------------
+    # The translation plumbing ported from weewx-skyfield 1.12/weewx-celestial
+    # 7.2: [Texts] is gettext-style (the English string IS the key; a report
+    # falls back to it one string at a time), and everything the live
+    # javascript composes is translated at generation time and fed in as the
+    # T/CARDINALS globals through json.dumps.  These tests scrape the
+    # template sources, so their expectations derive from spec, not from
+    # loopdata output.
+
+    I18N_SKIN_DIR = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), '..', 'skins', 'LoopData')
+    I18N_BODIES = ['sun', 'moon', 'mercury', 'venus', 'earth', 'mars',
+                   'jupiter', 'saturn', 'uranus', 'neptune', 'pluto',
+                   'proxima_centauri']
+
+    @staticmethod
+    def i18n_lang_conf(dirname: str, name: str) -> configobj.ConfigObj:
+        return configobj.ConfigObj(os.path.join(dirname, name),
+                                   encoding='utf-8', file_error=True)
+
+    @classmethod
+    def i18n_rendered_keys(cls) -> Set[str]:
+        """Every translation key the page can render, read from the
+        $gettext("...")/$gettext('...') literals in the template and the
+        include (keys are single-line literals by convention)."""
+        keys: Set[str] = set()
+        for name in ('index.html.tmpl', 'realtime_updater.inc'):
+            with open(os.path.join(cls.I18N_SKIN_DIR, name), encoding='utf-8') as f:
+                found = re.findall(r'\$gettext\(\s*(?:"([^"]+)"|\'([^\']+)\')\s*\)',
+                                   f.read())
+            assert found, name
+            keys |= {a or b for a, b in found}
+        return keys
+
+    @classmethod
+    def i18n_served_keys(cls) -> Set[str]:
+        """The page-rendered keys plus the value-side keys loopdata itself
+        reads from the target report's [Texts] (the trend.barometer.desc
+        descriptions) -- everything the shipped lang files must carry."""
+        return cls.i18n_rendered_keys() | set(
+            user.loopdata.BARO_TREND_DESCS.values())
+
+    def test_i18n_en_conf_ships_exactly_what_renders(self):
+        # Both directions: a rendered key missing from lang/en.conf fails,
+        # and an en.conf key nothing renders fails -- the English file is
+        # the reference dictionary for translators, and it must grow and
+        # shrink with the features that render it.
+        conf = self.i18n_lang_conf(os.path.join(self.I18N_SKIN_DIR, 'lang'), 'en.conf')
+        shipped = dict(conf['Texts'])
+        rendered = self.i18n_served_keys()
+        self.assertEqual(sorted(rendered - set(shipped)), [],
+                         'rendered/served but not in en.conf')
+        self.assertEqual(sorted(set(shipped) - rendered), [],
+                         'in en.conf but never rendered/served')
+        # English is the identity translation: every value equals its key
+        # (so the file doubles as the untranslated reference).
+        self.assertEqual([k for k, v in shipped.items() if v != k], [])
+        # Every English format string must itself format cleanly: the
+        # javascript's fmt and the template fall back to it.
+        for k in rendered:
+            k.format(**{name: 'x' for name in set(re.findall(r'\{(\w+)\}', k))})
+
+    def test_i18n_javascript_lookups_match_the_t_feed(self):
+        # The include's javascript looks composed strings up in T by
+        # English-key literal (non-ASCII \u-escaped to survive the
+        # html_entities output filter and match json.dumps' escaping).  A
+        # lookup key that is not fed into T -- or a T entry whose dict key
+        # differs from its $gettext argument -- falls back to English
+        # silently, so pin all three sets together.
+        with open(os.path.join(self.I18N_SKIN_DIR, 'realtime_updater.inc'),
+                  encoding='utf-8') as f:
+            source = f.read()
+        t_pairs = re.findall(
+            r"#silent \$t\.update\(\{'([^']+)': \$gettext\('([^']+)'\)\}\)", source)
+        self.assertTrue(t_pairs)
+        for dict_key, gettext_key in t_pairs:
+            self.assertEqual(dict_key, gettext_key)
+        t_keys = {k for k, _ in t_pairs}
+        js = re.sub(r'^\s*#.*$', '', source, flags=re.MULTILINE)
+        fmt_keys = {bytes(k, 'ascii').decode('unicode_escape')
+                    for k in re.findall(r"fmt\('([^']+)'", js)}
+        self.assertTrue(fmt_keys)
+        self.assertEqual(sorted(fmt_keys - t_keys), [], 'fmt key never fed into T')
+        self.assertEqual(sorted(t_keys - fmt_keys), [], 'T entry no fmt call reads')
+
+    def test_i18n_lang_files_consistent(self):
+        # Every shipped lang file must parse, translate only keys en.conf
+        # ships (a stale key would silently never render), keep each value's
+        # placeholders exactly its key's set (a renamed one knocks the
+        # string back to English at run time), and carry the sections a
+        # loopdata TARGET report in this language serves: ordinates for
+        # .ordinal_compass fields, moon phases, body and constellation
+        # names for almanac fields, hemispheres for station lat/lon fields.
+        lang_dir = os.path.join(self.I18N_SKIN_DIR, 'lang')
+        rendered = self.i18n_served_keys()
+        abbrs = set(self.i18n_lang_conf(lang_dir, 'en.conf')['Almanac']['Constellations'])
+        self.assertEqual(len(abbrs), 88)
+        names = sorted(os.listdir(lang_dir))
+        self.assertIn('en.conf', names)
+        self.assertIn('de.conf', names)
+        for name in names:
+            conf = self.i18n_lang_conf(lang_dir, name)
+            for key, val in dict(conf['Texts']).items():
+                self.assertIn(key, rendered, (name, key))
+                self.assertIsInstance(val, str, (name, key))
+                self.assertEqual(set(re.findall(r'\{(\w+)\}', val)),
+                                 set(re.findall(r'\{(\w+)\}', key)), (name, key))
+            self.assertEqual(len(conf['Labels']['hemispheres']), 4, name)
+            self.assertEqual(len(conf['Units']['Ordinates']['directions']), 17, name)
+            self.assertEqual(len(conf['Almanac']['moon_phases']), 8, name)
+            for body in self.I18N_BODIES:
+                self.assertTrue(conf['Almanac'][body], (name, body))
+            self.assertEqual(set(conf['Almanac']['Constellations']), abbrs, name)
+
+    def test_i18n_de_conf_is_complete(self):
+        # German is a full translation: every rendered key is covered, so a
+        # new feature's strings fail here until de.conf learns them.
+        conf = self.i18n_lang_conf(os.path.join(self.I18N_SKIN_DIR, 'lang'), 'de.conf')
+        self.assertEqual(sorted(self.i18n_served_keys() - set(conf['Texts'])), [])
+
+    def test_i18n_german_in_step_with_siblings(self):
+        # The shared vocabulary is copied verbatim from weewx-skyfield's and
+        # weewx-celestial's lang files (the native-speaker-reviewed German):
+        # body names, moon phases, hemispheres, ordinates, all 88
+        # constellation names, and every [Texts] key the pages share --
+        # the same cross-repo rule celestial pins against skyfield.  Skips
+        # when no sibling lang directory is available.
+        lang_dir = os.path.join(self.I18N_SKIN_DIR, 'lang')
+        repo_parent = os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__))))
+        siblings = [d for d in (
+            os.path.join(repo_parent, 'weewx-skyfield', 'skins', 'Skyfield', 'lang'),
+            os.path.join(repo_parent, 'weewx-celestial', 'skins', 'Celestial', 'lang'),
+            '/home/weewx/weewx-data/skins/Skyfield/lang',
+        ) if os.path.exists(os.path.join(d, 'de.conf'))]
+        if not siblings:
+            self.skipTest('no sibling lang directory is available')
+        for sib_dir in siblings:
+            for name in ('en.conf', 'de.conf'):
+                sib = self.i18n_lang_conf(sib_dir, name)
+                ld = self.i18n_lang_conf(lang_dir, name)
+                self.assertEqual(dict(ld['Almanac']['Constellations']),
+                                 dict(sib['Almanac']['Constellations']),
+                                 (sib_dir, name))
+                for body in self.I18N_BODIES:
+                    if body in sib['Almanac']:
+                        self.assertEqual(ld['Almanac'][body], sib['Almanac'][body],
+                                         (sib_dir, name, body))
+                self.assertEqual(list(ld['Almanac']['moon_phases']),
+                                 list(sib['Almanac']['moon_phases']), (sib_dir, name))
+                self.assertEqual(list(ld['Labels']['hemispheres']),
+                                 list(sib['Labels']['hemispheres']), (sib_dir, name))
+                self.assertEqual(list(ld['Units']['Ordinates']['directions']),
+                                 list(sib['Units']['Ordinates']['directions']),
+                                 (sib_dir, name))
+                for key in set(ld['Texts']) & set(sib['Texts']):
+                    self.assertEqual(ld['Texts'][key], sib['Texts'][key],
+                                     (sib_dir, name, key))
 
 
 if __name__ == '__main__':

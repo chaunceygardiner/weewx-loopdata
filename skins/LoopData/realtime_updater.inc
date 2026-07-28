@@ -19,6 +19,53 @@
   #else
     expiration_time = 4;
   #end if
+  // The report's language drives toLocaleTimeString (the last-update
+  // stamp); an unknown tag must not break every render.
+  LOCALE = '$lang';
+  try {
+    new Date().toLocaleString(LOCALE);
+  } catch (e) {
+    console.log('bad lang "' + LOCALE + '", using en-US');
+    LOCALE = 'en-US';
+  }
+  ## Everything this script composes is translated at generation time and
+  ## fed here: compass cardinals from the report formatter's ordinates
+  ## (the same source as .ordinal_compass fields when this report is the
+  ## loopdata target), and the badge/readout strings from [Texts] via
+  ## $gettext (each key spelled out literally so the tests can tie the
+  ## include to lang/en.conf).  Both ride through json.dumps, which
+  ## \u-escapes every non-ASCII character -- html_entities encoding can
+  ## never touch them, and canvas text takes no entities anyway.
+  #import json
+  #set $ords = $almanac.formatter.ordinate_names
+  CARDINALS = $json.dumps([str($ords[0]), str($ords[4]), str($ords[8]), str($ords[12])]);
+  #set $t = {}
+  #silent $t.update({'LIVE': $gettext('LIVE')})
+  #silent $t.update({'{age}s ago': $gettext('{age}s ago')})
+  #silent $t.update({'NO DATA (HTTP {status}) — check loop_data_file': $gettext('NO DATA (HTTP {status}) — check loop_data_file')})
+  #silent $t.update({'BAD DATA — check loop_data_file': $gettext('BAD DATA — check loop_data_file')})
+  #silent $t.update({'OFFLINE': $gettext('OFFLINE')})
+  #silent $t.update({'CLICK-ME': $gettext('CLICK-ME')})
+  #silent $t.update({'calm': $gettext('calm')})
+  #silent $t.update({'gust {gust}': $gettext('gust {gust}')})
+  #silent $t.update({'gust {gust} @ {dir}': $gettext('gust {gust} @ {dir}')})
+  #silent $t.update({'today': $gettext('today')})
+  #silent $t.update({'today {min} to {max}': $gettext('today {min} to {max}')})
+  #silent $t.update({'max today {max}': $gettext('max today {max}')})
+  #silent $t.update({'rate {rate}': $gettext('rate {rate}')})
+  #silent $t.update({'pm2.5 {pm25}': $gettext('pm2.5 {pm25}')})
+  T = $json.dumps($t);
+  // Composed translations: look the English key up in T (falling back to
+  // the key, so a missing entry renders English) and fill the {named}
+  // placeholders.  Javascript key literals must spell non-ASCII with \u
+  // escapes to match json.dumps' escaping of the generated object.
+  function fmt(key, params) {
+    var s = T[key] || key;
+    for (var k in params) {
+      s = s.replace('{' + k + '}', params[k]);
+    }
+    return s;
+  }
   function addLoadEvent(func) {
     var oldonload = window.onload;
     if (typeof window.onload != 'function') {
@@ -50,8 +97,8 @@
   }
   function setUpExpiredClickListener() {
     var liveLabel = document.getElementById("live-label");
-    if (liveLabel != "CLICK-ME") {
-      liveLabel.innerHTML = "CLICK-ME";
+    if (liveLabel != fmt('CLICK-ME')) {
+      liveLabel.innerHTML = fmt('CLICK-ME');
       // set an onclick event on live-label to restart everything
       liveLabel.addEventListener("click", clickListener);
     }
@@ -332,7 +379,7 @@
     ctx.font = '600 12px ' + SANS;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ['N', 'E', 'S', 'W'].forEach(function (d, i) {
+    CARDINALS.forEach(function (d, i) {
       var a = compassAngle(i * 90);
       ctx.fillStyle = i === 0 ? C.ink : C.muted;
       ctx.fillText(d, cx + (rt - 19) * Math.cos(a), cy + (rt - 19) * Math.sin(a));
@@ -385,12 +432,11 @@
     ctx.fillStyle = C.muted;
     ctx.font = '11px ' + SANS;
     var sub = (cfg.speed !== undefined && cfg.speed > 0 &&
-               cfg.dirText !== undefined) ? cfg.dirText : 'calm';
+               cfg.dirText !== undefined) ? cfg.dirText : fmt('calm');
     if (cfg.gustText !== undefined) {
-      sub += '   gust ' + cfg.gustText;
-      if (cfg.gustDirText !== undefined) {
-        sub += ' @ ' + cfg.gustDirText;
-      }
+      sub += '   ' + (cfg.gustDirText !== undefined
+          ? fmt('gust {gust} @ {dir}', {gust: cfg.gustText, dir: cfg.gustDirText})
+          : fmt('gust {gust}', {gust: cfg.gustText}));
     }
     ctx.fillText(sub, cx, cy + r * 0.42 + 18);
   }
@@ -459,7 +505,7 @@
     ctx.font = '600 11px ' + SANS;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ['N', 'E', 'S', 'W'].forEach(function (d, i) {
+    CARDINALS.forEach(function (d, i) {
       var a = rad(i * 90 - 90);
       ctx.fillStyle = i === 0 ? C.ink : C.muted;
       ctx.fillText(d, cx + (rFace + 12) * Math.cos(a), cy + (rFace + 12) * Math.sin(a));
@@ -479,7 +525,7 @@
       ctx.fillText(Math.round(100 * rose.calm / total) + '%', cx, cy - 5);
       ctx.fillStyle = C.muted;
       ctx.font = '9px ' + SANS;
-      ctx.fillText('calm', cx, cy + 9);
+      ctx.fillText(fmt('calm'), cx, cy + 9);
     }
   }
 
@@ -540,8 +586,9 @@
       var tLabel = '';
       if (result['day.outTemp.min.formatted'] !== undefined &&
           result['day.outTemp.max.formatted'] !== undefined) {
-        tLabel = 'today ' + result['day.outTemp.min.formatted'] +
-                 ' to ' + result['day.outTemp.max.formatted'];
+        tLabel = fmt('today {min} to {max}',
+                     {min: result['day.outTemp.min.formatted'],
+                      max: result['day.outTemp.max.formatted']});
       }
       drawDial(ctxs.temp, {
         scale: tempScale(result['unit.label.outTemp'] || ''),
@@ -569,8 +616,9 @@
       var hLabel = '';
       if (result['day.outHumidity.min.raw'] !== undefined &&
           result['day.outHumidity.max.raw'] !== undefined) {
-        hLabel = 'today ' + Math.round(result['day.outHumidity.min.raw']) +
-                 ' to ' + Math.round(result['day.outHumidity.max.raw']);
+        hLabel = fmt('today {min} to {max}',
+                     {min: Math.round(result['day.outHumidity.min.raw']),
+                      max: Math.round(result['day.outHumidity.max.raw'])});
       }
       drawDial(ctxs.hum, {
         scale: { min: 0, max: 100, major: 20, minor: 5, dec: 0 },
@@ -581,11 +629,11 @@
       });
     }
     if (ctxs.rain !== null) {
-      var rLabel = 'today';
+      var rLabel = fmt('today');
       if (result['current.rainRate.raw'] !== undefined &&
           result['current.rainRate.raw'] > 0 &&
           result['current.rainRate'] !== undefined) {
-        rLabel = 'rate ' + result['current.rainRate'];
+        rLabel = fmt('rate {rate}', {rate: result['current.rainRate']});
       }
       drawDial(ctxs.rain, {
         scale: rainScale(result['unit.label.rain'] || '',
@@ -599,8 +647,9 @@
       var dLabel = '';
       if (result['day.dewpoint.min.formatted'] !== undefined &&
           result['day.dewpoint.max.formatted'] !== undefined) {
-        dLabel = 'today ' + result['day.dewpoint.min.formatted'] +
-                 ' to ' + result['day.dewpoint.max.formatted'];
+        dLabel = fmt('today {min} to {max}',
+                     {min: result['day.dewpoint.min.formatted'],
+                      max: result['day.dewpoint.max.formatted']});
       }
       drawDial(ctxs.dew, {
         scale: tempScale(result['unit.label.outTemp'] || ''),
@@ -620,7 +669,7 @@
       }
       var rrLabel = '';
       if (result['day.rainRate.max'] !== undefined) {
-        rrLabel = 'max today ' + result['day.rainRate.max'];
+        rrLabel = fmt('max today {max}', {max: result['day.rainRate.max']});
       }
       drawDial(ctxs.rrate, {
         scale: rainScale(result['unit.label.rainRate'] || '', rateMax),
@@ -635,8 +684,9 @@
       var fLabel = '';
       if (result['day.appTemp.min.formatted'] !== undefined &&
           result['day.appTemp.max.formatted'] !== undefined) {
-        fLabel = 'today ' + result['day.appTemp.min.formatted'] +
-                 ' to ' + result['day.appTemp.max.formatted'];
+        fLabel = fmt('today {min} to {max}',
+                     {min: result['day.appTemp.min.formatted'],
+                      max: result['day.appTemp.max.formatted']});
       }
       drawDial(ctxs.feel, {
         scale: tempScale(result['unit.label.outTemp'] || ''),
@@ -651,7 +701,7 @@
     if (haveUv && ctxs.uv !== null) {
       var uLabel = '';
       if (result['day.UV.max'] !== undefined) {
-        uLabel = 'max today ' + result['day.UV.max'];
+        uLabel = fmt('max today {max}', {max: result['day.UV.max']});
       }
       drawDial(ctxs.uv, {
         scale: UV_SCALE,
@@ -665,7 +715,7 @@
     if (haveRad && ctxs.rad !== null) {
       var sLabel = '';
       if (result['day.radiation.max'] !== undefined) {
-        sLabel = 'max today ' + result['day.radiation.max'];
+        sLabel = fmt('max today {max}', {max: result['day.radiation.max']});
       }
       drawDial(ctxs.rad, {
         scale: RAD_SCALE,
@@ -679,7 +729,7 @@
     if (haveAqi && ctxs.aqi !== null) {
       var aLabel = '';
       if (result['current.pm2_5'] !== undefined) {
-        aLabel = 'pm2.5 ' + result['current.pm2_5'];
+        aLabel = fmt('pm2.5 {pm25}', {pm25: result['current.pm2_5']});
       }
       drawDial(ctxs.aqi, {
         scale: AQI_SCALE,
@@ -701,7 +751,7 @@
     } catch (e) {
       // Network-level failure (server unreachable, request blocked): no
       // status to show.  A later successful poll rewrites the indicator.
-      document.getElementById("live-label").innerHTML = "OFFLINE";
+      document.getElementById("live-label").innerHTML = fmt('OFFLINE');
       console.log(e);
       return;
     }
@@ -713,7 +763,8 @@
       // in the indicator: the old behavior (a console error only a
       // debugging user ever finds) left the panel silently dead.
       document.getElementById("live-label").innerHTML =
-          "NO DATA (HTTP " + response.status + ") \u2014 check loop_data_file";
+          fmt('NO DATA (HTTP {status}) \u2014 check loop_data_file',
+              {status: response.status});
       return;
     }
     var result;
@@ -723,7 +774,7 @@
       // A 200 with a non-json body: loop_data_file points at something,
       // but not at loopdata's output.
       document.getElementById("live-label").innerHTML =
-          "BAD DATA \u2014 check loop_data_file";
+          fmt('BAD DATA \u2014 check loop_data_file');
       console.log(e);
       return;
     }
@@ -733,12 +784,12 @@
       var age = Math.round(Math.abs(new Date() - lastUpdate) / 1000);
       var element = document.getElementById("live-label");
       if (age <= 3 * refresh_rate) {
-        element.innerHTML = "LIVE";
+        element.innerHTML = fmt('LIVE');
       } else {
-        element.innerHTML = age + "s ago";
+        element.innerHTML = fmt('{age}s ago', {age: age});
       }
       var activityElement = document.getElementById("last-update");
-      activityElement.innerHTML = lastUpdate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
+      activityElement.innerHTML = lastUpdate.toLocaleTimeString(LOCALE, {hour: '2-digit', minute:'2-digit', second:'2-digit'});
 
       updateGauges(result);
     } catch (e) {

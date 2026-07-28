@@ -31,7 +31,7 @@ def loader():
 class LoopDataInstaller(ExtensionInstaller):
     def __init__(self):
         super(LoopDataInstaller, self).__init__(
-            version = "6.3",
+            version = "6.4",
             name = 'loopdata',
             description = 'Loop statistics for real time reporting.',
             author = "John A Kline",
@@ -132,18 +132,6 @@ class LoopDataInstaller(ExtensionInstaller):
                             'unit.label.rainRate',
                             'unit.label.windSpeed',
                             ]},
-
-                    'BarometerTrendDescriptions': {
-                        'RISING_VERY_RAPIDLY' : 'Rising Very Rapidly',
-                        'RISING_QUICKLY'      : 'Rising Quickly',
-                        'RISING'              : 'Rising',
-                        'RISING_SLOWLY'       : 'Rising Slowly',
-                        'STEADY'              : 'Steady',
-                        'FALLING_SLOWLY'      : 'Falling Slowly',
-                        'FALLING'             : 'Falling',
-                        'FALLING_QUICKLY'     : 'Falling Quickly',
-                        'FALLING_VERY_RAPIDLY': 'Falling Very Rapidly',
-                    },
                 },
                 'StdReport': {
                     'LoopDataReport': {
@@ -178,5 +166,9 @@ class LoopDataInstaller(ExtensionInstaller):
                     'skins/LoopData/index.html.tmpl',
                     'skins/LoopData/realtime_updater.inc',
                     'skins/LoopData/skin.conf',
+                    ]),
+                ('skins/LoopData/lang', [
+                    'skins/LoopData/lang/en.conf',
+                    'skins/LoopData/lang/de.conf',
                     ]),
             ])

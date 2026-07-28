@@ -100,6 +100,8 @@ all there is to it.
   LoopData in your own skin, with production-grade javascript.
 * [The sample skin](sample-skin.html) — the instrument panel that ships with
   the extension.
+* [Translations](i18n.html) — the sample report in your language (German
+  ships), and which report's language governs which string.
 * [Syncing to a remote server](rsync.html) — rsync configuration and
   troubleshooting.
 * [How LoopData works](how-it-works.html) — architecture and performance.

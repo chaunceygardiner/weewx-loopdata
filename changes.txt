@@ -1,6 +1,44 @@
 loopdata change history
 -----------------------
 
+6.4 Release 2026/07/28
+----------------------
+ACTION REQUIRED for users who customized [[BarometerTrendDescriptions]]:
+the [LoopData] [[BarometerTrendDescriptions]] section is REMOVED and now
+ignored -- delete it from weewx.conf.  The trend.barometer.desc
+descriptions are now gettext-style [Texts] keys in the TARGET report
+(the English description is the key), so they translate through the same
+lang-file machinery as everything else -- the shipped lang/de.conf
+carries all nine in German -- and a custom wording goes on the target
+report's stanza instead:
+    [StdReport] [[LoopDataReport]] [[[Texts]]] "Steady" = "Holding"
+Users who never touched the section need do nothing: the English
+defaults are unchanged.
+
+The sample report is translatable, and German ships.  The same
+WeeWX-native machinery as weewx-skyfield 1.12 and weewx-celestial 7.2:
+every string the page renders is a gettext-style [Texts] key (the
+English string IS the key, so a missing entry falls back to English one
+string at a time), lang/en.conf is the reference dictionary, and
+lang/de.conf is a complete German translation whose shared vocabulary
+is copied verbatim from those extensions' native-speaker-reviewed
+files (a test pins the repos together).  Everything the live
+javascript composes -- the LIVE/OFFLINE badge, the dial readout lines,
+the compass and windrose cardinal letters -- is translated at
+generation time and fed to the script through json.dumps.  Select with
+lang = de on the report's stanza in weewx.conf.
+
+Two languages meet on the page, and the manual's new Translations page
+documents the coupling: the page's own labels follow the sample
+report's lang, but the live VALUES in loop-data.txt
+(.ordinal_compass, moon_phase, almanac.<body>.label, trend and
+station fields) render in the language of loopdata's [LoopData]
+target report.  Setting [StdReport] [[Defaults]] lang = de in
+weewx.conf sets both at once.  The shipped lang files carry the
+target-report sections too (ordinates, moon phases, body and all 88
+constellation names, hemispheres), so a German LoopDataReport serves
+German values.
+
 6.3 Release 2026/07/25
 ----------------------
 New: station fields.  Any $station report tag can be listed as a field

@@ -551,16 +551,6 @@ one (appending any fields other pages of yours use).
         skip_if_older_than = 3
     [[Include]]
         fields = current.dateTime.raw, current.outTemp, current.outTemp.raw, day.outTemp.min.raw, day.outTemp.max.raw, day.outTemp.min.formatted, day.outTemp.max.formatted, current.outHumidity, current.outHumidity.raw, day.outHumidity.min.raw, day.outHumidity.max.raw, current.windSpeed, current.windSpeed.raw, current.windDir.raw, current.windDir.ordinal_compass, 10m.windGust.max, 10m.wind.gustdir.raw, 10m.wind.gustdir.ordinal_compass, current.barometer, current.barometer.raw, trend.barometer.raw, trend.barometer.desc, current.rainRate, current.rainRate.raw, day.rain.sum, day.rain.sum.raw, day.rainRate.max, day.rainRate.max.raw, current.dewpoint, current.dewpoint.raw, day.dewpoint.min.raw, day.dewpoint.max.raw, day.dewpoint.min.formatted, day.dewpoint.max.formatted, current.appTemp, current.appTemp.raw, day.appTemp.min.raw, day.appTemp.max.raw, day.appTemp.min.formatted, day.appTemp.max.formatted, current.UV, current.UV.raw, day.UV.max, current.radiation, current.radiation.raw, day.radiation.max, current.pm2_5, current.pm2_5_aqi.raw, current.pm2_5_aqi.formatted, day.windrose.banded, day.windrose.calm, unit.label.outTemp, unit.label.barometer, unit.label.rain, unit.label.rainRate, unit.label.windSpeed
-    [[BarometerTrendDescriptions]]
-        RISING_VERY_RAPIDLY = Rising Very Rapidly
-        RISING_QUICKLY = Rising Quickly
-        RISING = Rising
-        RISING_SLOWLY = Rising Slowly
-        STEADY = Steady
-        FALLING_SLOWLY = Falling Slowly
-        FALLING = Falling
-        FALLING_QUICKLY = Falling Quickly
-        FALLING_VERY_RAPIDLY = Falling Very Rapidly
 ```
 
 ## Entries in `LoopData` sections of `weewx.conf`:
@@ -601,7 +591,6 @@ one (appending any fields other pages of yours use).
  * `skip_if_older_than`: Don't bother to rsync if greater than this number of seconds.  Default is 3.
                          (Skip this and move on to the next if this data is older than 3 seconds.)
  * `fields`            : Used to specify which fields to include in the file.
- * `BarometerTrendDescriptions` : The descriptions associated with trend.barometer.desc.  Localize as necessary.
 
 ## What fields are available.
 
@@ -730,24 +719,13 @@ quoting.  The json key is the field entry verbatim (without the outer quotes).
 might yield `°F`).
 
 `trend.barometer.desc` and `trend.barometer.code` are also supported.  `trend.barometer.desc`
-provides a text version of the barometer rate (e.g., `Falling Slowly`).  Barometer trend descriptions
-can be localized in the `LoopData` section of weewx.conf.  `trend.barometer.code` provides an integer
+provides a text version of the barometer rate (e.g., `Falling Slowly`).  As of 6.4 each English
+description is a gettext-style key into the target report's `[Texts]`, so the descriptions
+translate like every other string (the sample report's `lang/de.conf` carries all nine); see
+"Translating the sample report" below.  `trend.barometer.code` provides an integer
 of value `-4`, `-3`, `-2`, `-1`, `0`, `1`, `2`, `3` or `4`.  These values correspond to `Falling Very Rapidly`,
 `Falling Quickly`, `Falling`, `Falling Slowly`, `Steady`, `Rising Slowly`, `Rising`, `Rising Quickly`
 and `Rising Very Rapidly`, respectively.
-```
-[LoopData]
-    [[BarometerTrendDescriptions]]
-        RISING_VERY_RAPIDLY = Rising Very Rapidly
-        RISING_QUICKLY = Rising Quickly
-        RISING = Rising
-        RISING_SLOWLY = Rising Slowly
-        STEADY = Steady
-        FALLING_SLOWLY = Falling Slowly
-        FALLING = Falling
-        FALLING_QUICKLY = Falling Quickly
-        FALLING_VERY_RAPIDLY = Falling Very Rapidly
-```
 
 ### What report tags can do that fields cannot
 
@@ -877,6 +855,39 @@ Notes:
   values (`station.week_start.raw`); `.formatted`, `format(...)`, `nolabel(...)`,
   `string(...)`, `long_form(...)` on the ValueHelpers only.
 * The json key is the field entry verbatim, so element ids can match keys as usual.
+
+## Translating the sample report
+
+As of 6.4 the sample report is translatable through WeeWX's own mechanisms — lang
+files and gettext-style `[Texts]` keys (the English string is the key; a missing
+entry falls back to English one string at a time).  German ships
+(`skins/LoopData/lang/de.conf`, vocabulary in step with weewx-skyfield's and
+weewx-celestial's native-speaker-reviewed German); select it with `lang = de` on
+the report's stanza.  Language support needs WeeWX 4.6 or later.  To add a
+language, copy `lang/en.conf` — the reference dictionary, kept exact by a test —
+and translate the values.
+
+Two languages meet on a loopdata page, and it pays to know which is which:
+
+* The page's own **labels** (gauge headings, the LIVE badge, readout lines)
+  follow the *sample report's* `lang`.  Strings the javascript composes are
+  translated at generation time and fed to the script, so a translation touches
+  no javascript.
+* The live **values** in loop-data.txt follow the language of loopdata's
+  `[LoopData]` **target report**: `.ordinal_compass` fields take that report's
+  compass ordinates, `moon_phase` its moon-phase names,
+  `almanac.<body>.label`/`.constellation.label` its `[Almanac]` names, and
+  `trend.barometer.desc` its `[Texts]` (each English description — `Falling
+  Slowly`, `Steady`, … — is a gettext-style key) — one language per loopdata
+  instance, regardless of which page displays them.
+
+Out of the box the sample report *is* the target report, so `lang = de` on
+`[[LoopDataReport]]` switches both — the shipped lang files carry the value-side
+sections (ordinates, moon phases, body and constellation names) too.  If your
+target report is a different report, set `lang = de` under `[StdReport]`
+`[[Defaults]]` in weewx.conf to switch every report at once.  See the manual's
+[Translations page](https://chaunceygardiner.github.io/weewx-loopdata/i18n.html)
+for the full story.
 
 ## Rsync isn't Working for me, help!
 LoopData uses WeeWX's `weeutil.rsyncupload.RsyncUpload` utility.  If you have rsync working

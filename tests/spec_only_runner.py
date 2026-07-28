@@ -74,6 +74,11 @@ SPEC_TESTS = [
     'test_windrose_continuous_accum',
     'test_windrose_seed_from_database',
     'test_windrose_end_to_end',
+    'test_i18n_en_conf_ships_exactly_what_renders',
+    'test_i18n_javascript_lookups_match_the_t_feed',
+    'test_i18n_lang_files_consistent',
+    'test_i18n_de_conf_is_complete',
+    'test_i18n_german_in_step_with_siblings',
 ]
 
 suite = unittest.TestSuite([T.ProcessPacketTests(name) for name in SPEC_TESTS])

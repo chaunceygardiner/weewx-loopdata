@@ -256,8 +256,8 @@ distance unit label used by `windrose.sum` — see
 ### `trend.barometer.desc` and `trend.barometer.code`
 
 `trend.barometer.desc` provides a text version of the barometer rate (e.g.,
-`Falling Slowly`); the texts can be localized in
-[`[[BarometerTrendDescriptions]]`](configuration.html#barometertrenddescriptions).
+`Falling Slowly`); the texts translate through the target report's `[Texts]` —
+see [Translating trend.barometer.desc](configuration.html#translating-trendbarometerdesc).
 `trend.barometer.code` provides an integer of value `-4`, `-3`, `-2`, `-1`,
 `0`, `1`, `2`, `3` or `4`, corresponding to `Falling Very Rapidly`,
 `Falling Quickly`, `Falling`, `Falling Slowly`, `Steady`, `Rising Slowly`,

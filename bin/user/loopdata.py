@@ -55,7 +55,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '6.3'
+LOOP_DATA_VERSION = '6.4'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -1278,6 +1278,24 @@ class BarometerTrend(Enum):
     FALLING_QUICKLY      = -3
     FALLING_VERY_RAPIDLY = -4
 
+# The English descriptions served for trend.barometer.desc.  Each doubles
+# as a gettext-style [Texts] key in the TARGET report: a lang file (or a
+# [[[Texts]]] entry on the report's stanza in weewx.conf) translates a
+# description by carrying the English string as its key, and a missing key
+# falls back to the English one string at a time -- the same machinery as
+# every other translated string.
+BARO_TREND_DESCS: Dict[BarometerTrend, str] = {
+    BarometerTrend.RISING_VERY_RAPIDLY : 'Rising Very Rapidly',
+    BarometerTrend.RISING_QUICKLY      : 'Rising Quickly',
+    BarometerTrend.RISING              : 'Rising',
+    BarometerTrend.RISING_SLOWLY       : 'Rising Slowly',
+    BarometerTrend.STEADY              : 'Steady',
+    BarometerTrend.FALLING_SLOWLY      : 'Falling Slowly',
+    BarometerTrend.FALLING             : 'Falling',
+    BarometerTrend.FALLING_QUICKLY     : 'Falling Quickly',
+    BarometerTrend.FALLING_VERY_RAPIDLY: 'Falling Very Rapidly',
+}
+
 @dataclass
 class Reading:
     dateTime: int
@@ -1306,7 +1324,6 @@ class LoopData(StdService):
         loop_frequency_spec_dict = loop_config_dict.get('LoopFrequency', {})
         rsync_spec_dict          = loop_config_dict.get('RsyncSpec', {})
         include_spec_dict        = loop_config_dict.get('Include', {})
-        baro_trend_trans_dict    = loop_config_dict.get('BarometerTrendDescriptions', {})
 
         # Get the unit_system as specified by StdConvert->target_unit.
         # Note: this value will be overwritten if the day accumulator has a a unit_system.
@@ -1337,8 +1354,11 @@ class LoopData(StdService):
         # Get the loop frequency seconds to be passed as the weight to accumulators.
         loop_frequency = to_float(loop_frequency_spec_dict.get('seconds', '2.0'))
 
-        # Get [possibly localized] strings for trend.barometer.desc
-        baro_trend_descs = LoopData.construct_baro_trend_descs(baro_trend_trans_dict)
+        # Get [possibly localized] strings for trend.barometer.desc: the
+        # English descriptions are gettext-style keys into the target
+        # report's [Texts] (its lang file already merged in).
+        baro_trend_descs = LoopData.construct_baro_trend_descs(
+            dict(target_report_dict.get('Texts', {})))
 
         formatter = weewx.units.Formatter.fromSkinDict(target_report_dict)
         converter = weewx.units.Converter.fromSkinDict(target_report_dict)
@@ -1541,18 +1561,13 @@ class LoopData(StdService):
         return False
 
     @staticmethod
-    def construct_baro_trend_descs(baro_trend_trans_dict: Dict[str, str]) -> Dict[BarometerTrend, str]:
-        baro_trend_descs: Dict[BarometerTrend, str] = {}
-        baro_trend_descs[BarometerTrend.RISING_VERY_RAPIDLY]  = baro_trend_trans_dict.get('RISING_VERY_RAPIDLY', 'Rising Very Rapidly')
-        baro_trend_descs[BarometerTrend.RISING_QUICKLY]       = baro_trend_trans_dict.get('RISING_QUICKLY',       'Rising Quickly')
-        baro_trend_descs[BarometerTrend.RISING]               = baro_trend_trans_dict.get('RISING',               'Rising')
-        baro_trend_descs[BarometerTrend.RISING_SLOWLY]        = baro_trend_trans_dict.get('RISING_SLOWLY',        'Rising Slowly')
-        baro_trend_descs[BarometerTrend.STEADY]               = baro_trend_trans_dict.get('STEADY',               'Steady')
-        baro_trend_descs[BarometerTrend.FALLING_SLOWLY]       = baro_trend_trans_dict.get('FALLING_SLOWLY',       'Falling Slowly')
-        baro_trend_descs[BarometerTrend.FALLING]              = baro_trend_trans_dict.get('FALLING',              'Falling')
-        baro_trend_descs[BarometerTrend.FALLING_QUICKLY]      = baro_trend_trans_dict.get('FALLING_QUICKLY',      'Falling Quickly')
-        baro_trend_descs[BarometerTrend.FALLING_VERY_RAPIDLY] = baro_trend_trans_dict.get('FALLING_VERY_RAPIDLY', 'Falling Very Rapidly')
-        return baro_trend_descs
+    def construct_baro_trend_descs(texts_dict: Dict[str, str]) -> Dict[BarometerTrend, str]:
+        """The descriptions for trend.barometer.desc, in the target report's
+        language: each English description in BARO_TREND_DESCS is a
+        gettext-style key into the target report's [Texts], falling back to
+        the English itself one string at a time."""
+        return {trend: str(texts_dict.get(english, english))
+                for trend, english in BARO_TREND_DESCS.items()}
 
     @staticmethod
     def get_fields_to_include(specified_fields: Set[str]) -> Tuple[Set[CheetahName], ObsTypes]:
