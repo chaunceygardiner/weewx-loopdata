@@ -1,6 +1,17 @@
 loopdata change history
 -----------------------
 
+6.5 2026/07/29
+--------------
+- A complete French translation ships with the sample LoopData skin
+  (Beta, awaiting native-speaker review -- corrections welcome):
+  lang/fr.conf, including the trend.barometer.desc tendency vocabulary
+  and, for a loopdata instance whose target report is French, the moon
+  phases, body names and all 88 constellation names -- the shared
+  vocabulary in step with weewx-skyfield's and weewx-celestial's
+  fr.conf (a test pins this, as for the German).  Select it with
+  lang = fr in the report.
+
 6.4 Release 2026/07/28
 ----------------------
 ACTION REQUIRED for users who customized [[BarometerTrendDescriptions]]:

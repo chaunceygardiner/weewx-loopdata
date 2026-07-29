@@ -1180,19 +1180,20 @@ class ProcessPacketTests(unittest.TestCase):
             self.assertEqual(d2[trend], 'X_' + english)
 
         # The shipped lang files carry exactly the nine keys, translated.
-        for name in ('en.conf', 'de.conf'):
+        for name in ('en.conf', 'de.conf', 'fr.conf'):
             conf = self.i18n_lang_conf(
                 os.path.join(self.I18N_SKIN_DIR, 'lang'), name)
             d3 = L.construct_baro_trend_descs(dict(conf['Texts']))
             self.assertEqual(len(d3), 9, name)
             for trend, english in defaults.items():
                 self.assertEqual(d3[trend], conf['Texts'][english], name)
-        # ...and German translates every one of them away from English.
-        de = self.i18n_lang_conf(os.path.join(self.I18N_SKIN_DIR, 'lang'),
-                                 'de.conf')
-        d4 = L.construct_baro_trend_descs(dict(de['Texts']))
-        for trend, english in defaults.items():
-            self.assertNotEqual(d4[trend], english, english)
+        # ...and each translation moves every one of them away from English.
+        for name in ('de.conf', 'fr.conf'):
+            conf = self.i18n_lang_conf(os.path.join(self.I18N_SKIN_DIR, 'lang'),
+                                       name)
+            d4 = L.construct_baro_trend_descs(dict(conf['Texts']))
+            for trend, english in defaults.items():
+                self.assertNotEqual(d4[trend], english, (name, english))
 
     def test_compute_period_obstypes(self) -> None:
         # For a given period, collect the obstypes of fields in that period and
@@ -7135,6 +7136,7 @@ class ProcessPacketTests(unittest.TestCase):
         names = sorted(os.listdir(lang_dir))
         self.assertIn('en.conf', names)
         self.assertIn('de.conf', names)
+        self.assertIn('fr.conf', names)
         for name in names:
             conf = self.i18n_lang_conf(lang_dir, name)
             for key, val in dict(conf['Texts']).items():
@@ -7155,13 +7157,18 @@ class ProcessPacketTests(unittest.TestCase):
         conf = self.i18n_lang_conf(os.path.join(self.I18N_SKIN_DIR, 'lang'), 'de.conf')
         self.assertEqual(sorted(self.i18n_served_keys() - set(conf['Texts'])), [])
 
-    def test_i18n_german_in_step_with_siblings(self):
+    def test_i18n_fr_conf_is_complete(self):
+        # French likewise ships complete.
+        conf = self.i18n_lang_conf(os.path.join(self.I18N_SKIN_DIR, 'lang'), 'fr.conf')
+        self.assertEqual(sorted(self.i18n_served_keys() - set(conf['Texts'])), [])
+
+    def test_i18n_lang_files_in_step_with_siblings(self):
         # The shared vocabulary is copied verbatim from weewx-skyfield's and
-        # weewx-celestial's lang files (the native-speaker-reviewed German):
-        # body names, moon phases, hemispheres, ordinates, all 88
-        # constellation names, and every [Texts] key the pages share --
-        # the same cross-repo rule celestial pins against skyfield.  Skips
-        # when no sibling lang directory is available.
+        # weewx-celestial's lang files (German native-speaker reviewed;
+        # French Beta): body names, moon phases, hemispheres, ordinates,
+        # all 88 constellation names, and every [Texts] key the pages
+        # share -- the same cross-repo rule celestial pins against
+        # skyfield.  Skips when no sibling lang directory is available.
         lang_dir = os.path.join(self.I18N_SKIN_DIR, 'lang')
         repo_parent = os.path.dirname(os.path.dirname(
             os.path.dirname(os.path.abspath(__file__))))
@@ -7173,7 +7180,9 @@ class ProcessPacketTests(unittest.TestCase):
         if not siblings:
             self.skipTest('no sibling lang directory is available')
         for sib_dir in siblings:
-            for name in ('en.conf', 'de.conf'):
+            for name in ('en.conf', 'de.conf', 'fr.conf'):
+                if not os.path.exists(os.path.join(sib_dir, name)):
+                    continue     # a sibling that has not shipped this language
                 sib = self.i18n_lang_conf(sib_dir, name)
                 ld = self.i18n_lang_conf(lang_dir, name)
                 self.assertEqual(dict(ld['Almanac']['Constellations']),
