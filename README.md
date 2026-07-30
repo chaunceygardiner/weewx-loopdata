@@ -827,7 +827,9 @@ has an almanac equivalent (e.g., `current.sunrise.raw` → `almanac.sunrise.unix
 `almanac(days=1).sunrise.unix_epoch.raw`).  The pinned unit segments keep the old fields'
 fixed meanings (epoch seconds, seconds of daylight) no matter how the target report's units
 are set.  The only derivation left to the page is waxing/waning:
-the moon is waxing when `almanac.next_full_moon.raw` < `almanac.next_new_moon.raw`.
+the moon is waxing when `almanac.next_full_moon.unix_epoch.raw` <
+`almanac.next_new_moon.unix_epoch.raw` (pinned, as for any `.raw` field the
+page compares numerically).
 Note that distances arrive in AU (as reports show them) rather than miles/km.
 
 ## Station fields

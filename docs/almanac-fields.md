@@ -140,5 +140,7 @@ celestial's own loop fields never followed report units, so a faithful
 migration pins.
 
 The only derivation left to the page is waxing/waning: the moon is waxing
-when `almanac.next_full_moon.raw` < `almanac.next_new_moon.raw`.  Note that
-distances arrive in AU (as reports show them) rather than miles/km.
+when `almanac.next_full_moon.unix_epoch.raw` <
+`almanac.next_new_moon.unix_epoch.raw` (pinned, as for any `.raw` field the
+page compares numerically).  Note that distances arrive in AU (as reports
+show them) rather than miles/km.
