@@ -55,7 +55,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '6.5'
+LOOP_DATA_VERSION = '6.6'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -2675,6 +2675,19 @@ class LoopData(StdService):
             format_kwargs = format_kwargs,
             round_ndigits = round_ndigits)
 
+def cheetah_autocall(obj: Any) -> Any:
+    """Auto-call a dotted-segment result exactly as Cheetah's NameMapper
+    does: a method, function or builtin is called with no arguments; a class,
+    or an instance -- even a callable one, such as an AlmanacBinder or
+    weewx-skyfield's CallableRadians -- is left alone (NameMapper's
+    _isInstanceOrClass test).  Cheetah applies this at EVERY dotted segment
+    of a tag, so the almanac and station evaluators do too."""
+    if callable(obj) and not isinstance(obj, type) and (
+            hasattr(obj, '__func__') or hasattr(obj, '__code__')
+            or hasattr(obj, '__self__')):
+        return obj()
+    return obj
+
 def render_endpoint_value(field: str, chain_desc: str, format_spec: Optional[str],
         format_kwargs: Optional[Dict[str, Any]], round_ndigits: Optional[int],
         obj: Any) -> Any:
@@ -2786,7 +2799,9 @@ class AlmanacFieldEvaluator:
     def evaluate(self, almanac_field: AlmanacField, base_almanac: weewx.almanac.Almanac,
             pkt_time: int) -> Any:
         """Walk the attribute chain exactly as Cheetah would walk the report
-        tag, including auto-calling a callable result."""
+        tag: a segment with call syntax is called with its arguments, and
+        every other segment is auto-called per NameMapper's rule (methods
+        and functions, not callable instances) -- see cheetah_autocall."""
         almanac = base_almanac
         if almanac_field.days != 0:
             almanac = almanac(almanac_time=AlmanacFieldEvaluator.shift_days(
@@ -2798,8 +2813,8 @@ class AlmanacFieldEvaluator:
             obj = getattr(obj, segment.name)
             if segment.kwargs is not None:
                 obj = obj(**segment.kwargs)
-        if callable(obj):
-            obj = obj()
+            else:
+                obj = cheetah_autocall(obj)
         return obj
 
     def to_json_value(self, almanac_field: AlmanacField, obj: Any) -> Any:
@@ -2878,14 +2893,14 @@ class StationFieldEvaluator:
 
     def compute(self, station_field: StationField) -> Any:
         """Walk the attribute chain exactly as Cheetah would walk the report
-        tag, including auto-calling a callable result, and render per the
-        field's format spec.  Returns SKIP (logged once) on any failure."""
+        tag, auto-calling every segment per NameMapper's rule (methods and
+        functions, not callable instances -- see cheetah_autocall), and
+        render per the field's format spec.  Returns SKIP (logged once) on
+        any failure."""
         try:
             obj: Any = self.station
             for name in station_field.chain:
-                obj = getattr(obj, name)
-            if callable(obj):
-                obj = obj()
+                obj = cheetah_autocall(getattr(obj, name))
             return render_endpoint_value(station_field.field,
                 '.'.join(station_field.chain), station_field.format_spec,
                 station_field.format_kwargs, station_field.round_ndigits, obj)

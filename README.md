@@ -721,7 +721,7 @@ might yield `°F`).
 `trend.barometer.desc` and `trend.barometer.code` are also supported.  `trend.barometer.desc`
 provides a text version of the barometer rate (e.g., `Falling Slowly`).  As of 6.4 each English
 description is a gettext-style key into the target report's `[Texts]`, so the descriptions
-translate like every other string (the sample report's `lang/de.conf` and `lang/fr.conf` carry all nine); see
+translate like every other string (the sample report's `lang/de.conf`, `lang/fr.conf` and `lang/nl.conf` carry all nine); see
 "Translating the sample report" below.  `trend.barometer.code` provides an integer
 of value `-4`, `-3`, `-2`, `-1`, `0`, `1`, `2`, `3` or `4`.  These values correspond to `Falling Very Rapidly`,
 `Falling Quickly`, `Falling`, `Falling Slowly`, `Steady`, `Rising Slowly`, `Rising`, `Rising Quickly`
@@ -767,7 +767,9 @@ almanac.moon.phase                                   percent of the moon illumin
 almanac.sun.az                                       sun azimuth in decimal degrees
 almanac.sun.alt                                      sun altitude in decimal degrees
 almanac.sun.transit.raw
-almanac.sun.visible.raw                              length of daylight in seconds
+almanac.sun.visible.raw                              length of daylight, in the report's units
+almanac.sun.visible.second.raw                       length of daylight, pinned to seconds
+almanac.sunrise.unix_epoch.raw                       sunrise, pinned to epoch seconds
 almanac.moon.rise.raw
 almanac.mars.earth_distance                          in AU, as in reports
 almanac.next_full_moon.raw
@@ -800,6 +802,14 @@ Notes:
 * The formatting calls and `round(n)` work here too, exactly as on report
   almanac tags: `almanac.sunrise.format("%H:%M")`,
   `almanac.sun.az.format("%.1f", add_label=False)`, `almanac.sun.az.round(1).raw`.
+* Unit conversions chain as in report tags, and pin the unit:
+  `almanac.sunrise.unix_epoch.raw`, `almanac.sun.visible.second.raw`,
+  `almanac.sun.visible.hour.round(2).raw` (the unit sits before `round(n)` and
+  the format spec).  Without one, values follow the target report's unit
+  settings — including any `[Units]` `[[Groups]]` overrides, so a report that
+  sets `group_deltatime = hour` makes `almanac.sun.visible.raw` emit hours
+  instead of seconds.  Pin the unit on any `.raw` field your javascript
+  consumes numerically.
 * The json key is the field entry verbatim, so element ids can match keys as usual.
 * A call with more than one keyword contains a comma, so the entry must be quoted in
   weewx.conf: `fields = ..., "almanac(pressure=0, horizon=-8).sun.rise.raw", ...`.
@@ -811,10 +821,12 @@ Notes:
   `almanac.sun.next_rising` in loop data.
 
 If you are migrating from weewx-celestial's loop fields, every `current.<field>` it emitted
-has an almanac equivalent (e.g., `current.sunrise.raw` → `almanac.sunrise.raw`,
-`current.civilTwilightStart.raw` → `almanac(horizon=-6).sun(use_center=1).rise.raw`,
-`current.daylightDur.raw` → `almanac.sun.visible.raw`, `current.tomorrowSunrise.raw` →
-`almanac(days=1).sunrise.raw`).  The only derivation left to the page is waxing/waning:
+has an almanac equivalent (e.g., `current.sunrise.raw` → `almanac.sunrise.unix_epoch.raw`,
+`current.civilTwilightStart.raw` → `almanac(horizon=-6).sun(use_center=1).rise.unix_epoch.raw`,
+`current.daylightDur.raw` → `almanac.sun.visible.second.raw`, `current.tomorrowSunrise.raw` →
+`almanac(days=1).sunrise.unix_epoch.raw`).  The pinned unit segments keep the old fields'
+fixed meanings (epoch seconds, seconds of daylight) no matter how the target report's units
+are set.  The only derivation left to the page is waxing/waning:
 the moon is waxing when `almanac.next_full_moon.raw` < `almanac.next_new_moon.raw`.
 Note that distances arrive in AU (as reports show them) rather than miles/km.
 
@@ -860,11 +872,11 @@ Notes:
 
 As of 6.4 the sample report is translatable through WeeWX's own mechanisms — lang
 files and gettext-style `[Texts]` keys (the English string is the key; a missing
-entry falls back to English one string at a time).  German and French ship
-(`skins/LoopData/lang/de.conf` native-speaker reviewed, `lang/fr.conf` Beta
-awaiting its review; vocabulary in step with weewx-skyfield's and
-weewx-celestial's own lang files); select one with `lang = de` (or `fr`) on
-the report's stanza.  Language support needs WeeWX 4.6 or later.  To add a
+entry falls back to English one string at a time).  German, French and Dutch ship
+(`skins/LoopData/lang/de.conf` and `lang/fr.conf` native-speaker
+reviewed, `lang/nl.conf` Beta awaiting its review; vocabulary in step with
+weewx-skyfield's and weewx-celestial's own lang files); select one with
+`lang = de` (or `fr`, `nl`) on the report's stanza.  Language support needs WeeWX 4.6 or later.  To add a
 language, copy `lang/en.conf` — the reference dictionary, kept exact by a test —
 and translate the values.
 

@@ -32,6 +32,7 @@
 
 import configobj
 import logging
+import math
 import os
 import queue
 import random
@@ -69,6 +70,19 @@ log = logging.getLogger(__name__)
 # Set up logging using the defaults.
 weeutil.logger.setup('test_config', {})
 
+class StubRadians(float):
+    """A skyfield-1.15-shaped angle: a float that is also a callable
+    instance and carries .degrees.  Cheetah's NameMapper never auto-calls a
+    callable INSTANCE (only methods and functions), so __call__ raising pins
+    that loopdata's evaluators leave it alone too, mid-chain or at the end
+    of a chain."""
+    @property
+    def degrees(self) -> float:
+        return math.degrees(float(self))
+
+    def __call__(self) -> None:
+        raise AssertionError('a callable instance must not be auto-called')
+
 class StubAlmanacBinder:
     """Stands in for a heavenly-body binder (e.g. $almanac.sun)."""
     def __init__(self, stub: 'StubAlmanacType', almanac_obj: Any) -> None:
@@ -84,6 +98,33 @@ class StubAlmanacBinder:
     def az(self) -> float:
         self.stub.count('sun.az')
         return 123.4
+
+    @property
+    def visible(self) -> weewx.units.ValueHelper:
+        # Daylight as PyEphem/skyfield serve it: a duration ValueHelper in
+        # seconds, converted per the almanac's converter when rendered.
+        self.stub.count('sun.visible')
+        return weewx.units.ValueHelper(
+            weewx.units.ValueTuple(52921.0, 'second', 'group_deltatime'),
+            context='ephem_day',
+            formatter=self.almanac_obj.formatter,
+            converter=self.almanac_obj.converter)
+
+    def parallactic_angle(self) -> StubRadians:
+        # A bound METHOD, as skyfield <= 1.14 served it: Cheetah auto-calls
+        # it mid-chain, so the evaluator must too.
+        self.stub.count('sun.parallactic_angle')
+        return StubRadians(0.5)
+
+    @property
+    def callable_angle(self) -> StubRadians:
+        self.stub.count('sun.callable_angle')
+        return StubRadians(0.5)
+
+    def duration_method(self) -> float:
+        # A bound method at the END of a chain: auto-called, as always.
+        self.stub.count('sun.duration_method')
+        return 42.0
 
     @property
     def rise(self) -> weewx.units.ValueHelper:
@@ -1180,7 +1221,7 @@ class ProcessPacketTests(unittest.TestCase):
             self.assertEqual(d2[trend], 'X_' + english)
 
         # The shipped lang files carry exactly the nine keys, translated.
-        for name in ('en.conf', 'de.conf', 'fr.conf'):
+        for name in ('en.conf', 'de.conf', 'fr.conf', 'nl.conf'):
             conf = self.i18n_lang_conf(
                 os.path.join(self.I18N_SKIN_DIR, 'lang'), name)
             d3 = L.construct_baro_trend_descs(dict(conf['Texts']))
@@ -1188,7 +1229,7 @@ class ProcessPacketTests(unittest.TestCase):
             for trend, english in defaults.items():
                 self.assertEqual(d3[trend], conf['Texts'][english], name)
         # ...and each translation moves every one of them away from English.
-        for name in ('de.conf', 'fr.conf'):
+        for name in ('de.conf', 'fr.conf', 'nl.conf'):
             conf = self.i18n_lang_conf(os.path.join(self.I18N_SKIN_DIR, 'lang'),
                                        name)
             d4 = L.construct_baro_trend_descs(dict(conf['Texts']))
@@ -1425,6 +1466,26 @@ class ProcessPacketTests(unittest.TestCase):
                                     user.loopdata.AlmanacSegment('phase', None)])
         self.assertEqual(af.format_spec, 'formatted')
 
+        # A unit segment is an ordinary chain segment (report-tag parity:
+        # ValueHelper attribute access converts), sitting before round(n)
+        # and the format spec; the tier still comes from the almanac
+        # attribute it follows.
+        af = parse('almanac.sunrise.unix_epoch.raw')
+        assert af is not None
+        self.assertEqual(af.chain, [user.loopdata.AlmanacSegment('sunrise', None),
+                                    user.loopdata.AlmanacSegment('unix_epoch', None)])
+        self.assertEqual(af.format_spec, 'raw')
+        self.assertEqual(af.tier, 'day')
+
+        af = parse('almanac.sun.visible.hour.round(2).raw')
+        assert af is not None
+        self.assertEqual(af.chain, [user.loopdata.AlmanacSegment('sun', None),
+                                    user.loopdata.AlmanacSegment('visible', None),
+                                    user.loopdata.AlmanacSegment('hour', None)])
+        self.assertEqual(af.round_ndigits, 2)
+        self.assertEqual(af.format_spec, 'raw')
+        self.assertEqual(af.tier, 'day')
+
         # Malformed entries.
         self.assertIsNone(parse('almanac'))
         self.assertIsNone(parse('almanac.'))
@@ -1566,6 +1627,83 @@ class ProcessPacketTests(unittest.TestCase):
         finally:
             weewx.almanac.almanacs.remove(stub)
 
+    def test_almanac_unit_segment(self) -> None:
+        """A unit segment pins the unit no matter what the target report's
+        converter says; without one, .raw follows the report's [Units]
+        [[Groups]] overrides (by design: report-tag parity)."""
+        specified_fields = [
+            'almanac.sunrise.raw',                    # follows the override
+            'almanac.sunrise.unix_epoch.raw',         # pinned
+            'almanac.sun.visible.raw',                # follows the override
+            'almanac.sun.visible.second.raw',         # pinned
+            'almanac.sun.visible.hour.round(2).raw',  # pinned, then rounded
+            'almanac.sunrise.no_such_unit.raw',       # illegal conversion: skipped
+        ]
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, ['current.outTemp'])
+        cfg.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
+        self.assertEqual(len(cfg.almanac_fields), len(specified_fields))
+        cfg.latitude, cfg.longitude, cfg.altitude_m = 37.4, -122.1, 20.0
+        # The hazard the unit segment exists for: a target report that
+        # overrides unit groups (skyfield issue #2's lesson -- ValueHelper
+        # .raw is unformatted, NOT unconverted).
+        cfg.converter = weewx.units.Converter(
+            {'group_time': 'unix_epoch_ms', 'group_deltatime': 'hour'})
+
+        stub = StubAlmanacType()
+        weewx.almanac.almanacs.insert(0, stub)
+        try:
+            evaluator = user.loopdata.AlmanacFieldEvaluator(cfg)
+            day1_noon = 1593630000    # 2020-07-01 noon PDT
+            day_start = time.mktime(date.fromtimestamp(day1_noon).timetuple())
+            sunrise_ts = day_start + 6 * 3600
+            loopdata_pkt: Dict[str, Any] = {}
+            evaluator.insert_fields(loopdata_pkt, {'dateTime': day1_noon, 'usUnits': 1})
+
+            self.assertEqual(loopdata_pkt['almanac.sunrise.raw'], sunrise_ts * 1000)
+            self.assertEqual(loopdata_pkt['almanac.sunrise.unix_epoch.raw'], sunrise_ts)
+            self.assertEqual(loopdata_pkt['almanac.sun.visible.raw'], 52921.0 / 3600)
+            self.assertEqual(loopdata_pkt['almanac.sun.visible.second.raw'], 52921.0)
+            self.assertEqual(loopdata_pkt['almanac.sun.visible.hour.round(2).raw'], 14.7)
+            self.assertNotIn('almanac.sunrise.no_such_unit.raw', loopdata_pkt)
+        finally:
+            weewx.almanac.almanacs.remove(stub)
+
+    def test_almanac_autocall_parity(self) -> None:
+        """Chains auto-call exactly as Cheetah's NameMapper walks a tag: a
+        method is called at EVERY dotted segment, not just the chain end
+        (skyfield <= 1.14's parallactic_angle was a bound method); a callable
+        INSTANCE (an AlmanacBinder, skyfield 1.15's CallableRadians) is never
+        auto-called -- StubRadians.__call__ raises to pin that."""
+        specified_fields = [
+            'almanac.sun.parallactic_angle.degrees',      # method mid-chain
+            'almanac.sun.parallactic_angle.degrees.raw',
+            'almanac.sun.callable_angle',                 # callable instance at chain end
+            'almanac.sun.callable_angle.degrees',         # callable instance mid-chain
+            'almanac.sun.duration_method',                # method at chain end
+        ]
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, ['current.outTemp'])
+        cfg.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
+        self.assertEqual(len(cfg.almanac_fields), len(specified_fields))
+        cfg.latitude, cfg.longitude, cfg.altitude_m = 37.4, -122.1, 20.0
+
+        stub = StubAlmanacType()
+        weewx.almanac.almanacs.insert(0, stub)
+        try:
+            evaluator = user.loopdata.AlmanacFieldEvaluator(cfg)
+            loopdata_pkt: Dict[str, Any] = {}
+            evaluator.insert_fields(loopdata_pkt, {'dateTime': 1593630000, 'usUnits': 1})
+
+            self.assertEqual(loopdata_pkt['almanac.sun.parallactic_angle.degrees'],
+                math.degrees(0.5))
+            self.assertEqual(loopdata_pkt['almanac.sun.parallactic_angle.degrees.raw'],
+                math.degrees(0.5))
+            self.assertEqual(loopdata_pkt['almanac.sun.callable_angle'], 0.5)
+            self.assertEqual(loopdata_pkt['almanac.sun.callable_angle.degrees'],
+                math.degrees(0.5))
+            self.assertEqual(loopdata_pkt['almanac.sun.duration_method'], 42.0)
+        finally:
+            weewx.almanac.almanacs.remove(stub)
+
     def test_almanac_field_end_to_end(self) -> None:
         """Almanac fields through generate_loopdata_dictionary, against the
         real weewx.almanac (PyEphem or the built-in fallback) as oracle."""
@@ -1576,8 +1714,10 @@ class ProcessPacketTests(unittest.TestCase):
             'almanac.sunset.raw',
             'almanac.moon_phase',
             'almanac.moon_index.raw',
+            'almanac.sunrise.unix_epoch.raw',
             'almanac(days=1).sunrise.raw',
             'almanac(horizon=-6).sun(use_center=1).rise.raw',
+            'almanac.sun.visible.second.raw',
         ]
         cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, specified_fields)
         cfg.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
@@ -1603,6 +1743,10 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['almanac.sunset.raw'], oracle.sunset.raw)
         self.assertEqual(loopdata_pkt['almanac.moon_phase'], str(oracle.moon_phase))
         self.assertEqual(loopdata_pkt['almanac.moon_index.raw'], oracle.moon_index)
+        # A pinned unit segment renders as the report tag with the same
+        # explicit conversion would.
+        self.assertEqual(loopdata_pkt['almanac.sunrise.unix_epoch.raw'],
+            oracle.sunrise.unix_epoch.raw)
         tomorrow_oracle = oracle(almanac_time=user.loopdata.AlmanacFieldEvaluator.shift_days(
             pkt['dateTime'], 1))
         self.assertEqual(loopdata_pkt['almanac(days=1).sunrise.raw'], tomorrow_oracle.sunrise.raw)
@@ -1612,6 +1756,8 @@ class ProcessPacketTests(unittest.TestCase):
             # Civil dawn precedes sunrise.
             self.assertLess(loopdata_pkt['almanac(horizon=-6).sun(use_center=1).rise.raw'],
                 loopdata_pkt['almanac.sunrise.raw'])
+            self.assertEqual(loopdata_pkt['almanac.sun.visible.second.raw'],
+                oracle.sun.visible.second.raw)
 
     def test_parse_station_field(self) -> None:
         parse = user.loopdata.LoopData.parse_station_field
@@ -1771,6 +1917,36 @@ class ProcessPacketTests(unittest.TestCase):
             self.assertAlmostEqual(loopdata_pkt2['station.uptime.raw'], 93661, delta=10)
         finally:
             weewx.launchtime_ts = saved_launchtime
+
+    def test_station_field_autocall_parity(self) -> None:
+        """Station chains walk with the same NameMapper auto-call rule as
+        almanac chains: a bound method is called at every dotted segment, a
+        callable instance never is (StubRadians.__call__ raises to pin it)."""
+        class StubStation:
+            def altitude_method(self) -> weewx.units.ValueHelper:
+                return weewx.units.ValueHelper(
+                    weewx.units.ValueTuple(700.0, 'foot', 'group_altitude'),
+                    formatter=weewx.units.Formatter(),
+                    converter=weewx.units.Converter())
+
+            @property
+            def callable_value(self) -> StubRadians:
+                return StubRadians(0.5)
+
+        specified_fields = [
+            'station.altitude_method.meter.round(1).raw', # method mid-chain, then unit segment
+            'station.callable_value',                     # callable instance at chain end
+            'station.callable_value.degrees',             # callable instance mid-chain
+        ]
+        station_fields = user.loopdata.LoopData.get_station_fields(specified_fields)
+        self.assertEqual(len(station_fields), len(specified_fields))
+        evaluator = user.loopdata.StationFieldEvaluator(station_fields, StubStation())
+        loopdata_pkt: Dict[str, Any] = {}
+        evaluator.insert_fields(loopdata_pkt)
+        # 700 feet = 213.36 meters, rounded to 213.4.
+        self.assertEqual(loopdata_pkt['station.altitude_method.meter.round(1).raw'], 213.4)
+        self.assertEqual(loopdata_pkt['station.callable_value'], 0.5)
+        self.assertEqual(loopdata_pkt['station.callable_value.degrees'], math.degrees(0.5))
 
     def test_get_barometer_trend_mbar(self) -> None:
         # Forecast descriptions for the 3 hour change in barometer readings.
@@ -7137,6 +7313,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertIn('en.conf', names)
         self.assertIn('de.conf', names)
         self.assertIn('fr.conf', names)
+        self.assertIn('nl.conf', names)
         for name in names:
             conf = self.i18n_lang_conf(lang_dir, name)
             for key, val in dict(conf['Texts']).items():
@@ -7162,13 +7339,19 @@ class ProcessPacketTests(unittest.TestCase):
         conf = self.i18n_lang_conf(os.path.join(self.I18N_SKIN_DIR, 'lang'), 'fr.conf')
         self.assertEqual(sorted(self.i18n_served_keys() - set(conf['Texts'])), [])
 
+    def test_i18n_nl_conf_is_complete(self):
+        # Dutch likewise ships complete.
+        conf = self.i18n_lang_conf(os.path.join(self.I18N_SKIN_DIR, 'lang'), 'nl.conf')
+        self.assertEqual(sorted(self.i18n_served_keys() - set(conf['Texts'])), [])
+
     def test_i18n_lang_files_in_step_with_siblings(self):
         # The shared vocabulary is copied verbatim from weewx-skyfield's and
-        # weewx-celestial's lang files (German native-speaker reviewed;
-        # French Beta): body names, moon phases, hemispheres, ordinates,
-        # all 88 constellation names, and every [Texts] key the pages
-        # share -- the same cross-repo rule celestial pins against
-        # skyfield.  Skips when no sibling lang directory is available.
+        # weewx-celestial's lang files (German and French native-speaker
+        # reviewed; Dutch Beta): body names, moon phases, hemispheres,
+        # ordinates, all 88 constellation names, and every [Texts] key
+        # the pages share -- the same cross-repo rule celestial pins
+        # against skyfield.  Skips when no sibling lang directory is
+        # available.
         lang_dir = os.path.join(self.I18N_SKIN_DIR, 'lang')
         repo_parent = os.path.dirname(os.path.dirname(
             os.path.dirname(os.path.abspath(__file__))))
@@ -7180,7 +7363,7 @@ class ProcessPacketTests(unittest.TestCase):
         if not siblings:
             self.skipTest('no sibling lang directory is available')
         for sib_dir in siblings:
-            for name in ('en.conf', 'de.conf', 'fr.conf'):
+            for name in ('en.conf', 'de.conf', 'fr.conf', 'nl.conf'):
                 if not os.path.exists(os.path.join(sib_dir, name)):
                     continue     # a sibling that has not shipped this language
                 sib = self.i18n_lang_conf(sib_dir, name)

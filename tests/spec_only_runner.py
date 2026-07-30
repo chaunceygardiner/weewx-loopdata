@@ -20,10 +20,13 @@ SPEC_TESTS = [
     'test_parse_almanac_field',
     'test_get_almanac_fields',
     'test_almanac_field_evaluator',
+    'test_almanac_unit_segment',
+    'test_almanac_autocall_parity',
     'test_almanac_field_end_to_end',
     'test_parse_station_field',
     'test_get_station_fields',
     'test_station_field_evaluator',
+    'test_station_field_autocall_parity',
     'test_get_barometer_trend_mbar',
     'test_get_barometer_trend_inHg',
     'test_get_trend_computation',
@@ -78,7 +81,9 @@ SPEC_TESTS = [
     'test_i18n_javascript_lookups_match_the_t_feed',
     'test_i18n_lang_files_consistent',
     'test_i18n_de_conf_is_complete',
-    'test_i18n_german_in_step_with_siblings',
+    'test_i18n_fr_conf_is_complete',
+    'test_i18n_nl_conf_is_complete',
+    'test_i18n_lang_files_in_step_with_siblings',
 ]
 
 suite = unittest.TestSuite([T.ProcessPacketTests(name) for name in SPEC_TESTS])

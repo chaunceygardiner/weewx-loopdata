@@ -26,7 +26,9 @@ almanac.moon.phase                                   percent of the moon illumin
 almanac.sun.az                                       sun azimuth in decimal degrees
 almanac.sun.alt                                      sun altitude in decimal degrees
 almanac.sun.transit.raw
-almanac.sun.visible.raw                              length of daylight in seconds
+almanac.sun.visible.raw                              length of daylight, in the report's units
+almanac.sun.visible.second.raw                       length of daylight, pinned to seconds
+almanac.sunrise.unix_epoch.raw                       sunrise, pinned to epoch seconds
 almanac.moon.rise.raw
 almanac.mars.earth_distance                          in AU, as in reports
 almanac.next_full_moon.raw
@@ -57,6 +59,29 @@ example, `almanac(days=1).sunrise.raw` is tomorrow's sunrise and
 express this with `$almanac(almanac_time=$time_ts+86400)`, which needs
 Cheetah variables that a config line doesn't have; `days=` is also
 DST-correct where ±86400 is not.)
+
+## Pinning units
+
+By default almanac values are converted per the target report, exactly as the
+report tag would render — including any `[Units]` `[[Groups]]` overrides the
+report carries.  That is right for formatted values, but it means a `.raw`
+field can change meaning with the report's settings: a target report that sets
+`group_deltatime = hour` makes `almanac.sun.visible.raw` emit hours instead of
+seconds.
+
+A unit segment pins the unit regardless — the same override
+[observation fields](field-reference.html#overriding-the-unit-of-a-field)
+(`day.outTemp.avg.degree_C`) and [station fields](station-fields.html)
+(`station.altitude.meter.raw`) already take:
+
+```
+almanac.sunrise.unix_epoch.raw               epoch seconds, always
+almanac.sun.visible.second.raw               seconds of daylight, always
+almanac.sun.visible.hour.round(2).raw        hours, rounded — the unit sits
+                                             before round(n) and the format spec
+```
+
+Pin the unit on any `.raw` field your javascript consumes numerically.
 
 ## Notes
 
@@ -104,10 +129,15 @@ loopdata 5.0 (and celestial 6.0) those are almanac fields instead.  Every
 
 | Old celestial loop field | Almanac field |
 |---|---|
-| `current.sunrise.raw` | `almanac.sunrise.raw` |
-| `current.civilTwilightStart.raw` | `almanac(horizon=-6).sun(use_center=1).rise.raw` |
-| `current.daylightDur.raw` | `almanac.sun.visible.raw` |
-| `current.tomorrowSunrise.raw` | `almanac(days=1).sunrise.raw` |
+| `current.sunrise.raw` | `almanac.sunrise.unix_epoch.raw` |
+| `current.civilTwilightStart.raw` | `almanac(horizon=-6).sun(use_center=1).rise.unix_epoch.raw` |
+| `current.daylightDur.raw` | `almanac.sun.visible.second.raw` |
+| `current.tomorrowSunrise.raw` | `almanac(days=1).sunrise.unix_epoch.raw` |
+
+The pinned unit segments keep the old fields' fixed meanings (epoch seconds,
+seconds of daylight) no matter how the target report's units are set —
+celestial's own loop fields never followed report units, so a faithful
+migration pins.
 
 The only derivation left to the page is waxing/waning: the moon is waxing
 when `almanac.next_full_moon.raw` < `almanac.next_new_moon.raw`.  Note that

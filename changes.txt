@@ -1,6 +1,41 @@
 loopdata change history
 -----------------------
 
+6.6 2026/07/30
+--------------
+- Almanac fields take a unit segment, completing the grammar --
+  observation fields (day.outTemp.avg.degree_C) and station fields
+  (station.altitude.meter.raw) already took one:
+  almanac.sunrise.unix_epoch.raw, almanac.sun.visible.second.raw,
+  almanac.sun.visible.hour.round(2).raw.  The unit segment pins the unit
+  no matter what the target report's unit settings say.  Without one, raw
+  values follow the target report's converter (unchanged, by design) --
+  including any [Units] [[Groups]] overrides, so a report that sets
+  group_deltatime = hour turns almanac.sun.visible.raw into hours.  Pin
+  the unit on any .raw field a page consumes numerically.
+- Attribute chains now walk exactly as Cheetah's NameMapper walks a
+  report tag: a segment that resolves to a method or function is
+  auto-called at every dot, not only at the end of the chain (under
+  weewx-skyfield <= 1.14, almanac.moon.parallactic_angle.degrees failed
+  as a loopdata field even though the report tag worked), and a callable
+  instance is never auto-called, exactly as Cheetah leaves them alone.
+  Applies to almanac and station fields alike.
+- The French translation is out of Beta: lang/fr.conf has been
+  native-speaker reviewed, in step with weewx-skyfield's and
+  weewx-celestial's reviewed French (the cross-repo test pins the
+  three together).
+- A complete Dutch translation ships with the sample LoopData skin
+  (Beta, awaiting native-speaker review -- corrections welcome):
+  lang/nl.conf, including the trend.barometer.desc tendency vocabulary
+  and, for a loopdata instance whose target report is Dutch, the moon
+  phases, body names and all 88 constellation names -- the shared
+  vocabulary in step with weewx-skyfield's and weewx-celestial's
+  nl.conf (the cross-repo test pins it, as for the German and French).
+  Select it with lang = nl in the report.
+- Internal: tests/spec_only_runner.py caught up with 6.5's i18n test
+  renames (it referenced the old German-only test name, so it errored
+  out instead of running).
+
 6.5 2026/07/29
 --------------
 - A complete French translation ships with the sample LoopData skin
