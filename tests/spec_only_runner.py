@@ -83,6 +83,7 @@ SPEC_TESTS = [
     'test_i18n_de_conf_is_complete',
     'test_i18n_fr_conf_is_complete',
     'test_i18n_nl_conf_is_complete',
+    'test_i18n_es_conf_is_complete',
     'test_i18n_lang_files_in_step_with_siblings',
 ]
 

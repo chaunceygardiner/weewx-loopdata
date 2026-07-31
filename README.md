@@ -721,7 +721,7 @@ might yield `°F`).
 `trend.barometer.desc` and `trend.barometer.code` are also supported.  `trend.barometer.desc`
 provides a text version of the barometer rate (e.g., `Falling Slowly`).  As of 6.4 each English
 description is a gettext-style key into the target report's `[Texts]`, so the descriptions
-translate like every other string (the sample report's `lang/de.conf`, `lang/fr.conf` and `lang/nl.conf` carry all nine); see
+translate like every other string (the sample report's `lang/de.conf`, `lang/fr.conf`, `lang/nl.conf` and `lang/es.conf` carry all nine); see
 "Translating the sample report" below.  `trend.barometer.code` provides an integer
 of value `-4`, `-3`, `-2`, `-1`, `0`, `1`, `2`, `3` or `4`.  These values correspond to `Falling Very Rapidly`,
 `Falling Quickly`, `Falling`, `Falling Slowly`, `Steady`, `Rising Slowly`, `Rising`, `Rising Quickly`
@@ -874,11 +874,12 @@ Notes:
 
 As of 6.4 the sample report is translatable through WeeWX's own mechanisms — lang
 files and gettext-style `[Texts]` keys (the English string is the key; a missing
-entry falls back to English one string at a time).  German, French and Dutch ship
-(`skins/LoopData/lang/de.conf` and `lang/fr.conf` native-speaker
-reviewed, `lang/nl.conf` Beta awaiting its review; vocabulary in step with
+entry falls back to English one string at a time).  German, French, Dutch and
+Spanish ship (`skins/LoopData/lang/de.conf` and `lang/fr.conf` native-speaker
+reviewed, `lang/nl.conf` and `lang/es.conf` Beta awaiting their reviews;
+vocabulary in step with
 weewx-skyfield's and weewx-celestial's own lang files); select one with
-`lang = de` (or `fr`, `nl`) on the report's stanza.  Language support needs WeeWX 4.6 or later.  To add a
+`lang = de` (or `fr`, `nl`, `es`) on the report's stanza.  Language support needs WeeWX 4.6 or later.  To add a
 language, copy `lang/en.conf` — the reference dictionary, kept exact by a test —
 and translate the values.
 

@@ -101,7 +101,8 @@ all there is to it.
 * [The sample skin](sample-skin.html) — the instrument panel that ships with
   the extension.
 * [Translations](i18n.html) — the sample report in your language (German,
-  French and Dutch ship), and which report's language governs which string.
+  French, Dutch and Spanish ship), and which report's language governs which
+  string.
 * [Syncing to a remote server](rsync.html) — rsync configuration and
   troubleshooting.
 * [How LoopData works](how-it-works.html) — architecture and performance.

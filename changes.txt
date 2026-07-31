@@ -1,6 +1,17 @@
 loopdata change history
 -----------------------
 
+6.7 2026/07/31
+--------------
+- A complete Spanish translation ships with the sample LoopData skin
+  (Beta, awaiting native-speaker review -- corrections welcome):
+  lang/es.conf, including the trend.barometer.desc tendency vocabulary
+  and, for a loopdata instance whose target report is Spanish, the moon
+  phases, body names and all 88 constellation names -- the shared
+  vocabulary in step with weewx-skyfield's and weewx-celestial's
+  es.conf (the cross-repo test pins it, as for the German, French and
+  Dutch).  Select it with lang = es in the report.
+
 6.6 2026/07/30
 --------------
 - Almanac fields take a unit segment, completing the grammar --
