@@ -558,12 +558,20 @@ one (appending any fields other pages of yours use).
                          If a relative path is specified, it is relative to the
                          `target_report` directory.
  * `filename`          : The name of the loop data file to write.
- * `target_report`     : The WeeWX report to target.  LoopData will use this report to
-                         determine the units to use and the formatting to apply.  Also,
-                         if `loop_data_dir` is a relative path, it will be relative to
-                         the directory of `target_report`.  When
-                         LoopData is first installed, target_report is set to
-                         the sample report included with this skin: `LoopDataReport`.
+ * `target_report`     : The WeeWX report to target.  Conversions are decided by this
+                         report, not by the units stored in the database: if the
+                         database is metric but the target report specifies US units,
+                         values arrive in US units, converted and formatted exactly as
+                         the report would render them.  The target report also supplies
+                         the language — the `trend.barometer.desc` descriptions, moon
+                         phases, compass ordinates, almanac body and constellation
+                         names, and hemisphere letters all follow its lang file (see
+                         [Translating the sample report](#translating-the-sample-report)).
+                         Also, if `loop_data_dir` is a relative path, it will be
+                         relative to the directory of `target_report`.  When LoopData
+                         is first installed, target_report is set to the sample report
+                         included with this skin: `LoopDataReport` (also the default if
+                         the option is absent).
  * `seconds`           : The frequency of loop packets emitted by your device.  This is
                          needed to give the proper weight to accumulator entries.  For
                          example, this value is `2.0` for Vantage Pro 2 and

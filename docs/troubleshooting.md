@@ -62,6 +62,30 @@ In roughly descending order of likelihood:
 Also check the WeeWX log around startup: loopdata logs parse problems with
 field entries.
 
+## Values stay English on a translated page
+
+The page's labels and the live values translate independently — labels
+follow the sample report's `lang`, values follow the `[LoopData]`
+`target_report`'s (see [Translations](i18n.html)).  So if
+`trend.barometer.desc` is stuck at `Rising Slowly` — or moon phases,
+compass ordinates or almanac names stay English — on an otherwise
+translated page, check the value side:
+
+* **`target_report` must point at a report whose skin carries a lang
+  file with the needed strings.**  The sample report (`LoopDataReport`,
+  the default) ships them for every language loopdata ships.  Pointing
+  `target_report` at another extension's report — say, weewx-celestial's
+  `CelestialReport` — leaves the barometer descriptions English in every
+  language, because that skin's dictionary has no barometer phrases.
+  There is nothing to lose by retargeting: the Celestial page takes only
+  numbers from `loop-data.txt`; all of its text is translated at page
+  generation from its own lang file.
+* **The target report's stanza must set `lang`** (or inherit it from
+  `[StdReport] [[Defaults]]`).
+* **Restart weewxd** — the target report's texts are read once at
+  startup.
+* **This needs loopdata 6.4 or later.**
+
 ## Aggregate values look slightly off
 
 Check `[[LoopFrequency]] seconds`.  It is the weight given to each loop

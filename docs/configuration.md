@@ -25,12 +25,22 @@ rename), so a reader can never see a partial write.
 
 | Option | Meaning |
 |---|---|
-| `target_report` | The WeeWX report to target.  LoopData uses this report to determine the units to use and the formatting to apply.  Also, if `loop_data_dir` is a relative path, it is relative to the directory of `target_report`.  When LoopData is first installed, `target_report` is set to the sample report included with the extension: `LoopDataReport`. |
+| `target_report` | The WeeWX report to target.  LoopData uses this report to determine the units to use and the formatting to apply.  Also, if `loop_data_dir` is a relative path, it is relative to the directory of `target_report`.  When LoopData is first installed, `target_report` is set to the sample report included with the extension: `LoopDataReport` (also the default if the option is absent). |
 
-Because every value is converted and formatted per the target report, page
-javascript can drop values straight into HTML — they are already in the
-correct units and format.  Individual fields can override the unit or
-formatting; see the [field reference](field-reference.html).
+Why does LoopData need a report at all?  Because conversions are decided
+by the report, not by the units stored in the database: if the database
+is metric but the target report specifies US units, `day.outTemp.avg`
+arrives as `68.2°F`.  On every loop packet, LoopData applies the target
+report's converters and formatters, so each value lands in
+`loop-data.txt` exactly as the WeeWX reporting cycle would have rendered
+it — page javascript can drop values straight into HTML.  Individual
+fields can override the unit or formatting; see the
+[field reference](field-reference.html).
+
+The target report also supplies the *language*: the
+`trend.barometer.desc` descriptions, moon phases, compass ordinates,
+almanac body and constellation names, and hemisphere letters all follow
+the target report's lang file — see [Translations](i18n.html).
 
 ## `[[LoopFrequency]]`
 
