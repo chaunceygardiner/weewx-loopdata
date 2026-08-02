@@ -1221,7 +1221,8 @@ class ProcessPacketTests(unittest.TestCase):
             self.assertEqual(d2[trend], 'X_' + english)
 
         # The shipped lang files carry exactly the nine keys, translated.
-        for name in ('en.conf', 'de.conf', 'fr.conf', 'nl.conf', 'es.conf'):
+        for name in ('en.conf', 'de.conf', 'fr.conf', 'nl.conf', 'es.conf',
+                     'da.conf'):
             conf = self.i18n_lang_conf(
                 os.path.join(self.I18N_SKIN_DIR, 'lang'), name)
             d3 = L.construct_baro_trend_descs(dict(conf['Texts']))
@@ -1229,7 +1230,7 @@ class ProcessPacketTests(unittest.TestCase):
             for trend, english in defaults.items():
                 self.assertEqual(d3[trend], conf['Texts'][english], name)
         # ...and each translation moves every one of them away from English.
-        for name in ('de.conf', 'fr.conf', 'nl.conf', 'es.conf'):
+        for name in ('de.conf', 'fr.conf', 'nl.conf', 'es.conf', 'da.conf'):
             conf = self.i18n_lang_conf(os.path.join(self.I18N_SKIN_DIR, 'lang'),
                                        name)
             d4 = L.construct_baro_trend_descs(dict(conf['Texts']))
@@ -7315,6 +7316,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertIn('fr.conf', names)
         self.assertIn('nl.conf', names)
         self.assertIn('es.conf', names)
+        self.assertIn('da.conf', names)
         for name in names:
             conf = self.i18n_lang_conf(lang_dir, name)
             for key, val in dict(conf['Texts']).items():
@@ -7350,6 +7352,11 @@ class ProcessPacketTests(unittest.TestCase):
         conf = self.i18n_lang_conf(os.path.join(self.I18N_SKIN_DIR, 'lang'), 'es.conf')
         self.assertEqual(sorted(self.i18n_served_keys() - set(conf['Texts'])), [])
 
+    def test_i18n_da_conf_is_complete(self):
+        # Danish likewise ships complete.
+        conf = self.i18n_lang_conf(os.path.join(self.I18N_SKIN_DIR, 'lang'), 'da.conf')
+        self.assertEqual(sorted(self.i18n_served_keys() - set(conf['Texts'])), [])
+
     def test_i18n_lang_files_in_step_with_siblings(self):
         # The shared vocabulary is copied verbatim from weewx-skyfield's and
         # weewx-celestial's lang files (German and French native-speaker
@@ -7369,7 +7376,8 @@ class ProcessPacketTests(unittest.TestCase):
         if not siblings:
             self.skipTest('no sibling lang directory is available')
         for sib_dir in siblings:
-            for name in ('en.conf', 'de.conf', 'fr.conf', 'nl.conf', 'es.conf'):
+            for name in ('en.conf', 'de.conf', 'fr.conf', 'nl.conf', 'es.conf',
+                         'da.conf'):
                 if not os.path.exists(os.path.join(sib_dir, name)):
                     continue     # a sibling that has not shipped this language
                 sib = self.i18n_lang_conf(sib_dir, name)

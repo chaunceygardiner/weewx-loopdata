@@ -882,12 +882,13 @@ Notes:
 
 As of 6.4 the sample report is translatable through WeeWX's own mechanisms — lang
 files and gettext-style `[Texts]` keys (the English string is the key; a missing
-entry falls back to English one string at a time).  German, French, Dutch and
-Spanish ship (`skins/LoopData/lang/de.conf` and `lang/fr.conf` native-speaker
-reviewed, `lang/nl.conf` and `lang/es.conf` Beta awaiting their reviews;
+entry falls back to English one string at a time).  German, French, Danish, Dutch
+and Spanish ship (`skins/LoopData/lang/de.conf` and `lang/fr.conf` native-speaker
+reviewed, `lang/da.conf` contributed by native speaker Gert Andersen,
+`lang/nl.conf` and `lang/es.conf` Beta awaiting their reviews;
 vocabulary in step with
 weewx-skyfield's and weewx-celestial's own lang files); select one with
-`lang = de` (or `fr`, `nl`, `es`) on the report's stanza.  Language support needs WeeWX 4.6 or later.  To add a
+`lang = de` (or `fr`, `da`, `nl`, `es`) on the report's stanza.  Language support needs WeeWX 4.6 or later.  To add a
 language, copy `lang/en.conf` — the reference dictionary, kept exact by a test —
 and translate the values.
 
