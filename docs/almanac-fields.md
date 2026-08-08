@@ -48,7 +48,7 @@ distance, the moon at its true phase, odometer distance readouts ticking
 between loop packets — is drawn entirely from loopdata almanac fields.  It
 runs no service and computes nothing itself; loopdata evaluates the almanac
 tags on every loop packet, and the page reads loop-data.txt.  See it live at
-[www.paloaltoweather.com/celestial/](https://www.paloaltoweather.com/celestial/).
+[www.paloaltoweather.com](https://www.paloaltoweather.com/).
 
 ## The `days=±N` extension
 
@@ -116,10 +116,41 @@ that actually change are recomputed on every loop packet:
 |---|---|---|
 | continuous | positions (az/alt), distances, moon phase | every loop packet |
 | day | `rise`, `set`, `transit`, `visible`, `sunrise`, `sunset` | once per local day |
-| event | `next_*` / `previous_*` events | computed once and kept until the local day advances past the event (so a page can show today's event for the rest of its day) |
+| event | `previous_*` events | once per local day (the instant is always in the past; the value only changes at the next occurrence) |
+| event | `next_*` events | when the event's own instant passes (since 6.9; see below) |
 
-For this reason prefer `almanac.sun.rise` over `almanac.sun.next_rising` in
-loop data.
+Fields naming the same `next_*` event — say a satellite pass's rise, set
+and maximum altitude — are computed together and expire together, at the
+latest time-typed value among them.  For a pass that is the set time, so
+an in-progress pass keeps serving until it ends; the very next packet then
+carries the following occurrence, every field switching at once.
+Recomputes stay rare by construction, because each one returns the *next*
+occurrence, in the future, re-arming the cache: `next_full_moon` recomputes
+once per lunar month, a satellite's `next_pass` once per pass.  A group
+with no time-typed field cannot see its event end and keeps the
+once-per-day refresh instead — include a pass time field to get event-time
+expiry.
+
+A day- or event-tier evaluation that yields no data — say, a satellite
+whose orbital elements have not been downloaded yet — is not cached:
+every packet retries, so the field picks up its value the moment the
+almanac has data (since 6.9).
+
+The tiers make `almanac.sun.rise` and `almanac.sun.next_rising` genuinely
+different fields: `rise` shows today's sunrise for the whole day, while
+`next_rising` rolls forward to tomorrow's the moment the sun rises.  Pick
+the one that matches the page's intent.
+
+The same distinction applies to events with no day-scoped spelling.  One
+packet after the full moon, `almanac.next_full_moon` truthfully reads a
+lunar month ahead — exactly what a report page regenerated at that moment
+would say.  A page that wants a "full moon tonight at 18:23" badge for
+the rest of the day pairs it with `almanac.previous_full_moon`, which is
+day-rolled: list both (pinned for numeric comparison, e.g.
+`almanac.next_full_moon.unix_epoch.raw` and
+`almanac.previous_full_moon.unix_epoch.raw`), and when
+`previous_full_moon`'s local date is today, show it; otherwise show
+`next_full_moon`.  Together they cost two recomputes a month.
 
 ## Migrating from weewx-celestial's loop fields
 

@@ -89,9 +89,8 @@ the entry at the comma into two bogus fields:
 
 As of 6.4 the descriptions served for `trend.barometer.desc` (`Falling
 Slowly`, `Steady`, …) are gettext-style keys into the **target report's**
-`[Texts]` — translate them in the target report's lang file (the sample
-report's shipped `lang/de.conf`, `lang/fr.conf`, `lang/nl.conf` and
-`lang/es.conf` already carry all nine), or override a
+`[Texts]` — translate them in the target report's lang file (every lang
+file the sample report ships already carries all nine), or override a
 description without touching any skin file:
 
 ```

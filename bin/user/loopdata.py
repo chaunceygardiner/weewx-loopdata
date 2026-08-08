@@ -55,7 +55,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '6.8'
+LOOP_DATA_VERSION = '6.9'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -118,8 +118,13 @@ class AlmanacField:
     almanac(horizon=-6).sun(use_center=1).rise, ...), plus the loopdata
     extension almanac(days=±N) meaning "same wall-clock time N local calendar
     days away".  tier drives the evaluator's caching: 'continuous' fields are
-    recomputed every packet, 'day' fields once per local day, 'event' fields
-    are kept until the local day advances past the cached event."""
+    recomputed every packet, 'day' fields once per local day, and 'event'
+    fields divide on group: previous_* fields (group None) are kept until the
+    local day advances past the cached event, while next_* fields are cached
+    as a GROUP that expires the moment the event's own instant passes -- a
+    next_* value whose instant is behind us no longer is what the field name
+    promises (day/event results holding no data are not cached -- every
+    packet retries)."""
     field         : str                  # almanac(horizon=-6).sun(use_center=1).rise.raw
     almanac_kwargs: Dict[str, float]     # kwargs of the leading almanac segment (days removed)
     days          : int                  # local calendar-day shift (almanac(days=±N))
@@ -128,6 +133,7 @@ class AlmanacField:
     tier          : str                  # continuous, day or event
     format_kwargs : Optional[Dict[str, Any]] = None # call-syntax specs only (see CheetahName.format_kwargs)
     round_ndigits : Optional[int] = None # round(n) transform (see CheetahName.round_ndigits); applied via ValueHelper.round before the format spec
+    group         : Optional[str] = None # next_* fields only: key shared by fields whose chains agree up through the first next_* segment (plus the leading kwargs and day shift), so they cache and expire as a unit
     def __hash__(self):
         return hash(self.field)
 
@@ -2590,8 +2596,22 @@ class LoopData(StdService):
         if len(chain) == 0:
             return None
 
+        group: Optional[str] = None
         if any(seg.name.startswith('next_') or seg.name.startswith('previous_') for seg in chain):
             tier = 'event'
+            # next_* fields cache and expire as a group: the key is everything
+            # that determines WHICH event -- the leading almanac kwargs, the
+            # day shift, and the chain up through the first next_* segment --
+            # so almanac.iss.next_pass.rise.raw and almanac.iss.next_pass.set.raw
+            # always describe the same pass.  previous_* fields (group None)
+            # keep the per-field day-rolled cache: their instant is always in
+            # the past, so expire-at-event would recompute every packet.
+            for i, seg in enumerate(chain):
+                if seg.name.startswith('next_'):
+                    group = repr((sorted(almanac_kwargs.items()), days,
+                        [(s.name, None if s.kwargs is None else sorted(s.kwargs.items()))
+                         for s in chain[:i + 1]]))
+                    break
         elif any(seg.name in LoopData.almanac_day_attrs for seg in chain):
             tier = 'day'
         else:
@@ -2605,7 +2625,8 @@ class LoopData(StdService):
             format_spec    = format_spec,
             tier           = tier,
             format_kwargs  = format_kwargs,
-            round_ndigits  = round_ndigits)
+            round_ndigits  = round_ndigits,
+            group          = group)
 
     @staticmethod
     def is_station_field(field: str) -> bool:
@@ -2739,11 +2760,19 @@ class AlmanacFieldEvaluator:
     inserts the results into the loopdata packet.  Runs on the LoopProcessor
     thread.  Caching mirrors weewx-celestial's proven lifetimes: continuous
     attributes (alt/az/ra/dec/phase/distances) are recomputed every packet;
-    day-scoped attributes (rise/set/transit/visible) once per local day; event
-    attributes (next_*/previous_*) are kept until the local day advances past
-    the cached event, so a page can show today's event for the rest of its day.
-    The local day is compared for EQUALITY, so backfilled packets get their own
-    day, never a newer cache."""
+    day-scoped attributes (rise/set/transit/visible) once per local day;
+    previous_* attributes are kept until the local day advances past the
+    cached event.  next_* attributes expire at the event's OWN instant: a
+    next_* value whose instant has passed no longer is what the field name
+    promises (a page that wants today's sunrise all day spells it
+    almanac.sunrise), and the recompute returns the FOLLOWING occurrence,
+    in the future, re-arming the cache -- once per lunar month for
+    next_full_moon, once per pass for a satellite.  Fields naming the same
+    next_* event are cached and expired as a group (see compute_group).
+    The local day is compared for EQUALITY, so backfilled packets get their
+    own day, never a newer cache.  A day/event evaluation that yields no
+    data is not cached at all -- every packet retries until data exists
+    (see compute())."""
 
     # Sentinel cached for a field whose evaluation failed, so day/event tiers
     # don't retry every packet.
@@ -2758,7 +2787,12 @@ class AlmanacFieldEvaluator:
         self.formatter = cfg.formatter
         self.converter = cfg.converter
         self.values: Dict[str, Any] = {}          # field -> json value or SKIP
-        self.event_ts: Dict[str, Optional[float]] = {} # field -> cached event's epoch time
+        self.event_ts: Dict[str, Optional[float]] = {} # previous_* field -> cached event's epoch time
+        self.groups: Dict[str, List[AlmanacField]] = {} # group key -> its next_* fields
+        for almanac_field in self.fields:
+            if almanac_field.group is not None:
+                self.groups.setdefault(almanac_field.group, []).append(almanac_field)
+        self.group_expiry: Dict[str, float] = {}  # group key -> cached event's governing instant (epoch)
         self.cache_day: Optional[date] = None
         self.warned: Set[str] = set()
 
@@ -2826,13 +2860,29 @@ class AlmanacFieldEvaluator:
             almanac_field.round_ndigits, obj)
 
     def compute(self, almanac_field: AlmanacField, base_almanac: weewx.almanac.Almanac,
-            pkt_time: int) -> None:
+            pkt_time: int) -> Any:
+        """Evaluate the field and return this packet's json value (SKIP on
+        failure).  The result is cached in self.values -- UNLESS it is a
+        day/event field whose evaluation yielded no data (raw None: e.g. a
+        satellite whose elements have not been fetched yet, or a body with
+        no rise this day).  Such a value is served for this packet only, so
+        the next packet retries and picks the real value up the moment the
+        data exists -- report tags self-heal on the next report cycle, and
+        without this a startup N/A would stick until midnight.  The retry
+        is cheap: a no-data evaluation is a few dict lookups, and a
+        legitimately-empty one is served from the almanac's own cache.  The
+        no-data test is on the evaluated object, never on the rendered
+        string ("N/A" is formatter/language dependent)."""
         try:
             obj = self.evaluate(almanac_field, base_almanac, pkt_time)
+            raw = obj.raw if isinstance(obj, weewx.units.ValueHelper) else obj
+            value = self.to_json_value(almanac_field, obj)
+            if almanac_field.tier != 'continuous' and raw is None:
+                return value
             if almanac_field.tier == 'event':
-                raw = obj.raw if isinstance(obj, weewx.units.ValueHelper) else obj
                 self.event_ts[almanac_field.field] = raw if isinstance(raw, (int, float)) else None
-            self.values[almanac_field.field] = self.to_json_value(almanac_field, obj)
+            self.values[almanac_field.field] = value
+            return value
         except Exception as e:
             reraise_if_terminate(e)
             if almanac_field.field not in self.warned:
@@ -2841,6 +2891,51 @@ class AlmanacFieldEvaluator:
             self.values[almanac_field.field] = AlmanacFieldEvaluator.SKIP
             if almanac_field.tier == 'event':
                 self.event_ts[almanac_field.field] = None
+            return AlmanacFieldEvaluator.SKIP
+
+    def compute_group(self, group_key: str, group_fields: List[AlmanacField],
+            base_almanac: weewx.almanac.Almanac, pkt_time: int) -> Dict[str, Any]:
+        """Evaluate every leaf of a next_* group against the same base
+        almanac and cache them as a unit, so a pass's rise, set and azimuth
+        can never mix two passes.  The group's expiry is the LATEST instant
+        among its time-typed leaves -- detected by the ValueHelper's unit
+        group (group_time) and converted to unix_epoch, so a pinned unit
+        segment (or a report's group_time override) cannot skew it, and
+        duration never qualifies (group_deltatime, a span not an instant).
+        For a satellite pass that lands on .set with no pass-specific
+        knowledge here: an in-progress pass keeps serving until it ends,
+        then expires.  A group with no time-typed leaf has no expiry signal
+        and falls back to the day roll (include a pass time field to get
+        event-time expiry).  A leaf with no data (raw None) keeps the WHOLE
+        group uncached -- every packet retries, as for any day/event field,
+        and atomically, so a healed group can never mix a fresh leaf with a
+        stale one."""
+        results: Dict[str, Any] = {}
+        expiry: Optional[float] = None
+        no_data = False
+        for almanac_field in group_fields:
+            try:
+                obj = self.evaluate(almanac_field, base_almanac, pkt_time)
+                raw = obj.raw if isinstance(obj, weewx.units.ValueHelper) else obj
+                results[almanac_field.field] = self.to_json_value(almanac_field, obj)
+                if raw is None:
+                    no_data = True
+                elif (isinstance(obj, weewx.units.ValueHelper)
+                        and getattr(obj.value_t, 'group', None) == 'group_time'):
+                    event_ts = weewx.units.convert(obj.value_t, 'unix_epoch')[0]
+                    if event_ts is not None:
+                        expiry = event_ts if expiry is None else max(expiry, event_ts)
+            except Exception as e:
+                reraise_if_terminate(e)
+                if almanac_field.field not in self.warned:
+                    self.warned.add(almanac_field.field)
+                    log.info('Cannot evaluate almanac field %s: %s' % (almanac_field.field, e))
+                results[almanac_field.field] = AlmanacFieldEvaluator.SKIP
+        if not no_data:
+            self.values.update(results)
+            if expiry is not None:
+                self.group_expiry[group_key] = expiry
+        return results
 
     def roll_day(self, day: date) -> None:
         advancing = self.cache_day is not None and day > self.cache_day
@@ -2848,6 +2943,18 @@ class AlmanacFieldEvaluator:
         for almanac_field in self.fields:
             if almanac_field.tier == 'day':
                 self.values.pop(almanac_field.field, None)
+            elif almanac_field.group is not None:
+                # A next_* group's life is governed by its expiry instant, so
+                # an advancing day keeps a still-armed group (a full moon
+                # three weeks out is not recomputed daily; a stale instant is
+                # caught by the per-packet expiry check in insert_fields).  A
+                # group with no expiry (no time-typed leaf, or a failed
+                # compute) day-rolls here, and any non-advancing change
+                # (backfill) recomputes -- equality semantics, as for the
+                # day tier.
+                if not advancing or almanac_field.group not in self.group_expiry:
+                    self.values.pop(almanac_field.field, None)
+                    self.group_expiry.pop(almanac_field.group, None)
             elif almanac_field.tier == 'event':
                 event_ts = self.event_ts.get(almanac_field.field)
                 if not advancing or event_ts is None or event_ts < day_start_ts:
@@ -2862,11 +2969,31 @@ class AlmanacFieldEvaluator:
         day = date.fromtimestamp(pkt_time)
         if day != self.cache_day:
             self.roll_day(day)
+        # A next_* group expires the moment its governing instant is no
+        # longer ahead (>=, matching the engines' strictly-after rule: asked
+        # at the instant itself, wxskyfield and PyEphem already serve the
+        # following occurrence).  Mid-pass packets keep the cached pass --
+        # its expiry is the set time.
+        for group_key in [k for k, expiry in self.group_expiry.items() if pkt_time >= expiry]:
+            del self.group_expiry[group_key]
+            for almanac_field in self.groups[group_key]:
+                self.values.pop(almanac_field.field, None)
         base_almanac = self.build_almanac(pkt)
+        group_results: Dict[str, Dict[str, Any]] = {}
+        for group_key, group_fields in self.groups.items():
+            if any(f.field not in self.values for f in group_fields):
+                group_results[group_key] = self.compute_group(
+                    group_key, group_fields, base_almanac, pkt_time)
         for almanac_field in self.fields:
-            if almanac_field.tier == 'continuous' or almanac_field.field not in self.values:
-                self.compute(almanac_field, base_almanac, pkt_time)
-            value = self.values.get(almanac_field.field)
+            if almanac_field.group is not None:
+                if almanac_field.group in group_results:
+                    value = group_results[almanac_field.group][almanac_field.field]
+                else:
+                    value = self.values[almanac_field.field]
+            elif almanac_field.tier == 'continuous' or almanac_field.field not in self.values:
+                value = self.compute(almanac_field, base_almanac, pkt_time)
+            else:
+                value = self.values[almanac_field.field]
             if value is not None and value is not AlmanacFieldEvaluator.SKIP:
                 loopdata_pkt[almanac_field.field] = value
 

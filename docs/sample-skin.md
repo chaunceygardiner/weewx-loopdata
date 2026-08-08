@@ -57,8 +57,9 @@ any fields other pages of yours use) and restart weewxd.
 
 ## Translations
 
-As of 6.4 the page is translatable through WeeWX lang files, and German
-ships (`lang = de` on the report's stanza).  Two languages meet on a
+As of 6.4 the page is translatable through WeeWX lang files, and eight
+languages ship (`lang = de` on the report's stanza selects German; the
+full list is in [Translations](i18n.html)).  Two languages meet on a
 loopdata page — the page's labels follow this report's `lang`, the live
 values follow the `[LoopData]` target report's — see
 [Translations](i18n.html) for the mechanism and the coupling.

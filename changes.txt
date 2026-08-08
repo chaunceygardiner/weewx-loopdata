@@ -1,6 +1,48 @@
 loopdata change history
 -----------------------
 
+6.9 2026/08/08
+--------------
+- A next_* almanac field now expires the moment its event's own instant
+  passes, instead of being kept until midnight: a "next" value whose
+  instant is behind us no longer is what the field name promises.
+  Fields naming the same event -- say a satellite pass's rise, set and
+  maximum altitude -- are computed together and expire together, at the
+  latest time-typed value among them (for a pass, the set time), so an
+  in-progress pass keeps serving until it ends and the very next packet
+  carries the following pass, every field switching at once.
+  Recomputes stay rare by construction, since each one returns the next
+  occurrence, re-arming the cache: next_full_moon recomputes once per
+  lunar month, a satellite's next_pass once per pass.  A group with no
+  time-typed field cannot see its event end and keeps the once-per-day
+  refresh -- include a pass time field to get event-time expiry.
+  previous_* fields are unchanged (their instant is always in the past;
+  they refresh once per local day).  The stale window has been there
+  since almanac fields shipped in 5.0 -- almanac.next_full_moon serves
+  the old event from the instant it passes until midnight -- but it
+  took developing weewx-celestial 8.0's "Next pass overhead" panel
+  against this code to make it glaring: driven by the old caching, the
+  panel showed a morning pass as "just set" until the day's end.  Fixed
+  before either shipped.
+- A day- or event-tier almanac field that evaluates to no data is no
+  longer cached until the next local day: every packet retries, so the
+  field picks up its value the moment the almanac has data.  Seen live
+  with weewx-skyfield satellites: a newly added satellite's rise,
+  set and pass fields honestly read N/A until its orbital elements
+  downloaded, but before this fix they kept reading N/A until midnight
+  even though the elements arrived moments after startup.
+- Complete Italian, Norwegian (Bokmål) and Swedish translations ship
+  with the sample LoopData skin (all three Beta, awaiting
+  native-speaker review -- corrections welcome): lang/it.conf,
+  lang/no.conf and lang/sv.conf, each including the
+  trend.barometer.desc tendency vocabulary and, for a loopdata instance
+  whose target report is in that language, the moon phases, body names
+  and all 88 constellation names -- the shared vocabulary in step with
+  weewx-skyfield's and weewx-celestial's files of the same names (the
+  cross-repo test pins it, as for the other languages).  Select one
+  with lang = it (or no, sv) in the report.  Matches the three new
+  languages of weewx-skyfield 2.0 and weewx-celestial 8.0.
+
 6.8 2026/08/02
 --------------
 - A complete Danish translation ships with the sample LoopData skin,

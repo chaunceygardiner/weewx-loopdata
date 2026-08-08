@@ -54,7 +54,7 @@ from weewx.schemas.wview_extended import schema as wview_extended_schema
 from weeutil.weeutil import to_int
 from weeutil.weeutil import timestamp_to_string
 
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import weeutil.logger
 
@@ -137,6 +137,47 @@ class StubAlmanacBinder:
                    - (600 if self.use_center else 0))
         return self.stub.time_vh(self.almanac_obj, rise_ts)
 
+class StubPass:
+    """A satellite-pass-shaped object, as wxskyfield's next_pass serves one:
+    time-typed rise/set ValueHelpers, a group_deltatime duration, and a
+    timeless max_altitude.  Selected by StubAlmanacType with wxskyfield's own
+    rule -- the first pass whose set is strictly after the almanac's time --
+    so an in-progress pass IS the next pass."""
+    def __init__(self, stub: 'StubAlmanacType', almanac_obj: Any,
+            rise_ts: Optional[float], set_ts: Optional[float],
+            max_altitude: Optional[float]) -> None:
+        self.stub = stub
+        self.almanac_obj = almanac_obj
+        self.rise_ts = rise_ts
+        self.set_ts = set_ts
+        self._max_altitude = max_altitude
+
+    @property
+    def rise(self) -> weewx.units.ValueHelper:
+        self.stub.count('next_pass.rise')
+        return StubAlmanacType.time_vh(self.almanac_obj, self.rise_ts)
+
+    @property
+    def set(self) -> weewx.units.ValueHelper:
+        self.stub.count('next_pass.set')
+        return StubAlmanacType.time_vh(self.almanac_obj, self.set_ts)
+
+    @property
+    def duration(self) -> weewx.units.ValueHelper:
+        self.stub.count('next_pass.duration')
+        seconds = (self.set_ts - self.rise_ts
+                   if self.rise_ts is not None and self.set_ts is not None else None)
+        return weewx.units.ValueHelper(
+            weewx.units.ValueTuple(seconds, 'second', 'group_deltatime'),
+            context='ephem_day',
+            formatter=self.almanac_obj.formatter,
+            converter=self.almanac_obj.converter)
+
+    @property
+    def max_altitude(self) -> Optional[float]:
+        self.stub.count('next_pass.max_altitude')
+        return self._max_altitude
+
 class StubAlmanacType(weewx.almanac.AlmanacType):
     """Serves deterministic values so loopdata's almanac plumbing (parsing,
     evaluation, formatting, caching) can be tested from first principles,
@@ -144,12 +185,18 @@ class StubAlmanacType(weewx.almanac.AlmanacType):
     def __init__(self) -> None:
         self.counts: Dict[str, int] = {}
         self.next_full_moon_ts: float = 0.0
+        self.previous_full_moon_ts: float = 0.0
+        self.passes: List[Tuple[float, float, float]] = []  # (rise_ts, set_ts, max_altitude)
+        # Attrs currently answering with no data (an empty ValueHelper, raw
+        # None) -- how skyfield reports a satellite whose elements have not
+        # been fetched; evaluation never raises.
+        self.no_data: Set[str] = set()
 
     def count(self, attr: str) -> None:
         self.counts[attr] = self.counts.get(attr, 0) + 1
 
     @staticmethod
-    def time_vh(almanac_obj: Any, ts: float) -> weewx.units.ValueHelper:
+    def time_vh(almanac_obj: Any, ts: Optional[float]) -> weewx.units.ValueHelper:
         return weewx.units.ValueHelper(
             weewx.units.ValueTuple(ts, 'unix_epoch', 'group_time'),
             context='ephem_day',
@@ -165,6 +212,8 @@ class StubAlmanacType(weewx.almanac.AlmanacType):
             return almanac_obj.horizon
         if attr == 'sunrise':
             self.count(attr)
+            if attr in self.no_data:
+                return StubAlmanacType.time_vh(almanac_obj, None)
             day_start = time.mktime(date.fromtimestamp(almanac_obj.time_ts).timetuple())
             return StubAlmanacType.time_vh(almanac_obj, day_start + 6 * 3600)
         if attr == 'moon_index':
@@ -172,7 +221,19 @@ class StubAlmanacType(weewx.almanac.AlmanacType):
             return 4
         if attr == 'next_full_moon':
             self.count(attr)
+            if attr in self.no_data:
+                return StubAlmanacType.time_vh(almanac_obj, None)
             return StubAlmanacType.time_vh(almanac_obj, self.next_full_moon_ts)
+        if attr == 'previous_full_moon':
+            self.count(attr)
+            return StubAlmanacType.time_vh(almanac_obj, self.previous_full_moon_ts)
+        if attr == 'next_pass':
+            self.count(attr)
+            if attr not in self.no_data:
+                for rise_ts, set_ts, max_altitude in self.passes:
+                    if set_ts > almanac_obj.time_ts:
+                        return StubPass(self, almanac_obj, rise_ts, set_ts, max_altitude)
+            return StubPass(self, almanac_obj, None, None, None)
         if attr == 'sun':
             return StubAlmanacBinder(self, almanac_obj)
         raise weewx.UnknownType(attr)
@@ -1602,13 +1663,14 @@ class ProcessPacketTests(unittest.TestCase):
             self.assertEqual(stub.counts['sunrise'], 8)
             self.assertEqual(stub.counts['next_full_moon'], 1)
 
-            # Day 3, the day of the full moon: the event is deliberately kept
-            # for the rest of its day.
+            # Day 3, noon of the full moon's day: the event (18:00) is still
+            # ahead, so the group is still armed.
             pkt = {'dateTime': day1_noon + 2 * 86400, 'usUnits': 1}
             evaluator.insert_fields({}, pkt)
             self.assertEqual(stub.counts['next_full_moon'], 1)
 
-            # Day 4: the local day advanced past the cached event; recompute.
+            # Day 4: the cached event's instant has passed; the group
+            # expires and the recompute yields the following full moon.
             stub.next_full_moon_ts = six_am(31)
             pkt = {'dateTime': day1_noon + 3 * 86400, 'usUnits': 1}
             loopdata_pkt = {}
@@ -1625,6 +1687,304 @@ class ProcessPacketTests(unittest.TestCase):
             # Four sunrise fields recomputed on each of the five day changes.
             self.assertEqual(stub.counts['sunrise'], 20)
             self.assertEqual(stub.counts['next_full_moon'], 3)
+        finally:
+            weewx.almanac.almanacs.remove(stub)
+
+    def test_almanac_no_data_not_cached(self) -> None:
+        """A day/event-tier evaluation that yields no data (an empty
+        ValueHelper or plain None -- e.g. a satellite whose elements have
+        not been fetched yet) must not be cached for the day: every packet
+        retries, so the field picks up the real value the moment the
+        almanac has data, just as report tags do on the next report cycle.
+        A real value still caches for the day; the exception path still
+        caches SKIP so a broken field is not walked (and logged) every
+        packet."""
+        specified_fields = [
+            'almanac.sunrise.raw',              # day tier, raw: absent while no data
+            'almanac.sunrise',                  # day tier, formatted: renders like the report tag
+            'almanac.next_full_moon.raw',       # event tier
+            'almanac.sunrise.no_such_unit.raw', # day tier, raises: SKIP still caches
+        ]
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, ['current.outTemp'])
+        cfg.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
+        self.assertEqual(len(cfg.almanac_fields), len(specified_fields))
+        cfg.latitude, cfg.longitude, cfg.altitude_m = 37.4, -122.1, 20.0
+
+        stub = StubAlmanacType()
+        weewx.almanac.almanacs.insert(0, stub)
+        try:
+            evaluator = user.loopdata.AlmanacFieldEvaluator(cfg)
+
+            # 2020-07-01 (PDT) noon, as in test_almanac_field_evaluator.
+            day1_noon = 1593630000
+            def six_am(day_offset: int) -> float:
+                day = date.fromtimestamp(day1_noon + day_offset * 86400)
+                return time.mktime(day.timetuple()) + 6 * 3600
+
+            stub.no_data = {'sunrise', 'next_full_moon'}
+            pkt: Dict[str, Any] = {'dateTime': day1_noon, 'usUnits': 1}
+            loopdata_pkt: Dict[str, Any] = {}
+            evaluator.insert_fields(loopdata_pkt, pkt)
+
+            # The no-data packet itself serves what the report tag would: the
+            # raw field is absent, the formatted field renders the empty
+            # ValueHelper (the formatter's no-data label).
+            self.assertNotIn('almanac.sunrise.raw', loopdata_pkt)
+            empty_vh = weewx.units.ValueHelper(
+                weewx.units.ValueTuple(None, 'unix_epoch', 'group_time'),
+                context='ephem_day', formatter=cfg.formatter, converter=cfg.converter)
+            self.assertEqual(loopdata_pkt['almanac.sunrise'], str(empty_vh))
+            self.assertNotIn('almanac.next_full_moon.raw', loopdata_pkt)
+            self.assertNotIn('almanac.sunrise.no_such_unit.raw', loopdata_pkt)
+            # Three fields walk sunrise: raw, formatted, and the failing
+            # unit chain (which walks sunrise before the conversion raises).
+            self.assertEqual(stub.counts['sunrise'], 3)
+            self.assertEqual(stub.counts['next_full_moon'], 1)
+            self.assertIs(evaluator.values['almanac.sunrise.no_such_unit.raw'],
+                user.loopdata.AlmanacFieldEvaluator.SKIP)
+
+            # Same day, next packet: the no-data fields are walked again, not
+            # served from cache -- but the FAILED field stays cached as SKIP
+            # (only two sunrise walks, not three), so a broken field is not
+            # walked and logged every packet.
+            evaluator.insert_fields({}, {'dateTime': day1_noon + 2, 'usUnits': 1})
+            self.assertEqual(stub.counts['sunrise'], 5)
+            self.assertEqual(stub.counts['next_full_moon'], 2)
+
+            # The elements arrive: the very next packet has the real values.
+            stub.no_data = set()
+            stub.next_full_moon_ts = six_am(2)
+            loopdata_pkt = {}
+            evaluator.insert_fields(loopdata_pkt, {'dateTime': day1_noon + 4, 'usUnits': 1})
+            self.assertEqual(loopdata_pkt['almanac.sunrise.raw'], six_am(0))
+            self.assertEqual(loopdata_pkt['almanac.next_full_moon.raw'], six_am(2))
+            self.assertEqual(stub.counts['sunrise'], 7)
+            self.assertEqual(stub.counts['next_full_moon'], 3)
+
+            # And real values cache at the normal cadence: nothing is walked
+            # on the next packet.
+            loopdata_pkt = {}
+            evaluator.insert_fields(loopdata_pkt, {'dateTime': day1_noon + 6, 'usUnits': 1})
+            self.assertEqual(loopdata_pkt['almanac.sunrise.raw'], six_am(0))
+            self.assertEqual(loopdata_pkt['almanac.next_full_moon.raw'], six_am(2))
+            self.assertEqual(stub.counts['sunrise'], 7)
+            self.assertEqual(stub.counts['next_full_moon'], 3)
+        finally:
+            weewx.almanac.almanacs.remove(stub)
+
+    def test_almanac_next_group_expires_at_event(self) -> None:
+        """next_* fields naming one event -- here a satellite pass -- form a
+        group that is computed as a unit and expires at the event's own
+        instant, the latest time-typed leaf (for a pass, set): mid-pass
+        packets serve the cached in-progress pass, the first packet at or
+        after set recomputes, and the recompute yields the FOLLOWING pass
+        with every leaf switching on the same packet.  An independent next_*
+        group (the full moon) keeps its own expiry."""
+        specified_fields = [
+            'almanac.next_pass.rise.raw',
+            'almanac.next_pass.set.raw',
+            'almanac.next_pass.max_altitude',
+            'almanac.next_full_moon.raw',
+        ]
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, ['current.outTemp'])
+        cfg.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
+        self.assertEqual(len(cfg.almanac_fields), len(specified_fields))
+        cfg.latitude, cfg.longitude, cfg.altitude_m = 37.4, -122.1, 20.0
+
+        stub = StubAlmanacType()
+        weewx.almanac.almanacs.insert(0, stub)
+        try:
+            evaluator = user.loopdata.AlmanacFieldEvaluator(cfg)
+            # The three pass fields share one group; the full moon is its own.
+            self.assertEqual(len(evaluator.groups), 2)
+
+            day1_noon = 1593630000    # 2020-07-01 noon PDT
+            # Pass A 13:00-13:10 at 45 degrees, pass B 16:00-16:08 at 62.
+            pass_a = (day1_noon + 3600, day1_noon + 3600 + 600, 45.0)
+            pass_b = (day1_noon + 4 * 3600, day1_noon + 4 * 3600 + 480, 62.0)
+            stub.passes = [pass_a, pass_b]
+            stub.next_full_moon_ts = day1_noon + 40 * 86400
+
+            def insert(pkt_time: float) -> Dict[str, Any]:
+                loopdata_pkt: Dict[str, Any] = {}
+                evaluator.insert_fields(loopdata_pkt, {'dateTime': pkt_time, 'usUnits': 1})
+                return loopdata_pkt
+
+            # Noon: pass A is ahead; one computation walks all three leaves.
+            pkt = insert(day1_noon)
+            self.assertEqual(pkt['almanac.next_pass.rise.raw'], pass_a[0])
+            self.assertEqual(pkt['almanac.next_pass.set.raw'], pass_a[1])
+            self.assertEqual(pkt['almanac.next_pass.max_altitude'], 45.0)
+            self.assertEqual(stub.counts['next_pass'], 3)
+            self.assertEqual(stub.counts['next_full_moon'], 1)
+
+            # Mid-pass (rise < now < set): the cached in-progress pass is
+            # served -- the group's expiry is set, not rise.
+            pkt = insert(pass_a[0] + 300)
+            self.assertEqual(pkt['almanac.next_pass.rise.raw'], pass_a[0])
+            self.assertEqual(pkt['almanac.next_pass.max_altitude'], 45.0)
+            self.assertEqual(stub.counts['next_pass'], 3)
+
+            # The packet at set: the pass has ended (the engines' own rule is
+            # set strictly after now), so the group expires and the recompute
+            # yields pass B -- rise, set and altitude switch together.
+            pkt = insert(pass_a[1])
+            self.assertEqual(pkt['almanac.next_pass.rise.raw'], pass_b[0])
+            self.assertEqual(pkt['almanac.next_pass.set.raw'], pass_b[1])
+            self.assertEqual(pkt['almanac.next_pass.max_altitude'], 62.0)
+            self.assertEqual(stub.counts['next_pass'], 6)
+            # The full moon group did not expire with it.
+            self.assertEqual(stub.counts['next_full_moon'], 1)
+            self.assertEqual(pkt['almanac.next_full_moon.raw'], stub.next_full_moon_ts)
+
+            # Re-armed: the next packet serves pass B from cache.
+            pkt = insert(pass_a[1] + 2)
+            self.assertEqual(pkt['almanac.next_pass.set.raw'], pass_b[1])
+            self.assertEqual(stub.counts['next_pass'], 6)
+        finally:
+            weewx.almanac.almanacs.remove(stub)
+
+    def test_almanac_next_group_no_data_retries(self) -> None:
+        """A next_* group whose evaluation yields no data (a satellite
+        awaiting its orbital elements) is not cached AT ALL: every packet
+        retries the whole group as a unit, so when the elements arrive every
+        leaf heals on the same packet -- never a fresh leaf beside a stale
+        one."""
+        specified_fields = [
+            'almanac.next_pass.rise.raw',
+            'almanac.next_pass.set.raw',
+            'almanac.next_pass.max_altitude',
+        ]
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, ['current.outTemp'])
+        cfg.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
+        self.assertEqual(len(cfg.almanac_fields), len(specified_fields))
+        cfg.latitude, cfg.longitude, cfg.altitude_m = 37.4, -122.1, 20.0
+
+        stub = StubAlmanacType()
+        weewx.almanac.almanacs.insert(0, stub)
+        try:
+            evaluator = user.loopdata.AlmanacFieldEvaluator(cfg)
+            day1_noon = 1593630000    # 2020-07-01 noon PDT
+            pass_a = (day1_noon + 3600, day1_noon + 3600 + 600, 45.0)
+
+            def insert(pkt_time: float) -> Dict[str, Any]:
+                loopdata_pkt: Dict[str, Any] = {}
+                evaluator.insert_fields(loopdata_pkt, {'dateTime': pkt_time, 'usUnits': 1})
+                return loopdata_pkt
+
+            stub.no_data = {'next_pass'}
+            pkt = insert(day1_noon)
+            self.assertNotIn('almanac.next_pass.rise.raw', pkt)
+            self.assertNotIn('almanac.next_pass.set.raw', pkt)
+            self.assertNotIn('almanac.next_pass.max_altitude', pkt)
+            self.assertEqual(stub.counts['next_pass'], 3)
+
+            # Next packet: the whole group is walked again, not served from
+            # cache.
+            insert(day1_noon + 2)
+            self.assertEqual(stub.counts['next_pass'], 6)
+
+            # The elements arrive: the very next packet has every leaf.
+            stub.no_data = set()
+            stub.passes = [pass_a]
+            pkt = insert(day1_noon + 4)
+            self.assertEqual(pkt['almanac.next_pass.rise.raw'], pass_a[0])
+            self.assertEqual(pkt['almanac.next_pass.set.raw'], pass_a[1])
+            self.assertEqual(pkt['almanac.next_pass.max_altitude'], 45.0)
+            self.assertEqual(stub.counts['next_pass'], 9)
+
+            # And the healed group caches at the normal cadence.
+            insert(day1_noon + 6)
+            self.assertEqual(stub.counts['next_pass'], 9)
+        finally:
+            weewx.almanac.almanacs.remove(stub)
+
+    def test_almanac_next_group_timeless_day_roll(self) -> None:
+        """A next_* group with no time-typed leaf has no expiry signal --
+        duration never qualifies (group_deltatime, a span not an instant) --
+        so it falls back to the day roll: computed once, kept for the local
+        day even past the event, recomputed when the day changes.  Include a
+        pass time field to get event-time expiry."""
+        specified_fields = [
+            'almanac.next_pass.max_altitude',
+            'almanac.next_pass.duration.raw',
+        ]
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, ['current.outTemp'])
+        cfg.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
+        self.assertEqual(len(cfg.almanac_fields), len(specified_fields))
+        cfg.latitude, cfg.longitude, cfg.altitude_m = 37.4, -122.1, 20.0
+
+        stub = StubAlmanacType()
+        weewx.almanac.almanacs.insert(0, stub)
+        try:
+            evaluator = user.loopdata.AlmanacFieldEvaluator(cfg)
+            day1_noon = 1593630000    # 2020-07-01 noon PDT
+            pass_a = (day1_noon + 3600, day1_noon + 3600 + 600, 45.0)
+            pass_b = (day1_noon + 86400, day1_noon + 86400 + 480, 62.0)
+            stub.passes = [pass_a, pass_b]
+
+            def insert(pkt_time: float) -> Dict[str, Any]:
+                loopdata_pkt: Dict[str, Any] = {}
+                evaluator.insert_fields(loopdata_pkt, {'dateTime': pkt_time, 'usUnits': 1})
+                return loopdata_pkt
+
+            pkt = insert(day1_noon)
+            self.assertEqual(pkt['almanac.next_pass.max_altitude'], 45.0)
+            self.assertEqual(pkt['almanac.next_pass.duration.raw'], 600.0)
+            self.assertEqual(stub.counts['next_pass'], 2)
+
+            # Past the pass's set: the fallback has no way to see the event
+            # end, so the cache stands for the rest of the day.
+            pkt = insert(pass_a[1] + 3600)
+            self.assertEqual(pkt['almanac.next_pass.max_altitude'], 45.0)
+            self.assertEqual(stub.counts['next_pass'], 2)
+
+            # Day 2: the day roll recomputes; now pass B is the next pass.
+            pkt = insert(day1_noon + 86400 - 3600)
+            self.assertEqual(pkt['almanac.next_pass.max_altitude'], 62.0)
+            self.assertEqual(pkt['almanac.next_pass.duration.raw'], 480.0)
+            self.assertEqual(stub.counts['next_pass'], 4)
+        finally:
+            weewx.almanac.almanacs.remove(stub)
+
+    def test_almanac_previous_event_day_rolls(self) -> None:
+        """previous_* fields keep the per-field day-rolled cache: their
+        instant is always in the past, so expire-at-event would recompute
+        every packet forever.  The value is computed once, served for the
+        rest of the local day, and recomputed when the day advances."""
+        specified_fields = ['almanac.previous_full_moon.raw']
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, ['current.outTemp'])
+        cfg.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
+        self.assertEqual(len(cfg.almanac_fields), len(specified_fields))
+        # previous_* fields are per-field day-rolled, never grouped.
+        self.assertIsNone(cfg.almanac_fields[0].group)
+        cfg.latitude, cfg.longitude, cfg.altitude_m = 37.4, -122.1, 20.0
+
+        stub = StubAlmanacType()
+        weewx.almanac.almanacs.insert(0, stub)
+        try:
+            evaluator = user.loopdata.AlmanacFieldEvaluator(cfg)
+            day1_noon = 1593630000    # 2020-07-01 noon PDT
+            stub.previous_full_moon_ts = day1_noon - 5 * 86400
+
+            def insert(pkt_time: float) -> Dict[str, Any]:
+                loopdata_pkt: Dict[str, Any] = {}
+                evaluator.insert_fields(loopdata_pkt, {'dateTime': pkt_time, 'usUnits': 1})
+                return loopdata_pkt
+
+            pkt = insert(day1_noon)
+            self.assertEqual(pkt['almanac.previous_full_moon.raw'], stub.previous_full_moon_ts)
+            self.assertEqual(stub.counts['previous_full_moon'], 1)
+
+            # An hour later: served from cache although the instant is long
+            # past -- never recomputed per packet.
+            pkt = insert(day1_noon + 3600)
+            self.assertEqual(pkt['almanac.previous_full_moon.raw'], stub.previous_full_moon_ts)
+            self.assertEqual(stub.counts['previous_full_moon'], 1)
+
+            # Day 2: the day roll recomputes.
+            insert(day1_noon + 86400)
+            self.assertEqual(stub.counts['previous_full_moon'], 2)
         finally:
             weewx.almanac.almanacs.remove(stub)
 
@@ -7317,6 +7677,9 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertIn('nl.conf', names)
         self.assertIn('es.conf', names)
         self.assertIn('da.conf', names)
+        self.assertIn('it.conf', names)
+        self.assertIn('no.conf', names)
+        self.assertIn('sv.conf', names)
         for name in names:
             conf = self.i18n_lang_conf(lang_dir, name)
             for key, val in dict(conf['Texts']).items():
@@ -7357,10 +7720,26 @@ class ProcessPacketTests(unittest.TestCase):
         conf = self.i18n_lang_conf(os.path.join(self.I18N_SKIN_DIR, 'lang'), 'da.conf')
         self.assertEqual(sorted(self.i18n_served_keys() - set(conf['Texts'])), [])
 
+    def test_i18n_it_conf_is_complete(self):
+        # Italian likewise ships complete.
+        conf = self.i18n_lang_conf(os.path.join(self.I18N_SKIN_DIR, 'lang'), 'it.conf')
+        self.assertEqual(sorted(self.i18n_served_keys() - set(conf['Texts'])), [])
+
+    def test_i18n_no_conf_is_complete(self):
+        # Norwegian (Bokmål) likewise ships complete.
+        conf = self.i18n_lang_conf(os.path.join(self.I18N_SKIN_DIR, 'lang'), 'no.conf')
+        self.assertEqual(sorted(self.i18n_served_keys() - set(conf['Texts'])), [])
+
+    def test_i18n_sv_conf_is_complete(self):
+        # Swedish likewise ships complete.
+        conf = self.i18n_lang_conf(os.path.join(self.I18N_SKIN_DIR, 'lang'), 'sv.conf')
+        self.assertEqual(sorted(self.i18n_served_keys() - set(conf['Texts'])), [])
+
     def test_i18n_lang_files_in_step_with_siblings(self):
         # The shared vocabulary is copied verbatim from weewx-skyfield's and
-        # weewx-celestial's lang files (German and French native-speaker
-        # reviewed; Dutch and Spanish Beta): body names, moon phases, hemispheres,
+        # weewx-celestial's lang files (German, French and Danish
+        # native-speaker reviewed; Dutch, Spanish, Italian, Norwegian and
+        # Swedish Beta): body names, moon phases, hemispheres,
         # ordinates, all 88 constellation names, and every [Texts] key
         # the pages share -- the same cross-repo rule celestial pins
         # against skyfield.  Skips when no sibling lang directory is
@@ -7377,7 +7756,7 @@ class ProcessPacketTests(unittest.TestCase):
             self.skipTest('no sibling lang directory is available')
         for sib_dir in siblings:
             for name in ('en.conf', 'de.conf', 'fr.conf', 'nl.conf', 'es.conf',
-                         'da.conf'):
+                         'da.conf', 'it.conf', 'no.conf', 'sv.conf'):
                 if not os.path.exists(os.path.join(sib_dir, name)):
                     continue     # a sibling that has not shipped this language
                 sib = self.i18n_lang_conf(sib_dir, name)

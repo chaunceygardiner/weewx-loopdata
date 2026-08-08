@@ -101,8 +101,8 @@ all there is to it.
 * [The sample skin](sample-skin.html) — the instrument panel that ships with
   the extension.
 * [Translations](i18n.html) — the sample report in your language (German,
-  French, Danish, Dutch and Spanish ship), and which report's language governs
-  which string.
+  French, Danish, Dutch, Spanish, Italian, Norwegian and Swedish ship), and
+  which report's language governs which string.
 * [Syncing to a remote server](rsync.html) — rsync configuration and
   troubleshooting.
 * [How LoopData works](how-it-works.html) — architecture and performance.
@@ -110,19 +110,32 @@ all there is to it.
 
 ## See it in action
 
-* A WeatherBoard&trade; skin at
-  [www.paloaltoweather.com/weatherboard/](https://www.paloaltoweather.com/weatherboard/):
-
-  ![WeatherBoard report driven by LoopData](images/WeatherBoard.png)
-
-* A "LiveSeasons" skin at
-  [www.paloaltoweather.com/](https://www.paloaltoweather.com/).
-
-* A live sky: [weewx-celestial](https://github.com/chaunceygardiner/weewx-celestial)'s
+* The "LiveSeasons" skin at
+  [www.paloaltoweather.com](https://www.paloaltoweather.com/) is
+  loopdata-driven throughout, including its celestial tabs:
+  [weewx-celestial](https://github.com/chaunceygardiner/weewx-celestial)'s
   Geocentric panel — every body placed by compass bearing and distance, the
   moon at its true phase, odometer distance readouts ticking between loop
   packets — is drawn entirely from loopdata [almanac fields](almanac-fields.html).
-  See it at [www.paloaltoweather.com/celestial/](https://www.paloaltoweather.com/celestial/).
+
+Below, loopdata is driving weewx-celestial's satellite pages, captured live
+from the running page (2-second frames played at about 30&times; speed):
+NOAA-21 crosses the Palo Alto sky before dawn on August 8, 2026 —
+01:35&rarr;01:48 PDT, peaking 16&deg; in the east.  The dome places the
+satellite from per-packet almanac position fields, and the roster rows are
+`next_pass` fields.  The satellite rises sunlit at full brass, and mid-pass
+the dome's marker flips to a hollow ring as NOAA-21 enters Earth's shadow;
+the roster's NOAA-21 row reads "overhead now" for exactly as long as the
+pass lasts, then rolls to the following pass the moment this one ends.
+
+![NOAA-21 crossing the live sky dome](https://raw.githubusercontent.com/chaunceygardiner/weewx-loopdata/master/LoopDataPassDome-NOAA21.gif)
+
+The Next Visible Pass panel draws the whole pass at once — the dashed arc is
+the satellite's path, with its rise and set times at the ends — while the
+sweep mark rides the arc to show where along that path the satellite is
+right now.
+
+![NOAA-21's pass on the Next Visible Pass panel](https://raw.githubusercontent.com/chaunceygardiner/weewx-loopdata/master/LoopDataPassPanel-NOAA21.gif)
 
 This extension was inspired by Gary Roderick's weewx-realtime_gauge_data
 extension (its GitHub repository is no longer available).

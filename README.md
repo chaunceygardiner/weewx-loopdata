@@ -216,7 +216,7 @@ to update the values on the page on every loop packet.  This is demonstrated
 by the skin/report included with this extension.
 
 A WeeWX report is specified in the LoopData configuration (e.g.,
-`WeatherBoardReport`).  With this information, LoopData automatically converts
+`LoopDataReport`).  With this information, LoopData automatically converts
 all values to the units called for in the report and also formats all
 readings according to the report specification (unless `.raw` is specified,
 e.g., `day.barometer.max.raw`).  Thus, it is simple to replace the reports
@@ -414,17 +414,35 @@ them.
 
 ### Example of LoopData in Action
 
-See weewx-loopdata in action with a WeatherBoard&trade; skin at
-[www.paloaltoweather.com/weatherboard/](https://www.paloaltoweather.com/weatherboard/),
-in a "LiveSeasons" skin at
-[www.paloaltoweather.com/](https://www.paloaltoweather.com/), and driving
+See weewx-loopdata in action at
+[www.paloaltoweather.com](https://www.paloaltoweather.com/) — the
+"LiveSeasons" skin, including its celestial tabs, is loopdata-driven
+throughout.
+
+Below, loopdata is driving
 [weewx-celestial](https://github.com/chaunceygardiner/weewx-celestial)'s
-live sky at
-[www.paloaltoweather.com/celestial/](https://www.paloaltoweather.com/celestial/).
+satellite pages, captured live
+from the running page (2-second frames played at about 30&times; speed):
+NOAA-21 crosses the Palo Alto sky before dawn on August 8, 2026 —
+01:35&rarr;01:48 PDT, peaking 16&deg; in the east.  Every mark and number
+that moves arrives through `loop-data.txt`: the dome places the satellite
+from per-packet almanac position fields, and the roster rows are `next_pass`
+fields.
 
-A WeatherBoard&trade; screenshot is below.
+![NOAA-21 crossing the live sky dome](LoopDataPassDome-NOAA21.gif)
 
-![WeatherBoard&trade; Report](WeatherBoard.png)
+The satellite rises sunlit at full brass, and mid-pass the dome's marker
+flips to a hollow ring as NOAA-21 enters Earth's shadow.  The waning moon,
+Saturn and Neptune are up, and all four Earth-watching satellites hold rows
+in the roster — NOAA-21's reads "overhead now" for exactly as long as the
+pass lasts, then rolls to the following pass the moment this one ends.
+
+![NOAA-21's pass on the Next Visible Pass panel](LoopDataPassPanel-NOAA21.gif)
+
+The Next Visible Pass panel draws the whole pass at once — the dashed arc is
+the satellite's path, with its rise and set times at the ends — while the
+sweep mark rides the arc to show where along that path the satellite is
+right now.
 
 This extension was inspired by Gary Roderick's weewx-realtime_gauge_data
 extension (its GitHub repository is no longer available).
@@ -793,7 +811,7 @@ For a complete live sky built from these fields, see
 Geocentric panel — every body placed by compass bearing and distance, the moon
 at its true phase, odometer distance readouts ticking between loop packets —
 is drawn entirely from loopdata almanac fields.  See it live at
-[www.paloaltoweather.com/celestial/](https://www.paloaltoweather.com/celestial/).
+[www.paloaltoweather.com](https://www.paloaltoweather.com/).
 
 One loopdata extension to the report grammar: `almanac(days=±N)` evaluates the almanac at the
 same wall-clock time N *local calendar* days away.  For example, `almanac(days=1).sunrise.raw`
@@ -823,10 +841,21 @@ Notes:
   weewx.conf: `fields = ..., "almanac(pressure=0, horizon=-8).sun.rise.raw", ...`.
   None of the standard entries above need quoting.
 * Cost is managed automatically: positions and distances are recomputed every loop
-  packet; rise/set/transit/daylight once per local day; `next_*`/`previous_*` events are
-  computed once and kept until the local day advances past the event (so a page can show
-  today's event for the rest of its day).  For this reason prefer `almanac.sun.rise` over
-  `almanac.sun.next_rising` in loop data.
+  packet; rise/set/transit/daylight once per local day; `previous_*` events once per
+  local day.  A `next_*` event expires the moment its own instant passes (since 6.9):
+  fields naming the same event (say a pass's rise, set and maximum altitude) are
+  computed together and expire together, at the latest time among them — an
+  in-progress pass keeps serving until it ends, then the very next packet carries the
+  following occurrence.  Each recompute returns the next occurrence, re-arming the
+  cache, so recomputes stay rare (once per lunar month for `next_full_moon`, once per
+  pass for a satellite).  A group with no time field keeps the once-per-day refresh —
+  include a pass time field to get event-time expiry.  A day- or event-tier
+  evaluation that yields no data — say, a satellite whose orbital elements have not
+  been downloaded yet — is not cached: every packet retries, so the field picks up
+  its value the moment the almanac has data (since 6.9).  Note the tiers make
+  `almanac.sun.rise` and `almanac.sun.next_rising` genuinely different fields: `rise`
+  shows today's sunrise for the whole day, while `next_rising` rolls forward to
+  tomorrow's the moment the sun rises.
 
 If you are migrating from weewx-celestial's loop fields, every `current.<field>` it emitted
 has an almanac equivalent (e.g., `current.sunrise.raw` → `almanac.sunrise.unix_epoch.raw`,
@@ -882,13 +911,14 @@ Notes:
 
 As of 6.4 the sample report is translatable through WeeWX's own mechanisms — lang
 files and gettext-style `[Texts]` keys (the English string is the key; a missing
-entry falls back to English one string at a time).  German, French, Danish, Dutch
-and Spanish ship (`skins/LoopData/lang/de.conf` and `lang/fr.conf` native-speaker
-reviewed, `lang/da.conf` contributed by native speaker Gert Andersen,
-`lang/nl.conf` and `lang/es.conf` Beta awaiting their reviews;
+entry falls back to English one string at a time).  German, French, Danish, Dutch,
+Spanish, Italian, Norwegian (Bokmål) and Swedish ship (`skins/LoopData/lang/de.conf`
+and `lang/fr.conf` native-speaker reviewed, `lang/da.conf` contributed by native
+speaker Gert Andersen, `lang/nl.conf`, `lang/es.conf`, `lang/it.conf`,
+`lang/no.conf` and `lang/sv.conf` Beta awaiting their reviews;
 vocabulary in step with
 weewx-skyfield's and weewx-celestial's own lang files); select one with
-`lang = de` (or `fr`, `da`, `nl`, `es`) on the report's stanza.  Language support needs WeeWX 4.6 or later.  To add a
+`lang = de` (or `fr`, `da`, `nl`, `es`, `it`, `no`, `sv`) on the report's stanza.  Language support needs WeeWX 4.6 or later.  To add a
 language, copy `lang/en.conf` — the reference dictionary, kept exact by a test —
 and translate the values.
 

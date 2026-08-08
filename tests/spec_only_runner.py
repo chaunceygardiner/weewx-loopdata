@@ -20,6 +20,11 @@ SPEC_TESTS = [
     'test_parse_almanac_field',
     'test_get_almanac_fields',
     'test_almanac_field_evaluator',
+    'test_almanac_no_data_not_cached',
+    'test_almanac_next_group_expires_at_event',
+    'test_almanac_next_group_no_data_retries',
+    'test_almanac_next_group_timeless_day_roll',
+    'test_almanac_previous_event_day_rolls',
     'test_almanac_unit_segment',
     'test_almanac_autocall_parity',
     'test_almanac_field_end_to_end',
@@ -84,6 +89,10 @@ SPEC_TESTS = [
     'test_i18n_fr_conf_is_complete',
     'test_i18n_nl_conf_is_complete',
     'test_i18n_es_conf_is_complete',
+    'test_i18n_da_conf_is_complete',
+    'test_i18n_it_conf_is_complete',
+    'test_i18n_no_conf_is_complete',
+    'test_i18n_sv_conf_is_complete',
     'test_i18n_lang_files_in_step_with_siblings',
 ]
 
