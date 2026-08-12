@@ -86,8 +86,13 @@ all there is to it.
 
 * [Installation](installation.html) — install the extension and check that it
   is running.
+* [Upgrading](upgrading.html) — what an existing install must change, by
+  version.
 * [Configuration](configuration.html) — every `[LoopData]` option in
   weewx.conf.
+* [Building a live page](build-a-live-page.html) — the recipe for using
+  LoopData in your own skin, with production-grade javascript, and what
+  loop-data.txt guarantees.
 * [Field reference](field-reference.html) — the full grammar: periods,
   aggregates, unit overrides, `round(n)` and format specs.
 * [The live windrose](windrose.html) — the `windrose` observation type and how
@@ -96,8 +101,6 @@ all there is to it.
   positions and more, computed live.
 * [Station fields](station-fields.html) — `$station` tags as live fields,
   including a restart-correct uptime.
-* [Building a live page](build-a-live-page.html) — the recipe for using
-  LoopData in your own skin, with production-grade javascript.
 * [The sample skin](sample-skin.html) — the instrument panel that ships with
   the extension.
 * [Translations](i18n.html) — the sample report in your language (German,
@@ -142,9 +145,11 @@ extension (its GitHub repository is no longer available).
 
 ## About this manual
 
-This manual describes loopdata 6.3 and later.  The full release history is
-in [changes.txt](https://github.com/chaunceygardiner/weewx-loopdata/blob/master/changes.txt)
-on GitHub.
+This manual describes loopdata 6.3 and later.  What changed in each version
+is on the
+[releases page](https://github.com/chaunceygardiner/weewx-loopdata/releases);
+what an existing install must change is on
+[Upgrading](upgrading.html).
 
 ## Licensing
 

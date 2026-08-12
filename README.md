@@ -1,10 +1,12 @@
-# weewx-loopdata – Make your skins come alive!
+# weewx-loopdata — Make your skins come alive!
+
+[![Read the manual](assets/btn-manual.svg)](https://chaunceygardiner.github.io/weewx-loopdata/)
+[![Download weewx-loopdata.zip](assets/btn-download.svg)](https://github.com/chaunceygardiner/weewx-loopdata/releases/latest/download/weewx-loopdata.zip)
+[![Report an issue](assets/btn-issue.svg)](https://github.com/chaunceygardiner/weewx-loopdata/issues)
 
 Copyright (C)2022-2026 by John A Kline (john@johnkline.com)
 
 **This extension requires Python 3.7 or later and WeeWX 4 or 5.**
-
-**Full manual:** [chaunceygardiner.github.io/weewx-loopdata](https://chaunceygardiner.github.io/weewx-loopdata/)
 
 ## Description
 
@@ -12,7 +14,8 @@ With LoopData, the tags in your WeeWX reports can be updated on every LOOP
 packet — typically every few seconds — instead of waiting for the next archive
 interval and page reload.  This works for nearly every tag you would use in a
 report: current observations, trends, aggregates over hours, days, weeks,
-months, years and rolling windows — including almanac tags and unit labels.
+months, years and rolling windows — including almanac tags, station tags and
+unit labels.
 
 This is the sample report included with this extension — a NOAA-style
 windrose and eleven gauges, drawn by a few hundred lines of dependency-free
@@ -70,349 +73,36 @@ Sunset: <span id="almanac.sunset">$almanac.sunset</span>
 ```
 
 The page loads showing the values Cheetah rendered at report time, then comes
-alive: every wrapped tag updates as fast as your station reports.  That is all
-there is to it.  The rest of this README is reference — the full field grammar
-(periods, aggregates, unit overrides, rounding, format specs), the live
-windrose, almanac fields, configuration and rsync to a remote web server —
-and "Using LoopData in Your Own Skin" below adds the production touches
-(error handling, missing fields, a LIVE indicator) to the javascript above.
-
-Note: As of version 4.0, the `sortedcontainers` package is no longer required
-(it was required by versions 3.0 through 3.9).
-
-**IMPORTANT**: This extension has been tested with the WeeWX vantage and cc3000 drivers.
-It will likely also work with other drivers that, like the two drivers tested, report
-loop packets on a regular basis and report all observations on every loop packet.
-Use loopdata with drivers that report loop packets on an irregular basis and/or report
-partial observations, at your own risk.
-
-**IMPORTANT**: It is crucial to specify the correct loop frequency in the LoopData section
-in the weewx.conf file.  For vantage and cc3000, this will be 2 seconds.
-```
-[LoopData]
-    [[LoopFrequency]]                                                                                                                                                     
-        seconds = 2.0
-```
-
-A sample skin, that uses the loopdata extension, is also included.  After installation,
-it can be found at `<weewx-url>/loopdata/`.
-
-The json file will contain any specified values for:
-* observations in the loop packet (e.g., `current.outTemp`)
-* rolling X min. aggregate values where X is 1 through 1440, inclusive (e.g., `2m.outTemp.max`, `30m.wind.gustdir`)
-* rolling X hour aggregate values where X is 1 through 24, inclusive (e.g., `8h.outTemp.max`, `24h.wind.gustdir`)
-* trends (e.g., `trend.barometer`) -- see time_delta below
-* hourly aggregate values (e.g., `hour.outTemp.max`)
-* daily aggregate values (e.g., `day.rain.sum`)
-* weekly aggregate values (e.g., `week.wind.avg`)
-* monthly aggregate values (e.g., `month.barometer.avg`)
-* yearly aggregate values (e.g., `year.wind.max`)
-* rainyear aggregate values (e.g., `rainyear.rain.sum`)
-* alltime aggregate values (e.g., `alltime.outTemp.max`)
-* almanac values (new in 5.0) -- any WeeWX report almanac tag with the `$`
-  removed (e.g., `almanac.sunrise`, `almanac.moon_phase`,
-  `almanac(horizon=-6).sun(use_center=1).rise.raw`), computed live on every
-  loop record -- see the "Almanac fields" section below
-
-
-In addition to the usual observation types (which includes `windrun`), there is
-a special `windrose` observation type (new in 6.0, replacing the experimental
-`windrun_<direction>` types) for building a live NOAA-style windrose.  For each
-period, loopdata accumulates a matrix of sixteen compass bins (N, NNE, NE, ...
-NNW — clockwise from north) by N wind-speed bands, tracking both time and
-distance per cell, plus a directionless "calm" total.  `windrose` works with
-every period except `current` and `trend` — including `week`, `month`, `year`,
-`rainyear` and `alltime` (the old `windrun_<direction>` types stopped at `day`).
-
-Four aggregates project that matrix into json:
-
-* `day.windrose.sum` — sixteen distances (the classic windrun rose), unit-converted
-  to the target report's distance unit; supports a unit override
-  (`day.windrose.sum.km`) and `.formatted` (an array of report-formatted strings).
-  Note: wind below the calm threshold counts as calm time, not distance — there
-  is no reliable direction to attribute it to — so on a near-calm day `.sum`
-  can be all zeros while `windrun` shows a small total.
-* `day.windrose.time` — sixteen durations in seconds (a frequency rose)
-* `day.windrose.banded` — the full 16-by-N matrix of seconds per speed band
-  (the NOAA rose; divide by total time for percentages)
-* `day.windrose.calm` — seconds of calm: wind below the calm threshold, or no
-  wind direction.  Render it as the rose's center-circle percentage.
-
-Arrays are emitted as json numbers (charting javascript wants numbers, not
-strings); `.round(n)` applies per element (e.g. `day.windrose.sum.round(2)`).
-Whenever any windrose field is configured, loopdata also emits a
-`windrose.bands` key holding the band edges in the target report's windSpeed
-unit, so a page's legend never hardcodes them.  `unit.label.windrose` yields
-the distance unit label for `.sum`.
-
-The speed bands default to the classic WRPLOT/NOAA bands — 0.5, 2.1, 3.6, 5.7,
-8.8 and 11.1 m/s, converted to the target report's windSpeed unit and rounded
-to one decimal.  The first edge doubles as the calm threshold.  To override,
-list ascending edges (in the target report's windSpeed unit) in the `LoopData`
-section of weewx.conf:
-
-```
-[LoopData]
-    windrose_bands = 1, 4, 8, 13, 19, 25
-```
-
-The default bands suit a windy site; on a light-wind site most of the rose can
-land in the lowest band (or below the calm threshold entirely).  Your archive
-already knows what your site does — one query shows how your time divides
-across wind speeds (values are in your database's unit; convert if your report
-unit differs):
-
-```
-sqlite3 weewx.sdb "SELECT CAST(windSpeed AS INT) AS speed, \
-  ROUND(100.0 * SUM(interval) / (SELECT SUM(interval) FROM archive \
-  WHERE windSpeed IS NOT NULL), 1) AS pct_of_time \
-  FROM archive WHERE windSpeed IS NOT NULL GROUP BY speed;"
-```
-
-Then place the edges by three rules:
-
-* **Calm threshold** (the first edge): at or just below the smallest non-zero
-  speed your console reports.  Integer-reporting consoles (e.g. Davis Vantage,
-  in mph) spend a lot of time at exactly 1 — an edge of 1.1 silently counts
-  all of it as calm, an edge of 1 keeps it in the rose.  Calm percentages of
-  10–40% are normal on real roses.
-* **Middle edges**: place them so each band carries a real share of the
-  non-calm time (a few percent at minimum) — a band that never fills is a
-  wasted legend entry, and one band holding most of the time is a monochrome
-  rose.
-* **Top edge**: rare on purpose — around the speed you exceed only a few
-  hours a year (the 99.5th percentile or so), so the darkest color flags
-  genuinely notable wind rather than never appearing at all.
-
-Round numbers in the report unit make the best legend.  Iterating is cheap:
-changing the bands is just an edit and a weewxd restart — every period
-reseeds from the archive at startup, so the whole rose re-buckets under the
-new edges.
-
-The sample LoopData skin draws a live canvas windrose from
-`day.windrose.banded` and `day.windrose.calm` — see
-`skins/LoopData/realtime_updater.inc` for javascript to crib from.
-
-Upgrading from `windrun_<direction>` fields: `day.windrun_N.sum` is now element
-0 of `day.windrose.sum`, `day.windrun_NNE.sum` element 1, and so on clockwise.
-
-The trend time_delta *cannot* be changed on a case by case basis, but
-it can be changed for the entire target report (i.e., by using the standard
-WeeWX customization):
-```
-    [[[Units]]]
-        [[[[Trend]]]]
-            time_delta = 86400    # for a 24 hour trend.
-```
-The default trend is 10800 (3 hours).  This is a WeeWX default.
-Note: If time_delta > 259200 (3 days), LoopData will use a time_delta
-of 259200 (3 days).
-
-The json file will only include observations that are specified on the
-`fields` line in the `LoopData` section of the weewx.conf file.
-
-Typically, the loop-data.txt file is read by JavaScript on an HTML page
-to update the values on the page on every loop packet.  This is demonstrated
-by the skin/report included with this extension.
-
-A WeeWX report is specified in the LoopData configuration (e.g.,
-`LoopDataReport`).  With this information, LoopData automatically converts
-all values to the units called for in the report and also formats all
-readings according to the report specification (unless `.raw` is specified,
-e.g., `day.barometer.max.raw`).  Thus, it is simple to replace the reports
-observations with updated values in JavaScript as they will already be in the
-correct units and in the correct format.
-
-LoopData is initially configured with a target report of LoopDataReport, the
-instrument-panel sample report pictured at the top of this README:
-temperature, dew point, feels-like and humidity dials wear today's min–max
-as a band, the wind compass carries a second ghost needle at the 10-minute
-gust direction, the barometer draws the 3-hour trend as an arc, rain and
-rain-rate dials rescale themselves on a big day, and the windrose is the
-NOAA banded kind.  The `.raw` fields drive the geometry, report-formatted
-fields supply the readouts, and `unit.label` fields pick the dial scales,
-so the panel follows the target report's units and formatting like any
-other loopdata page.  Gauges for observations a station does not report —
-UV, solar radiation, air quality (weewx-purple's `pm2_5_aqi`), and
-feels-like where appTemp is not computed — hide themselves, and reappear
-if the field shows up in loop-data.txt.  After installing and restarting,
-and after waiting for a report cycle, it can be found at
-`<weewx-url>/loopdata/`.
-
-
-The fields specified in weewx.conf on the fields line will be the keys
-in the json file.  They are specified using WeeWX Cheetah syntax.
-
-For example, the current outside temperature can be included as:
-
-* `current.outTemp.formatted` which might yield `79.2`
-* `current.outTemp`           which might yield `79.2°F`
-* `current.outTemp.raw`       which might yield `79.175`
-
-The maximum wind in the last 30m can be included as:
-
-* `30m.wind.max.formatted` which might yield `7.1`
-* `30m.wind.max`           which might yield `7.1 mph`
-* `30m.wind.max.raw`       which might yield `7.12`
-
-The average outside temperature over the last 3 hours can be included as:
-
-* `3h.outTemp.avg.formatted` which might yield `32.4`
-* `3h.outTemp.avg`           which might yield `32.4°`
-* `3h.outTemp.avg.raw`       which might yield `32.41`
-
-The average inside temperature this hour can be included as:
-
-* `hour.inTemp.avg.formatted` which might yield `68.1`
-* `hour.inTemp.avg`           which might yield `68.1°`
-* `hour.inTemp.avg.raw`       which might yield `68.12`
-
-The day average of outside temperature can be included as:
-
-* `day.outTemp.avg.formatted` which might yield `64.7`
-* `day.outTemp.avg`           which might yield `64.7°`
-* `day.outTemp.avg.raw`       which might yield `64.711`
-
-The wind speed average for this week can be included as:
-
-* `week.windSpeed.avg.formatted` which might yield `2.7`
-* `week.windSpeed.avg`           which might yield `2.7 mph`
-* `week.windSpeed.avg.raw`       which might yield `2.74`
-
-Time-of-event fields (`maxtime`, `mintime`, `firsttime`, `lasttime`) are
-formatted exactly as WeeWX report tags format them: the field's period is the
-time context, so the target report's `[Units][TimeFormats]` entry for that
-period applies (with the standard settings: `hour` is `%H:%M`, `day` is `%X`,
-`week` is `%X (%A)`, `month`/`year`/`rainyear` are `%x %X`).  `alltime` uses
-the `year` format, as WeeWX's `$alltime` tag does.  Rolling periods
-(`1m`-`1440m`, `1h`-`24h`) use the `current` format.  For example:
-
-* `day.outTemp.maxtime`   which might yield `12:00:00`
-* `hour.outTemp.maxtime`  which might yield `12:00`
-
-The minimum dewpoint this month and the time of that event can be included as:
-
-* `month.dewpoint.min`     which might yield `43.7°`
-* `month.dewpoint.mintime` which might yield `08/01/2020 03:27:00 AM`
-
-The maximum wind speed this year and the time of that event can be included as:
-
-* `year.wind.max`     which might yield `29.6 mph`
-* `year.wind.maxtime` which might yield `02/26/2020 07:40:00 PM`
-
-The total rain for this rain year can be included as:
-
-* `rainyear.rain.sum.formatted` which might yield `7.1`
-* `rainyear.rain.sum`           which might yield `7.1 in`
-* `rainyear.rain.sum.raw`       which might yield `7.13`
-
-The alltime high outside temperature can be included as:
-
-* `alltime.outTemp.max.formatted` which might yield `107.3`
-* `alltime.outTemp.max`           which might yield `107.3°`
-* `alltime.outTemp.max.raw`       which might yield `107.29`
-
-If a field is requested, but the data is missing, the field will not be present
-in loop-data.txt — unless the field uses `string()` or an explicit
-`None_string` argument (see "Formatting a field with arguments" under "What
-fields are available"), in which case it is emitted with its missing-data
-rendering (e.g., `N/A`).  For all other fields, your JavaScript should expect
-absent keys and react accordingly.
-
-The complete grammar — every period, aggregate, unit override, `round(n)` and
-format spec — is documented in "What fields are available" later in this README.
-
-### Using LoopData in Your Own Skin
-
-The recipe, demonstrated in full by the included sample skin (`skins/LoopData`),
-is:
-
-1. List every field your page needs on the `fields` line of
-   `[LoopData] [[Include]]` in weewx.conf.
-
-1. Set `target_report` to your report, so values arrive already in that
-   report's units and formatting, and set `loop_data_dir`/`filename` so the
-   json file lands somewhere your web server serves.  By default,
-   `loop_data_dir` is relative to the target report's HTML directory, so the
-   page can fetch the file with a relative URL.
-
-1. In your page, give an id to each HTML element that should show a value.
-   The simplest convention is to make the id the json key itself:
-
-   ```html
-   Outside Temperature: <span id="current.outTemp"></span>
-   Today's High: <span id="day.outTemp.max"></span>
-   ```
-
-1. Add JavaScript that fetches loop-data.txt on an interval matching your
-   loop frequency and fills in the elements.  A minimal version:
-
-   ```html
-   <script>
-     async function updateLoopData() {
-       try {
-         const response = await fetch('loop-data.txt', {cache: 'no-store'});
-         const data = await response.json();
-         for (const key in data) {
-           const element = document.getElementById(key);
-           if (element) element.innerHTML = data[key];
-         }
-       } catch (e) {
-         // File unreachable or mid-write; try again next interval.
-       }
-     }
-     updateLoopData();
-     setInterval(updateLoopData, 2000);  // match your loop frequency
-   </script>
-   ```
-
-1. Remember that a field missing from the packet is missing from the json
-   (see above).  The loop above simply leaves the old value in place; the
-   sample skin's gauges instead draw the dial with no needle and a `--`
-   readout — choose what suits your page.
-
-The sample skin's `realtime_updater.inc` shows the production niceties:
-a LIVE/age indicator driven by `current.dateTime.raw`, and a page-expiration
-timer (Extras `expiration_time`, in hours) that stops polling in abandoned
-browser tabs unless the page was loaded with `?pageUpdate=<page_update_pwd>`.
-
-### How LoopData Works
-
-LoopData gathers all of the necessary information at startup and then spawns a
-separate thread.  The information gathered is only that which is needed
-for LoopData to prime its accumulators.  For example, if a week field is
-included in the weewx.conf fields line (week.rain.sum), daily summaries
-for the week will be read to prime the week accumulator.  If no week field
-is included, no work will be done.  Ditto for alltime, rainyear, year, month, 1h-24h
-and 1m-1440m accumulators.  They are populated only if they are used.  Lastly, only the
-necessary observation types are tracked in the accumulators.  For example,
-if no form of month.barometer is specified on the fields line, the month
-accumulator will not accumulate barometer readings.
-
-Once LoopData's thread starts and the accumulators are built, LoopData
-never touches the database and never consults WeeWX's accumulators.
-Its only connection to the WeeWX main thread is that NEW_LOOP_PACKET is bound
-to queue each loop packet.
-
-Almanac fields (see their own section below) follow the same pattern: they
-touch no accumulators and are evaluated on LoopData's thread, off the WeeWX
-engine thread, with per-field caching so only values that actually change
-(positions, distances, phase) are recomputed on every loop record.
-
-### Period Aggregates implemented via xtypes are not currently supported by loopdata
-
-Currently, if an aggregate is implemented via xtypes, it will be ignored by loopdata.
-For example, the weewx-purple extension implements `pm2_5_aqi` via xtypes.  If,
-say, `week.pm2_5_aqi.max` was specified as one of the fields on the fields line, it
-would be ignored.  This is because there is no database entry from which to look up
-the weekly high for `pm2_5_aqi`.
-
-The rule is, if an observation is not stored in the database, you can't specify
-aggregates.  Of course, loopdata will still report current values if you specify
-them.
-
-
-### Example of LoopData in Action
+alive: every wrapped tag updates as fast as your station reports.  That is
+all there is to it.
+
+The [manual](https://chaunceygardiner.github.io/weewx-loopdata/) covers the
+rest: the full field grammar, the live windrose, almanac and station fields,
+translations, and the recipe for building your own live page.
+
+## What you get
+
+* **Every period a report tag has**, live: `current`, `trend`, `hour`, `day`,
+  `week`, `month`, `year`, `rainyear`, `alltime`, plus rolling windows of any
+  length from `1m` through `1440m` and `1h` through `24h`.
+* **Values formatted as your report would render them** — unit-converted per a
+  target report, so page javascript can drop them straight into HTML.  Any
+  field can override the unit (`day.outTemp.avg.degree_C`), round
+  (`.round(1)`), or use the report tags' formatting calls.
+* **A live NOAA-style windrose** — sixteen compass bins by N speed bands,
+  tracking time and distance per cell, for any period except `current` and
+  `trend`.
+* **Almanac fields** — `almanac.sunrise`, moon phase, planet positions,
+  satellite passes: any registered almanac tag, computed live, with caching
+  tiers so only values that actually change are recomputed.
+* **Station fields** — `$station` tags including a restart-correct live
+  uptime.
+* **A sample instrument panel** that works out of the box, in nine lang files
+  (eight translations plus the English reference dictionary).
+* **No third-party Python packages**, and none of the per-packet work on the
+  WeeWX engine thread.
+
+## Example of LoopData in Action
 
 See weewx-loopdata in action at
 [www.paloaltoweather.com](https://www.paloaltoweather.com/) — the
@@ -447,106 +137,66 @@ right now.
 This extension was inspired by Gary Roderick's weewx-realtime_gauge_data
 extension (its GitHub repository is no longer available).
 
-# Installation Instructions
+## Installation
 
-## WeeWX 5 Installation Instructions
+Full instructions, including how to check that the install is running, are on
+the manual's
+[Installation page](https://chaunceygardiner.github.io/weewx-loopdata/installation.html).
+Upgrading an existing install?  Some releases need a change to your
+`[LoopData]` section — see
+[Upgrading](https://chaunceygardiner.github.io/weewx-loopdata/upgrading.html).
+
+> [!IMPORTANT]
+> LoopData is targeted at drivers that report loop packets on a regular
+> cadence, with all observations present in every packet.  It has been tested
+> with the WeeWX vantage and cc3000 drivers and will likely work with any
+> other driver of that kind.  Drivers that report irregularly or send partial
+> packets are untested: time-weighted aggregates assume the steady cadence set
+> in `[[LoopFrequency]] seconds`.
+
+**WeeWX 5**
 
 1. Download the latest release, [weewx-loopdata.zip](https://github.com/chaunceygardiner/weewx-loopdata/releases/latest/download/weewx-loopdata.zip).
 
-1. Install the loopdata extension.
+1. Install the extension:
 
    `weectl extension install weewx-loopdata.zip`
 
-1. The install creates a LoopData section in weewx.conf as shown below.  Adjust
-   the values accordingly.  In particular:
-   * Specify `seconds` with how often your device writes loopdata records
-     (e.g., `2.0` for Davis Vantage Pro 2 and RainWise CC3000).
-   * Specify the `target_report` for the report you wish to use for formatting and units
-   * Specify the `loop_data_dir` where the loop-data.txt file should be written.
-     If `loop_data_dir` is a relative path, it will be interpreted as being relative to
-     the target_report directory.
-   * You will eventually need  to update the fields line with the fields you actually
-     need for the report you are targeting.  Change this line later after you are sure
-     LoopData is running correctly.
-   * If you need the loop-data.txt file pushed to a remote webserver,
-     you will also need to fill in the `RsyncSpec` fields; but one can fill
-     that in later, after LoopData is up and running.
+1. Adjust the `[LoopData]` section the install adds to weewx.conf (below).
 
 1. Restart WeeWX.
 
-1. Optional: Implement SSH control master multiplexing.
-   If you are rsync'ing loopdata to another machine every 2 seconds; inevitably
-   some of these rsync's will fail.  Perhaps in the order of 3 to 10 per day on the author's
-   systems.  This is totally fine and is not noticeable, but there is an easy way to make the
-   rsync's lightweight and have none of them fail.  Just create the `.ssh/config` file
-   under the home directory of the user running WeeWX, with the contents listed below.
-   The Host entered must match exactly the `remote_server` value entered in the `RsyncSpec`
-   section of `LoopData` in `weewx.conf`
-   ```
-   Host www.paloaltoweather.com   # <-- CHANGE TO YOUR remote_server!
-       ControlMaster auto
-       ControlPath ~/.ssh/control-%r@%h:%p
-       ControlPersist 10m
-       ServerAliveInterval 15
-       ServerAliveCountMax 3
-   ```
+**WeeWX 4**
 
-## WeeWX 4 Installation Instructions
+Same steps, but install with:
 
-1. Download the latest release, [weewx-loopdata.zip](https://github.com/chaunceygardiner/weewx-loopdata/releases/latest/download/weewx-loopdata.zip).
+`sudo /home/weewx/bin/wee_extension --install weewx-loopdata.zip`
 
-1. Run the following command.
+(This assumes weewx is installed in `/home/weewx`; adjust the path
+accordingly.)
 
-   `sudo /home/weewx/bin/wee_extension --install weewx-loopdata.zip`
+**Optional: SSH control master multiplexing.**  This applies only if you rsync
+loop-data.txt to another machine.  Rsync'ing every 2 seconds means a few
+rsyncs a day will inevitably fail — harmless, but avoidable.  Create a
+`.ssh/config` file under the home directory of the user running WeeWX, with
+the contents below.  The `Host` entered must match exactly the `remote_server`
+value in the `RsyncSpec` section of `[LoopData]` in weewx.conf:
 
-   Note: this command assumes weewx is installed in /home/weewx.  If it's installed
-   elsewhere, adjust the path of wee_extension accordingly.
-
-1. The install creates a LoopData section in weewx.conf as shown below.  Adjust
-   the values accordingly.  In particular:
-   * Specify `seconds` with how often your device writes loopdata records
-     (e.g., `2.0` for Davis Vantage Pro 2 and RainWise CC3000).
-   * Specify the `target_report` for the report you wish to use for formatting and units
-   * Specify the `loop_data_dir` where the loop-data.txt file should be written.
-     If `loop_data_dir` is a relative path, it will be interpreted as being relative to
-     the target_report directory.
-   * You will eventually need  to update the fields line with the fields you actually
-     need for the report you are targeting.  Change this line later after you are sure
-     LoopData is running correctly.
-   * If you need the loop-data.txt file pushed to a remote webserver,
-     you will also need to fill in the `RsyncSpec` fields; but one can fill
-     that in later, after LoopData is up and running.
-
-1. Restart WeeWX.
-
-1. Optional: Implement SSH control master multiplexing.
-   If you are rsync'ing loopdata to another machine every 2 seconds; inevitably
-   some of these rsync's will fail.  Perhaps in the order of 3 to 10 per day on the author's
-   systems.  This is totally fine and is not noticeable, but there is an easy way to make the
-   rsync's lightweight and have none of them fail.  Just create the `.ssh/config` file
-   under the home directory of the user running WeeWX, with the contents listed below.
-   The Host entered must match exactly the `remote_server` value entered in the `RsyncSpec`
-   section of `LoopData` in `weewx.conf`
-   ```
-   Host www.paloaltoweather.com   # <-- CHANGE TO YOUR remote_server!
-       ControlMaster auto
-       ControlPath ~/.ssh/control-%r@%h:%p
-       ControlPersist 10m
-       ServerAliveInterval 15
-       ServerAliveCountMax 3
-   ```
-
-## Checking for a Properly Running Installation
-
-1. After a reporting cycle runs, navigate to `<weewx-url>/loopdata/` in your browser
-   to see the default loopdata report. (Reports typically run every 5 minutes.)
+```
+Host www.paloaltoweather.com   # <-- CHANGE TO YOUR remote_server!
+    ControlMaster auto
+    ControlPath ~/.ssh/control-%r@%h:%p
+    ControlPersist 10m
+    ServerAliveInterval 15
+    ServerAliveCountMax 3
+```
 
 ## Sample configuration
 
 Fresh installs add the following `[LoopData]` section to `weewx.conf`.  The
 `fields` line is exactly the fields the sample report's instrument panel
 reads.  Upgrading installs keep whatever `fields` line is already in
-`weewx.conf` — to adopt the new panel, replace your `fields` line with this
+`weewx.conf` — to adopt the panel, replace your `fields` line with this
 one (appending any fields other pages of yours use).
 
 ```
@@ -560,9 +210,9 @@ one (appending any fields other pages of yours use).
         seconds = 2.0
     [[RsyncSpec]]
         enable = false
-        remote_server = foo.bar.com
+        remote_server = www.foobar.com
         remote_user = root
-        remote_dir = /var/www/html
+        remote_dir = /home/weewx/loop-data
         compress = False
         log_success = False
         timeout = 1
@@ -583,8 +233,7 @@ one (appending any fields other pages of yours use).
                          the report would render them.  The target report also supplies
                          the language — the `trend.barometer.desc` descriptions, moon
                          phases, compass ordinates, almanac body and constellation
-                         names, and hemisphere letters all follow its lang file (see
-                         [Translating the sample report](#translating-the-sample-report)).
+                         names, and hemisphere letters all follow its lang file.
                          Also, if `loop_data_dir` is a relative path, it will be
                          relative to the directory of `target_report`.  When LoopData
                          is first installed, target_report is set to the sample report
@@ -600,6 +249,10 @@ one (appending any fields other pages of yours use).
                          using public/private key must be configured for authentication from the user
                          account that weewx runs under on this computer to the user account on the
                          remote machine with write access to the destination directory (remote_dir).
+ * `remote_port`       : The ssh port on remote_server, if it is not the default 22.  Unset
+                         by default, in which case ssh's own default applies.  (A port set
+                         here and a port set in `ssh_options` are two ways to the same end;
+                         pick one.)
  * `remote_user`       : The userid on remote_server with write permission to remote_dir.
  * `remote_dir`        : The directory on remote_server where filename will be copied.
  * `compress`          : True to compress the file before sending.  Default is False.
@@ -617,366 +270,45 @@ one (appending any fields other pages of yours use).
  * `skip_if_older_than`: Don't bother to rsync if greater than this number of seconds.  Default is 3.
                          (Skip this and move on to the next if this data is older than 3 seconds.)
  * `fields`            : Used to specify which fields to include in the file.
+ * `windrose_bands`    : Overrides the wind-speed band edges used by the `windrose`
+                         observation.  Ascending edges, in the target report's
+                         windSpeed unit; the first edge doubles as the calm
+                         threshold.  Defaults to the classic WRPLOT/NOAA bands.
+                         Note this one sits directly under `[LoopData]`, not in a
+                         sub-section.
 
-## What fields are available.
+## Where to find things
 
-Generally, if you can specify a field in a Cheetah template, and that field begins with `$current`,
-`$trend`, `$hour`, `$day`, `$week`, `$month`, `$year`, or `$rainyear`, you can specify it here (but
-don't include the dollar sign).  For all time, you can use `alltime`.  Also, rolling-window periods
-are available: any number of minutes from `1m` through `1440m` and any number of hours from `1h`
-through `24h` (e.g., `2m`, `10m`, `90m`, `8h`, `24h`).  These rolling periods act just like `day`,
-`week`, `month`, `year`, `rainyear` and `alltime`.  As of 5.0, `$almanac` tags are also
-available as fields — they follow the report almanac grammar rather than the period grammar
-below, and have their own section ("Almanac fields") later in this README.
+Everything below is in the
+[manual](https://chaunceygardiner.github.io/weewx-loopdata/), which has search:
 
-### The grammar at a glance
+| If you want to | See |
+|---|---|
+| Install, and check that it is running | [Installation](https://chaunceygardiner.github.io/weewx-loopdata/installation.html) |
+| Upgrade an existing install | [Upgrading](https://chaunceygardiner.github.io/weewx-loopdata/upgrading.html) |
+| Understand a `[LoopData]` option | [Configuration](https://chaunceygardiner.github.io/weewx-loopdata/configuration.html) |
+| Know what a field may look like — periods, aggregates, units, `round(n)`, format specs | [Field reference](https://chaunceygardiner.github.io/weewx-loopdata/field-reference.html) |
+| Build a live windrose, or tune its speed bands | [The live windrose](https://chaunceygardiner.github.io/weewx-loopdata/windrose.html) |
+| Publish sunrise, moon phase, planet positions or satellite passes | [Almanac fields](https://chaunceygardiner.github.io/weewx-loopdata/almanac-fields.html) |
+| Publish `$station` tags, including a live uptime | [Station fields](https://chaunceygardiner.github.io/weewx-loopdata/station-fields.html) |
+| Use LoopData in your own skin | [Building a live page](https://chaunceygardiner.github.io/weewx-loopdata/build-a-live-page.html) |
+| Know what the sample panel does, or crib from it | [The sample skin](https://chaunceygardiner.github.io/weewx-loopdata/sample-skin.html) |
+| Read the page in another language | [Translations](https://chaunceygardiner.github.io/weewx-loopdata/i18n.html) |
+| Push loop-data.txt to a remote server | [Syncing to a remote server](https://chaunceygardiner.github.io/weewx-loopdata/rsync.html) |
+| Know what it costs, and how it works | [How LoopData works](https://chaunceygardiner.github.io/weewx-loopdata/how-it-works.html) |
+| Fix something that is not working | [Troubleshooting](https://chaunceygardiner.github.io/weewx-loopdata/troubleshooting.html) |
 
-Every observation field has this shape (brackets mark optional slots):
+What changed in each version is on the
+[releases page](https://github.com/chaunceygardiner/weewx-loopdata/releases).
 
-```
-period.obstype[.agg_type][.unit][.round(n)][.format_spec]
-```
+## Testing
 
-* **period**: `current`, `trend`, `hour`, `day`, `week`, `month`, `year`,
-  `rainyear`, `alltime`, `1m`–`1440m`, or `1h`–`24h`.
-* **obstype**: any observation in the loop packet (`outTemp`, `barometer`,
-  `rain`, `windSpeed`, ...), the composite `wind`, or the composite `windrose`
-  described earlier.
-* **agg_type**: required for every period except `current` and `trend`:
-  * every observation: `min`, `mintime`, `max`, `maxtime`, `sum`, `count`, `avg`
-  * `wind` only (the composite of windSpeed/windDir/windGust/windGustDir),
-    additionally: `gustdir`, `rms`, `vecavg`, `vecdir`
-  * `windrose` only (not valid for `current`/`trend`): exactly `sum`, `time`,
-    `banded`, `calm` — array/matrix projections, see the windrose section
-  * observation types registered with WeeWX's `firstlast` accumulator
-    (string-valued types), on the rolling periods: `first`, `last`,
-    `firsttime`, `lasttime`
-* **unit**: an optional unit override — see "Overriding the unit of a field"
-  below.
-* **round(n)**: an optional rounding transform, exactly as report tags allow
-  (`$day.outTemp.max.round(1).raw`): the value is rounded to n digits, then
-  the format spec renders the rounded value.  Most useful with `.raw`, to
-  publish a number with limited digits (`29.93` instead of
-  `29.927100000000002`).
-* **format_spec**: optional; just like in a report, it specializes the rendering:
-  * `No format spec`: converted and formatted per the report, with a label
-    (e.g., `64.7°F`).
-  * `.raw`: converted per the report, but not formatted (e.g., `64.711`).
-  * `.formatted`: converted and formatted per the report, no label (e.g., `64.7`).
-  * `.ordinal_compass`: for directional observations, the value as text (e.g., `SW`).
-  * `.format(...)`/`.nolabel(...)`/`.string(...)`/`.long_form(...)`: the report
-    tags' formatting calls, with the same arguments — see "Formatting a field
-    with arguments" below.
-
-### Overriding the unit of a field
-
-By default every field is converted to the unit the target report calls for.
-A field may instead name an explicit unit, exactly as WeeWX report tags allow
-(e.g. `$current.outTemp.degree_C`).  The unit goes right after the
-aggregation, before the optional `round(n)` and format spec (see the shape
-above).  Any unit WeeWX knows for the observation's unit group is accepted.  For example, regardless of the report's
-configured units:
-
-* `current.windSpeed.beaufort`           which might yield `5`
-* `current.windSpeed.beaufort.formatted` which might yield `5`
-* `day.outTemp.avg.degree_C`             which might yield `18.3°C`
-* `day.outTemp.avg.degree_C.raw`         which might yield `18.33`
-* `day.outTemp.avg.degree_F.raw`         which might yield `64.99`
-* `10m.windGust.max.knot.raw`            which might yield `6.18`
-* `trend.barometer.mbar.formatted`       which might yield `2.4`
-
-This is handy for gauges that expect a fixed unit (for example a Beaufort wind
-gauge) no matter what units the rest of the report uses.  The override applies
-to value fields only; the `unit.label` prefix form has no override (matching
-WeeWX, whose `$unit.label` is obstype-only).  If the named unit is incompatible
-with the observation's group (e.g. `day.outTemp.avg.beaufort`), the field is
-simply omitted from loop-data.txt.
-
-A unit must already be registered with WeeWX when LoopData starts: all of
-WeeWX's own units (including `beaufort`) always are, but a unit registered by
-another extension is recognized only if that extension initializes before
-LoopData.
-
-### Formatting a field with arguments (call syntax)
-
-The formatting methods a WeeWX report tag can call are also available as format
-specs, with the same names, arguments and output as the report tag:
-
-* `format(format_string, None_string, add_label, localize)` — all arguments optional
-* `nolabel(format_string, None_string)` — like `format()`, but with no label
-* `string(None_string)` — the report's default formatting, with control over missing data
-* `long_form(format_string, None_string)` — delta times spelled out (e.g. sunshine duration)
-
-For example:
-
-* `day.outTemp.maxtime.format("%H:%M")`          which might yield `12:05`
-* `current.outTemp.format(add_label=False)`      which might yield `79.2`
-* `day.windGust.max.nolabel("%.0f")`             which might yield `9`
-* `day.rain.sum.format("%.2f", add_label=False)` which might yield `0.31`
-* `day.sunshineDur.sum.long_form()`              which might yield `6 hours, 25 minutes, 10 seconds`
-
-Exactly as in a report, a time-of-event field's `format_string` is a strftime
-format, and a numeric field's is a %-format.  A bare spec name
-(`day.rain.sum.string`) is a zero-argument call, just as Cheetah renders
-`$day.rain.sum.string`.  The unit override and `round(n)` compose as usual:
-`day.outTemp.avg.degree_C.nolabel("%.2f")`, `day.barometer.max.mbar.round(1).raw`.
-
-Missing data: by default, a field with no value (say a trend before enough
-packets have arrived, or an observation the station doesn't report) is omitted
-from loop-data.txt.  `string()`, or an explicit `None_string` argument to any
-of these, overrides that: the field is always emitted, rendering missing data
-exactly as the report tag would (`N/A` unless a `None_string` says otherwise).
-For example, `trend.outTemp.string("n/a")` is present from the very first
-packet.
-
-Quoting: a call containing a comma must be quoted in weewx.conf, or ConfigObj
-will split the entry at the comma into two bogus fields:
+The test suite is plain `unittest` and must be run from the repository root
+(the tests load config fixtures by relative path), with a Python that has
+WeeWX installed:
 
 ```
-fields = ..., 'day.rain.sum.format("%.2f", add_label=False)', ...
-```
-
-Calls without a comma (e.g. `day.outTemp.maxtime.format("%H:%M")`) need no
-quoting.  The json key is the field entry verbatim (without the outer quotes).
-
-### Special fields
-
-`unit.label.<obs>` is also supported (e.g., `unit.label.outTemp`, which
-might yield `°F`).
-
-`trend.barometer.desc` and `trend.barometer.code` are also supported.  `trend.barometer.desc`
-provides a text version of the barometer rate (e.g., `Falling Slowly`).  As of 6.4 each English
-description is a gettext-style key into the target report's `[Texts]`, so the descriptions
-translate like every other string (the sample report's `lang/de.conf`, `lang/fr.conf`, `lang/nl.conf` and `lang/es.conf` carry all nine); see
-"Translating the sample report" below.  `trend.barometer.code` provides an integer
-of value `-4`, `-3`, `-2`, `-1`, `0`, `1`, `2`, `3` or `4`.  These values correspond to `Falling Very Rapidly`,
-`Falling Quickly`, `Falling`, `Falling Slowly`, `Steady`, `Rising Slowly`, `Rising`, `Rising Quickly`
-and `Rising Very Rapidly`, respectively.
-
-### What report tags can do that fields cannot
-
-For rendering values, the fields grammar is at parity with report tags: any
-period tag with a standard aggregate, converted to any unit, rounded, and
-formatted with the full set of formatting calls.  What remains report-only:
-
-* Aggregates computed by xtypes (`$day.heatdeg.sum`, `$year.growdeg.sum`, ...)
-  — see "Period Aggregates implemented via xtypes are not currently supported
-  by loopdata" above.
-* Offset periods: `$yesterday`, `$day($days_ago=1)`, `$month($months_ago=1)`,
-  `$rainyear($years_ago=1)` and the arbitrary `$span(...)`.
-* Series tags (`$day.outTemp.series(...)`).
-* The introspection helpers `.json`, `.exists` and `.has_data` (a field with
-  missing data is simply absent from loop-data.txt — or always emitted, via
-  `string()`).
-* Non-observation tags: `$latitude`, `$longitude`, `$altitude`, `$Extras`,
-  `$gettext`, `$obs`, and the like.  The exceptions are `$unit.label.<obs>`,
-  supported as `unit.label.<obs>` above, and `$station`, supported as
-  station fields (see "Station fields" below — `$latitude` et al. have
-  `$station` equivalents).
-
-## Almanac fields
-
-Any WeeWX report almanac tag can be listed as a field: write the tag as it would appear in a
-Cheetah template, with the `$` removed.  The values are computed with whatever almanac WeeWX
-has registered — [weewx-skyfield](https://github.com/chaunceygardiner/weewx-skyfield) for the
-full Skyfield experience, PyEphem if installed, or WeeWX's built-in fallback (sunrise, sunset
-and moon phase only) — and are converted and formatted per the target report, exactly as the
-report tag would render.  Examples:
-
-```
-almanac.sunrise                                      06:47 (formatted per the report)
-almanac.sunrise.raw                                  1593611225 (unix epoch seconds)
-almanac.sunset.raw
-almanac.moon_phase                                   Waxing gibbous
-almanac.moon_index                                   the 0-7 moon phase index
-almanac.moon.phase                                   percent of the moon illuminated
-almanac.sun.az                                       sun azimuth in decimal degrees
-almanac.sun.alt                                      sun altitude in decimal degrees
-almanac.sun.transit.raw
-almanac.sun.visible.raw                              length of daylight, in the report's units
-almanac.sun.visible.second.raw                       length of daylight, pinned to seconds
-almanac.sunrise.unix_epoch.raw                       sunrise, pinned to epoch seconds
-almanac.moon.rise.raw
-almanac.mars.earth_distance                          in AU, as in reports
-almanac.next_full_moon.raw
-almanac.next_solstice.raw
-almanac(horizon=-6).sun(use_center=1).rise.raw       civil dawn
-almanac(horizon=-6).sun(use_center=1).set.raw        civil dusk
-almanac(horizon=-12).sun(use_center=1).rise.raw      nautical dawn
-almanac(horizon=-18).sun(use_center=1).rise.raw      astronomical dawn
-```
-
-For a complete live sky built from these fields, see
-[weewx-celestial](https://github.com/chaunceygardiner/weewx-celestial): its
-Geocentric panel — every body placed by compass bearing and distance, the moon
-at its true phase, odometer distance readouts ticking between loop packets —
-is drawn entirely from loopdata almanac fields.  See it live at
-[www.paloaltoweather.com](https://www.paloaltoweather.com/).
-
-One loopdata extension to the report grammar: `almanac(days=±N)` evaluates the almanac at the
-same wall-clock time N *local calendar* days away.  For example, `almanac(days=1).sunrise.raw`
-is tomorrow's sunrise and `almanac(days=-1).sun.visible.raw` is yesterday's length of day.
-(Reports express this with `$almanac(almanac_time=$time_ts+86400)`, which needs Cheetah
-variables that a config line doesn't have; `days=` is also DST-correct where ±86400 is not.)
-
-Notes:
-* Almanac fields are current-only: they take no period prefix and no aggregate
-  (`10m.almanac...` and `almanac.sunrise.max` are not valid).
-* `.raw`/`.formatted`/`.ordinal_compass` work on tags that return formatted values
-  (times, and angles like `almanac.sun.azimuth`); `.raw` on a plain number
-  (e.g., `almanac.moon_index.raw`) is allowed and returns the number unchanged.
-* The formatting calls and `round(n)` work here too, exactly as on report
-  almanac tags: `almanac.sunrise.format("%H:%M")`,
-  `almanac.sun.az.format("%.1f", add_label=False)`, `almanac.sun.az.round(1).raw`.
-* Unit conversions chain as in report tags, and pin the unit:
-  `almanac.sunrise.unix_epoch.raw`, `almanac.sun.visible.second.raw`,
-  `almanac.sun.visible.hour.round(2).raw` (the unit sits before `round(n)` and
-  the format spec).  Without one, values follow the target report's unit
-  settings — including any `[Units]` `[[Groups]]` overrides, so a report that
-  sets `group_deltatime = hour` makes `almanac.sun.visible.raw` emit hours
-  instead of seconds.  Pin the unit on any `.raw` field your javascript
-  consumes numerically.
-* The json key is the field entry verbatim, so element ids can match keys as usual.
-* A call with more than one keyword contains a comma, so the entry must be quoted in
-  weewx.conf: `fields = ..., "almanac(pressure=0, horizon=-8).sun.rise.raw", ...`.
-  None of the standard entries above need quoting.
-* Cost is managed automatically: positions and distances are recomputed every loop
-  packet; rise/set/transit/daylight once per local day; `previous_*` events once per
-  local day.  A `next_*` event expires the moment its own instant passes (since 6.9):
-  fields naming the same event (say a pass's rise, set and maximum altitude) are
-  computed together and expire together, at the latest time among them — an
-  in-progress pass keeps serving until it ends, then the very next packet carries the
-  following occurrence.  Each recompute returns the next occurrence, re-arming the
-  cache, so recomputes stay rare (once per lunar month for `next_full_moon`, once per
-  pass for a satellite).  A group with no time field keeps the once-per-day refresh —
-  include a pass time field to get event-time expiry.  A day- or event-tier
-  evaluation that yields no data — say, a satellite whose orbital elements have not
-  been downloaded yet — is not cached: every packet retries, so the field picks up
-  its value the moment the almanac has data (since 6.9).  Note the tiers make
-  `almanac.sun.rise` and `almanac.sun.next_rising` genuinely different fields: `rise`
-  shows today's sunrise for the whole day, while `next_rising` rolls forward to
-  tomorrow's the moment the sun rises.
-
-If you are migrating from weewx-celestial's loop fields, every `current.<field>` it emitted
-has an almanac equivalent (e.g., `current.sunrise.raw` → `almanac.sunrise.unix_epoch.raw`,
-`current.civilTwilightStart.raw` → `almanac(horizon=-6).sun(use_center=1).rise.unix_epoch.raw`,
-`current.daylightDur.raw` → `almanac.sun.visible.second.raw`, `current.tomorrowSunrise.raw` →
-`almanac(days=1).sunrise.unix_epoch.raw`).  The pinned unit segments keep the old fields'
-fixed meanings (epoch seconds, seconds of daylight) no matter how the target report's units
-are set.  The only derivation left to the page is waxing/waning:
-the moon is waxing when `almanac.next_full_moon.unix_epoch.raw` <
-`almanac.next_new_moon.unix_epoch.raw` (pinned, as for any `.raw` field the
-page compares numerically).
-Note that distances arrive in AU (as reports show them) rather than miles/km.
-
-## Station fields
-
-Any `$station` report tag can be listed as a field, written with the `$` removed.  The
-values are evaluated against the exact object behind the report tag
-(`weewx.station.Station`), so they render as the report would render them.  Examples:
-
-```
-station.uptime.raw                WeeWX uptime in seconds
-station.uptime.long_form()        e.g., 25 days, 21 hours, 15 minutes
-station.os_uptime.raw             server uptime in seconds
-station.os_uptime.long_form()
-station.version                   the WeeWX version, e.g., 5.4.0
-station.python_version
-station.hardware                  e.g., Vantage
-station.location                  [Station] location from weewx.conf
-station.altitude                  e.g., 700 feet
-station.altitude.meter.raw        unit conversions work as in report tags
-station.latitude                  ["37", "24.00", "N"] — the same (degrees,
-                                  minutes, hemisphere) parts the report tag
-                                  exposes, as a json array
-```
-
-The point of station fields is `uptime` and `os_uptime`: they are recomputed on every
-loop packet, so a live uptime readout is correct within a packet or two of a weewxd or
-server restart.  (The report-cycle alternative — shipping `$station.uptime.raw` in a
-template and extrapolating in javascript — shows the pre-restart uptime still climbing
-until the next report cycle runs.)  Every other `$station` attribute is constant for
-the life of the weewxd process; loopdata computes those once and repeats the value in
-every write, so a page that is not itself a WeeWX report can still show them.
-
-Notes:
-* Station fields are current-only: no period prefix, no aggregate.
-* `round(n)` and the format specs/calls work as on observation and almanac fields:
-  `.raw` on `uptime`/`os_uptime`/`altitude` (ValueHelpers), identity on plain
-  values (`station.week_start.raw`); `.formatted`, `format(...)`, `nolabel(...)`,
-  `string(...)`, `long_form(...)` on the ValueHelpers only.
-* The json key is the field entry verbatim, so element ids can match keys as usual.
-
-## Translating the sample report
-
-As of 6.4 the sample report is translatable through WeeWX's own mechanisms — lang
-files and gettext-style `[Texts]` keys (the English string is the key; a missing
-entry falls back to English one string at a time).  German, French, Danish, Dutch,
-Spanish, Italian, Norwegian (Bokmål) and Swedish ship (`skins/LoopData/lang/de.conf`
-and `lang/fr.conf` native-speaker reviewed, `lang/da.conf` contributed by native
-speaker Gert Andersen, `lang/nl.conf`, `lang/es.conf`, `lang/it.conf`,
-`lang/no.conf` and `lang/sv.conf` Beta awaiting their reviews;
-vocabulary in step with
-weewx-skyfield's and weewx-celestial's own lang files); select one with
-`lang = de` (or `fr`, `da`, `nl`, `es`, `it`, `no`, `sv`) on the report's stanza.  Language support needs WeeWX 4.6 or later.  To add a
-language, copy `lang/en.conf` — the reference dictionary, kept exact by a test —
-and translate the values.
-
-Two languages meet on a loopdata page, and it pays to know which is which:
-
-* The page's own **labels** (gauge headings, the LIVE badge, readout lines)
-  follow the *sample report's* `lang`.  Strings the javascript composes are
-  translated at generation time and fed to the script, so a translation touches
-  no javascript.
-* The live **values** in loop-data.txt follow the language of loopdata's
-  `[LoopData]` **target report**: `.ordinal_compass` fields take that report's
-  compass ordinates, `moon_phase` its moon-phase names,
-  `almanac.<body>.label`/`.constellation.label` its `[Almanac]` names, and
-  `trend.barometer.desc` its `[Texts]` (each English description — `Falling
-  Slowly`, `Steady`, … — is a gettext-style key) — one language per loopdata
-  instance, regardless of which page displays them.
-
-Out of the box the sample report *is* the target report, so `lang = de` on
-`[[LoopDataReport]]` switches both — the shipped lang files carry the value-side
-sections (ordinates, moon phases, body and constellation names) too.  If your
-target report is a different report, set `lang = de` under `[StdReport]`
-`[[Defaults]]` in weewx.conf to switch every report at once.  See the manual's
-[Translations page](https://chaunceygardiner.github.io/weewx-loopdata/i18n.html)
-for the full story.
-
-## Rsync isn't Working for me, help!
-LoopData uses WeeWX's `weeutil.rsyncupload.RsyncUpload` utility.  If you have rsync working
-for WeeWX to push your web pages to a remote server, loopdata's rsync is likely to work too.
-First get WeeWX working with rsync before you try to get loopdata working with rsync.
-
-By the way, it's probably better to put loop-data.txt outside of WeeWX's html tree so that
-WeeWX's rsync and loopdata's rsync don't both write the loop-data.txt file.  If you're up
-for configuring your webserver to move it elsewhere (e.g., /home/weewx/loopdata/loop-data.txt),
-you should do so.  If not, it's probably OK.  There just *might* be the rare complaint in the
-log because the WeeWX main thread and the LoopData thread both tried to sync the same file at
-the same time.
-
-## Do I have to use rsync to sync loop-data.txt to a remote server?
-You don't *have* to sync to a remote server; but if you want to sync to a remote server,
-rsync is the *only* mechanism provided.
-
-## What about those rsync errors in the log?
-Note: See the installation instructions above on how to implement SSH control master multiplexing and the timeouts will go away.
-If one is using rsync, especially if the loop interval is short (e.g., 2s), it is expected that
-there will be log entries for connection timeouts, transmit timeouts, write errors and skipped
-packets.  By default only one second is allowed to connect or transmit the data.  Also, by
-default, if the loop data is older than 3s, it is skipped.  With these settings, the remote
-server may miss receiving some loop-data packets, but it won't get caught behind trying to send
-a backlog of old loop data.
-
-Following are examples of a connection timeout, transmission timeout, writer error and a skipped
-packet.  These errors are fine in moderation.  If too many packets are timing out, one might try
-changing the connection timeout or timeout values.
-```
-Jul  1 04:12:03 charlemagne weewx[1126] ERROR weeutil.rsyncupload: [['rsync', '--archive', '--stats', '--timeout=1', '-e ssh -o ConnectTimeout=1', '/home/weewx/gauge-data/loop-data.txt', 'root@www.paloaltoweather.com:/home/weewx/gauge-data/loop-data.txt']] reported errors: ssh: connect to host www.paloaltoweather.com port 22: Connection timed out. rsync: connection unexpectedly closed (0 bytes received so far) [sender]. rsync error: unexplained error (code 255) at io.c(235) [sender=3.1.3]
-Jun 30 20:51:48 charlemagne weewx[1126] ERROR weeutil.rsyncupload: [['rsync', '--archive', '--stats', '--timeout=1', '-e ssh -o ConnectTimeout=1', '/home/weewx/gauge-data/loop-data.txt', 'root@www.paloaltoweather.com:/home/weewx/gauge-data/loop-data.txt']] reported errors: [sender] io timeout after 1 seconds -- exiting. rsync error: timeout in data send/receive (code 30) at io.c(204) [sender=3.1.3]
-Jun 27 10:18:37 charlemagne weewx[17982] ERROR weeutil.rsyncupload: [['rsync', '--archive', '--stats', '--timeout=1', '-e ssh -o ConnectTimeout=1', '/home/weewx/gauge-data/loop-data.txt', 'root@www.paloaltoweather.com:/home/weewx/gauge-data/loop-data.txt']] reported errors: rsync: [sender] write error: Broken pipe (32). rsync error: error in socket IO (code 10) at io.c(829) [sender=3.1.3]
-Jun 27 23:15:53 charlemagne weewx[10156] INFO user.loopdata: skipping packet (2020-06-27 23:15:50 PDT (1593324950)) with age: 3.348237
+PYTHONPATH=bin:tests python tests/test_process_packet.py
 ```
 
 ## Why require Python 3.7 or later?

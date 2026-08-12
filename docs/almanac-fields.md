@@ -1,10 +1,14 @@
 ---
 title: Almanac fields
 layout: default
-nav_order: 6
+nav_order: 8
 ---
 
 # Almanac fields
+
+[weewx-loopdata manual](https://chaunceygardiner.github.io/weewx-loopdata/) · [weewx-loopdata on GitHub](https://github.com/chaunceygardiner/weewx-loopdata) · [Report an issue](https://github.com/chaunceygardiner/weewx-loopdata/issues)
+
+---
 
 Any WeeWX report almanac tag can be listed as a field: write the tag as it
 would appear in a Cheetah template, with the `$` removed.  The values are
@@ -83,7 +87,7 @@ almanac.sun.visible.hour.round(2).raw        hours, rounded — the unit sits
 
 Pin the unit on any `.raw` field your javascript consumes numerically.
 
-## Notes
+## Rules and limits
 
 * Almanac fields are current-only: they take no period prefix and no
   aggregate (`10m.almanac...` and `almanac.sunrise.max` are not valid).
@@ -115,7 +119,7 @@ that actually change are recomputed on every loop packet:
 | Cache tier | What | Recomputed |
 |---|---|---|
 | continuous | positions (az/alt), distances, moon phase | every loop packet |
-| day | `rise`, `set`, `transit`, `visible`, `sunrise`, `sunset` | once per local day |
+| day | `rise`, `set`, `transit`, `antitransit`, `visible`, `visible_change`, `sunrise`, `sunset` | once per local day |
 | event | `previous_*` events | once per local day (the instant is always in the past; the value only changes at the next occurrence) |
 | event | `next_*` events | when the event's own instant passes (since 6.9; see below) |
 

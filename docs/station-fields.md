@@ -1,10 +1,14 @@
 ---
 title: Station fields
 layout: default
-nav_order: 7
+nav_order: 9
 ---
 
 # Station fields
+
+[weewx-loopdata manual](https://chaunceygardiner.github.io/weewx-loopdata/) · [weewx-loopdata on GitHub](https://github.com/chaunceygardiner/weewx-loopdata) · [Report an issue](https://github.com/chaunceygardiner/weewx-loopdata/issues)
+
+---
 
 Any `$station` report tag can be listed as a field, written with the `$`
 removed.  The values are evaluated against the exact object behind the
@@ -28,6 +32,15 @@ station.latitude                  ["37", "24.00", "N"] — the same (degrees,
                                   minutes, hemisphere) parts the report tag
                                   exposes, as a json array
 ```
+
+Those are examples, not the whole set.  `$station` is WeeWX's own
+`Station` object, so anything it exposes can be a field.  In current WeeWX
+that is `uptime`, `os_uptime`, `version`, `python_version`, `altitude`,
+`latitude`, `longitude`, `rain_year_str`, and — reached through the station
+info it carries — `hardware`, `location`, `station_url`, `webpath`,
+`week_start`, `rain_year_start`, `altitude_vt`, `latitude_f` and
+`longitude_f`.  If a `$station` tag works in a Cheetah template, it works
+here.
 
 ## The point: a restart-correct live uptime
 

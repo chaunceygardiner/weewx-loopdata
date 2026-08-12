@@ -1,15 +1,26 @@
 ---
 title: Configuration
 layout: default
-nav_order: 3
+nav_order: 4
 ---
 
 # Configuration
 
-All configuration lives in the `[LoopData]` section of weewx.conf, which the
-installer creates.  This page documents every option; the
+[weewx-loopdata manual](https://chaunceygardiner.github.io/weewx-loopdata/) · [weewx-loopdata on GitHub](https://github.com/chaunceygardiner/weewx-loopdata) · [Report an issue](https://github.com/chaunceygardiner/weewx-loopdata/issues)
+
+---
+
+Most configuration lives in the `[LoopData]` section of weewx.conf, which the
+installer creates, and this page documents every option in it — the
 [sample configuration](#sample-configuration) at the bottom is exactly what a
 fresh install writes.
+
+Two settings LoopData obeys live on the **target report** rather than in
+`[LoopData]`, because they are ordinary WeeWX report settings that LoopData
+simply follows: the wording of
+[`trend.barometer.desc`](#translating-trendbarometerdesc) and the
+[trend window](#the-trend-window-time_delta).  Both are at the end of this
+page.
 
 ## `[[FileSpec]]`
 
@@ -61,6 +72,7 @@ Only needed if you push loop-data.txt to a remote webserver — see
 |---|---|
 | `enable` | Set to `true` to rsync the loop data file to `remote_server`. |
 | `remote_server` | The server to which the loop data file will be copied.  Passwordless ssh using public/private key must be configured from the user account weewx runs under to the account on the remote machine with write access to `remote_dir`. |
+| `remote_port` | The ssh port on `remote_server`, if it is not the default 22.  Unset by default, in which case ssh's own default applies.  (A port set here and a port set in `ssh_options` are two ways to the same end; pick one.) |
 | `remote_user` | The userid on `remote_server` with write permission to `remote_dir`. |
 | `remote_dir` | The directory on `remote_server` where `filename` will be copied. |
 | `compress` | `True` to compress the file before sending.  Default is `False`. |
@@ -85,6 +97,22 @@ an almanac tag with two keywords — must be quoted, or ConfigObj will split
 the entry at the comma into two bogus fields:
 `fields = ..., 'day.rain.sum.format("%.2f", add_label=False)', ...`
 
+## `windrose_bands`
+
+Overrides the wind-speed band edges used by the
+[windrose observation](windrose.html).  Ascending edges, in the target
+report's windSpeed unit; the first edge doubles as the calm threshold:
+
+```
+[LoopData]
+    windrose_bands = 1, 4, 8, 13, 19, 25
+```
+
+The default is the classic WRPLOT/NOAA bands (0.5, 2.1, 3.6, 5.7, 8.8 and
+11.1 m/s, converted to the report's unit).  See
+[Choosing your bands](windrose.html#choosing-your-bands) for how to pick
+edges suited to your site.
+
 ## Translating `trend.barometer.desc`
 
 As of 6.4 the descriptions served for `trend.barometer.desc` (`Falling
@@ -106,22 +134,6 @@ and now ignored — delete it from weewx.conf.
 `trend.barometer.code` (an integer from `-4` through `4`) is the
 language-neutral companion; see
 [Special fields](field-reference.html#special-fields).
-
-## `windrose_bands`
-
-Overrides the wind-speed band edges used by the
-[windrose observation](windrose.html).  Ascending edges, in the target
-report's windSpeed unit; the first edge doubles as the calm threshold:
-
-```
-[LoopData]
-    windrose_bands = 1, 4, 8, 13, 19, 25
-```
-
-The default is the classic WRPLOT/NOAA bands (0.5, 2.1, 3.6, 5.7, 8.8 and
-11.1 m/s, converted to the report's unit).  See
-[Choosing your bands](windrose.html#choosing-your-bands) for how to pick
-edges suited to your site.
 
 ## The trend window (`time_delta`)
 
@@ -158,9 +170,9 @@ pages of yours use).
         seconds = 2.0
     [[RsyncSpec]]
         enable = false
-        remote_server = foo.bar.com
+        remote_server = www.foobar.com
         remote_user = root
-        remote_dir = /var/www/html
+        remote_dir = /home/weewx/loop-data
         compress = False
         log_success = False
         timeout = 1

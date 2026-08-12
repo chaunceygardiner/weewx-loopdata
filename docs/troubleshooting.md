@@ -1,10 +1,20 @@
 ---
 title: Troubleshooting
 layout: default
-nav_order: 13
+nav_order: 14
 ---
 
 # Troubleshooting
+
+[weewx-loopdata manual](https://chaunceygardiner.github.io/weewx-loopdata/) · [weewx-loopdata on GitHub](https://github.com/chaunceygardiner/weewx-loopdata) · [Report an issue](https://github.com/chaunceygardiner/weewx-loopdata/issues)
+
+---
+
+Symptoms below, roughly in the order they turn up.  If you already have a
+log line in hand and want to know what it means, skip to
+[What LoopData writes to the log](#what-loopdata-writes-to-the-log) — which
+is also the fastest way to find out where loop-data.txt is actually landing,
+and which observations your station reports.
 
 ## No page at `<weewx-url>/loopdata/`
 
@@ -42,7 +52,9 @@ In roughly descending order of likelihood:
   before enough packets have arrived, or an observation your station doesn't
   report.  This is by design; see
   [Missing data](field-reference.html#missing-data) (and `string()` for
-  forcing emission).
+  forcing emission).  To see what your station actually reports, look at the
+  `obstypes.current` line LoopData logs at startup — see
+  [What LoopData writes to the log](#what-loopdata-writes-to-the-log).
 * **The aggregate needs the database, and the observation isn't in it.**
   Aggregates implemented via xtypes (e.g. weewx-purple's `pm2_5_aqi`) are
   ignored; only current values work for such observations.  See
@@ -60,7 +72,8 @@ In roughly descending order of likelihood:
   [the migration mapping](windrose.html#upgrading-from-windrun_direction-fields).
 
 Also check the WeeWX log around startup: loopdata logs parse problems with
-field entries.
+field entries, and lists the observations it is tracking — see
+[What LoopData writes to the log](#what-loopdata-writes-to-the-log).
 
 ## Values stay English on a translated page
 
@@ -95,11 +108,8 @@ cadence — `2.0` for Davis Vantage Pro 2 and RainWise CC3000.
 
 ## My driver acts strangely with loopdata
 
-This extension has been tested with the WeeWX vantage and cc3000 drivers.
-It will likely also work with other drivers that report loop packets on a
-regular basis and report all observations on every loop packet.  Use
-loopdata with drivers that report loop packets on an irregular basis and/or
-report partial observations, at your own risk.
+LoopData is targeted at a particular kind of driver — see the driver note
+under [Installation](installation.html).
 
 ## Rsync problems
 
@@ -108,10 +118,36 @@ timeout errors in the log are normal, how to make them disappear with ssh
 control master multiplexing, and how the time bounds keep a dead remote
 from stalling loop processing.
 
-## Why require Python 3.7 or later?
+## What LoopData writes to the log
 
-LoopData code includes type annotations which do not work with Python 2,
-nor in earlier versions of Python 3.
+LoopData logs under `user.loopdata`.  Every message below is one it can
+write; the errors all mean something you can act on.
+
+**Errors — LoopData is refusing to do something you asked for**
+
+| Message | What it means |
+|---|---|
+| `Could not find target_report: <name>.  LoopData is exiting.` | `target_report` names a report that isn't in `[StdReport]`.  Check the spelling and that the report is defined (it does not need `enable = true`).  LoopData does not start. |
+| `Error in LoopData setup.  LoopData is exiting.` | Something else in `[LoopData]` could not be parsed; the exception follows on the same line.  LoopData does not start — nothing is written. |
+| `Ignoring malformed almanac field: <field>` | An [almanac field](almanac-fields.html) didn't parse — usually an unquoted entry that ConfigObj split at a comma, or a non-numeric keyword.  That one field is dropped; the rest still work. |
+| `Ignoring malformed station field: <field>` | Same, for a [station field](station-fields.html). |
+| `Ignoring non-numeric windrose_bands: <spec>` | A `windrose_bands` edge isn't a number.  The default bands are used. |
+| `Ignoring windrose_bands (need ascending, non-negative edges): <spec>` | The edges are out of order or negative.  The default bands are used. |
+| `round requires a WeeWX with weeutil.weeutil.rounder` | A field used `round(n)` on a WeeWX too old to support it.  Drop the `round(n)`, or upgrade WeeWX. |
+
+**Informational — usually normal, occasionally a clue**
+
+| Message | What it means |
+|---|---|
+| `LoopData file is: <path>` | Written at startup.  The quickest way to confirm where loop-data.txt is actually landing — check this first when the page reports `NO DATA (HTTP 404)`. |
+| `obstypes.current : [...]`, `obstypes.day : [...]`, … | Written at startup, one line per period: exactly which observations LoopData is tracking.  **This is also the answer to "what can I put on the fields line?"** — anything in `obstypes.current` is in your station's loop packets. |
+| `Cannot evaluate almanac field <field>: <error>` | The field parsed but the almanac could not answer it — commonly a body or attribute the installed almanac doesn't provide.  See [Almanac fields](almanac-fields.html). |
+| `Cannot evaluate station field <field>: <error>` | As above, for `$station` attributes. |
+| `Ignoring <field> for <period> time period as this observation has no day accumulator.` | An aggregate was requested for an observation WeeWX doesn't keep daily summaries for — see [aggregates via xtypes](field-reference.html#aggregates-via-xtypes-are-not-supported). |
+| `Cannot calculate windrun.` / `Cannot calculate beaufort.` | A packet lacked the wind data needed for that derivation.  Occasional lines are normal; constant ones mean your station isn't reporting wind. |
+| `skipping packet (<time>) with age: <seconds>` | An rsync was skipped because the data was older than `skip_if_older_than`.  Normal in moderation — see [Syncing to a remote server](rsync.html#about-those-rsync-errors-in-the-log). |
+| `Ignoring future-dated archive record: <record>` | An archive record timestamped in the future was skipped while seeding accumulators — usually a clock that has since been corrected. |
+| `time_delta of <n> specified, LoopData will use max value of 259200.` | The target report's trend window exceeds three days; LoopData capped it.  See [the trend window](configuration.html#the-trend-window-time_delta). |
 
 ## Still stuck?
 

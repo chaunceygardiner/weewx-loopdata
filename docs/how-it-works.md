@@ -1,10 +1,14 @@
 ---
 title: How LoopData works
 layout: default
-nav_order: 12
+nav_order: 13
 ---
 
 # How LoopData works
+
+[weewx-loopdata manual](https://chaunceygardiner.github.io/weewx-loopdata/) · [weewx-loopdata on GitHub](https://github.com/chaunceygardiner/weewx-loopdata) · [Report an issue](https://github.com/chaunceygardiner/weewx-loopdata/issues)
+
+---
 
 You don't need this page to use LoopData — it's here for the curious, and
 for anyone weighing what a big fields line costs.

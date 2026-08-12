@@ -30,6 +30,7 @@
 #
 """Test processing packets."""
 
+import ast
 import configobj
 import logging
 import math
@@ -7778,6 +7779,632 @@ class ProcessPacketTests(unittest.TestCase):
                 for key in set(ld['Texts']) & set(sib['Texts']):
                     self.assertEqual(ld['Texts'][key], sib['Texts'][key],
                                      (sib_dir, name, key))
+
+    # ------------------------------------------------------------------
+    # Manual/code lockstep audits
+    # ------------------------------------------------------------------
+    # Every list that exists BOTH in code and in prose is a place a release
+    # can quietly make the manual wrong.  These audits pin the two together.
+    #
+    # Four rules, each of which caught something real when this set was
+    # written (see the release that added them):
+    #   1. Compare in BOTH directions.  "In the code, missing from the docs"
+    #      is the obvious half; "documented but nothing reads it" is the half
+    #      users report as a bug.  remote_port was found by the first,
+    #      foo.bar.com by the second.
+    #   2. Every exemption carries its REASON, inline.  An exemption without
+    #      one is how an audit quietly stops auditing.  When one of these
+    #      fails, the fix is almost always the manual -- widening a skip list
+    #      should feel wrong.
+    #   3. Extractors assert a landmark and a plausible count.  An audit that
+    #      parses nothing is green in exactly the way an audit that works is.
+    #   4. Each was mutation-tested when written: break the thing it checks,
+    #      confirm it fails, restore.
+    #
+    # These read only repo sources (never loopdata output), so they are
+    # spec-derived and belong in spec_only_runner.py.
+
+    REPO_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
+    DOCS_DIR = os.path.join(REPO_ROOT, 'docs')
+
+    # Home is exempt from the in-body link line: it would point at the page
+    # the reader is already on, and it carries the three buttons instead.
+    DOC_HOME = 'index.md'
+
+    MANUAL_URL = 'https://chaunceygardiner.github.io/weewx-loopdata/'
+    REPO_URL = 'https://github.com/chaunceygardiner/weewx-loopdata'
+
+    @classmethod
+    def doc_pages(cls) -> List[str]:
+        """Every manual page, Home included."""
+        names = sorted(n for n in os.listdir(cls.DOCS_DIR) if n.endswith('.md'))
+        # Landmark + plausible count: the manual has always had at least
+        # Home, installation, configuration and the field reference.
+        for landmark in (cls.DOC_HOME, 'installation.md', 'configuration.md',
+                         'field-reference.md'):
+            assert landmark in names, (landmark, names)
+        assert len(names) >= 10, names
+        return names
+
+    @classmethod
+    def doc_text(cls, name: str) -> str:
+        with open(os.path.join(cls.DOCS_DIR, name), encoding='utf-8') as f:
+            return f.read()
+
+    @classmethod
+    def repo_text(cls, *parts: str) -> str:
+        with open(os.path.join(cls.REPO_ROOT, *parts), encoding='utf-8') as f:
+            return f.read()
+
+    @staticmethod
+    def heading_slug(heading: str) -> str:
+        """kramdown's id for a heading, as GitHub Pages builds it.
+
+        NB kramdown emits one hyphen per SPACE, not one per run: dropping an
+        em dash from `The chart -- name` leaves both surrounding spaces and
+        thus TWO hyphens.  test_manual_heading_slug_rule pins that case
+        against the real built output.
+        """
+        slug = heading.strip().lower()
+        slug = slug.replace('`', '')
+        slug = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', slug)   # link text only
+        slug = re.sub(r'[^\w\s-]', '', slug)
+        return re.sub(r'\s', '-', slug)
+
+    def test_manual_heading_slug_rule(self):
+        # An executable counterexample for the kramdown gotcha above.  The
+        # whole anchor audit rests on heading_slug, and this rule was
+        # verified against every id in a real GitHub-Pages build of the
+        # manual before being written down.
+        self.assertEqual(self.heading_slug('## 5. Handle missing fields'
+                                           .lstrip('# ')), '5-handle-missing-fields')
+        self.assertEqual(self.heading_slug('The chart — `name`'),
+                         'the-chart--name')
+        self.assertEqual(self.heading_slug('`[[RsyncSpec]]`'), 'rsyncspec')
+        self.assertEqual(self.heading_slug('Translating `trend.barometer.desc`'),
+                         'translating-trendbarometerdesc')
+
+    def test_manual_internal_links_and_anchors_resolve(self):
+        # A cross-page link whose target page was renamed, or whose #anchor
+        # no longer names a heading, lands the reader in the wrong place and
+        # nothing else in the suite can see it.  Checks every relative link
+        # on every page, including same-page fragments.
+        pages = set(self.doc_pages())
+        anchors: Dict[str, Set[str]] = {}
+        for name in pages:
+            anchors[name] = {
+                self.heading_slug(h) for h in
+                re.findall(r'^#{2,6}\s+(.*)$', self.doc_text(name), re.M)}
+        total = sum(len(v) for v in anchors.values())
+        assert total >= 50, total      # landmark: the manual is heading-rich
+        checked = 0
+        problems: List[str] = []
+        for name in sorted(pages):
+            for target in re.findall(r'\]\((?!https?:|mailto:)([^)]+)\)',
+                                     self.doc_text(name)):
+                checked += 1
+                path, _, frag = target.partition('#')
+                # The manual is built by Jekyll, so pages cross-link as
+                # .html even though they are .md in the repo.
+                if path.endswith('.html'):
+                    path = path[:-len('.html')] + '.md'
+                if path.startswith('images/'):
+                    self.assertTrue(os.path.exists(
+                        os.path.join(self.DOCS_DIR, path)), (name, target))
+                    continue
+                if path and path not in pages:
+                    problems.append('%s -> missing page %s' % (name, target))
+                    continue
+                if frag and frag not in anchors[path or name]:
+                    problems.append('%s -> %s (no such heading)' % (name, target))
+        assert checked >= 30, checked  # landmark: pages do cross-link
+        self.assertEqual(problems, [])
+
+    def test_manual_page_furniture(self):
+        # Part of a house convention shared with weewx-skyfield and
+        # weewx-celestial: every content page carries an in-body link line
+        # under its H1, because the manual ranks on Google where the GitHub
+        # project does not -- and a reader of the raw markdown (release zip,
+        # github blob view) sees no theme sidebar at all.  Nothing but this
+        # audit can see that class of drift.
+        for name in self.doc_pages():
+            lines = self.doc_text(name).split('\n')
+            h1s = [i for i, ln in enumerate(lines) if ln.startswith('# ')]
+            self.assertTrue(h1s, name)
+            if name == self.DOC_HOME:
+                # Home carries the three buttons instead of the link line.
+                buttons = re.findall(r'\[([^\]]+)\]\([^)]+\)\{:\s*\.btn',
+                                     self.doc_text(name))
+                self.assertEqual(len(buttons), 3, (name, buttons))
+                continue
+            where = next((i for i, ln in enumerate(lines)
+                          if '%s manual](' % 'weewx-loopdata' in ln), None)
+            self.assertIsNotNone(where, '%s: no in-body link line' % name)
+            self.assertEqual(where, h1s[0] + 2,
+                             '%s: link line must sit under the H1' % name)
+            # All three destinations, so none can quietly go missing.
+            self.assertIn(self.MANUAL_URL, lines[where], name)
+            self.assertIn(self.REPO_URL, lines[where], name)
+            self.assertIn(self.REPO_URL + '/issues', lines[where], name)
+            # The rule below it, with a blank line between.  The blank is
+            # load-bearing: `---` directly under text is setext syntax, and
+            # kramdown would read the link line as an <h2>, silently turning
+            # navigation furniture into a heading.
+            rule = next((i for i in range(where, min(where + 5, len(lines)))
+                         if lines[i].strip() == '---'), None)
+            self.assertIsNotNone(rule, '%s: no rule after the link line' % name)
+            self.assertEqual(lines[rule - 1].strip(), '',
+                             '%s: blank line before the rule (setext risk)' % name)
+
+    def test_published_manual_urls_are_not_trailing_slash(self):
+        # Jekyll builds <page>.html, NOT <page>/index.html, and GitHub Pages
+        # does not map a trailing-slash path onto the .html file.  Measured
+        # against the live site:
+        #     /                    200      /installation.html  200
+        #     /installation        200      /installation/      404
+        # So an absolute deep link written in the natural directory form is
+        # simply dead.  Only the site ROOT may end in a slash.  A sibling
+        # repo shipped twelve such links on its README front page; nothing
+        # in the internal-link audit can see them, because these are
+        # absolute URLs to the published site rather than links between
+        # local pages.
+        #
+        # The bare extensionless form (/installation) does work, but only
+        # via Pages' fallback rather than a file that was built, so this
+        # requires the explicit .html that jekyll's own sitemap advertises.
+        site = self.MANUAL_URL.rstrip('/')
+        sources = [('README.md', self.repo_text('README.md')),
+                   ('install.py', self.repo_text('install.py')),
+                   ('changes.txt', self.repo_text('changes.txt'))]
+        sources += [(n, self.doc_text(n)) for n in self.doc_pages()]
+        checked = 0
+        problems: List[str] = []
+        for where, text in sources:
+            for url in re.findall(re.escape(site) + r"[^\s)\"'`<>\]]*", text):
+                checked += 1
+                path = url[len(site):]
+                if path in ('', '/'):
+                    continue                       # the site root is fine
+                if not path.endswith('.html'):
+                    problems.append('%s: %s (must end in .html)' % (where, url))
+                    continue
+                # Shape alone is not enough: a correctly-formed .html URL
+                # that names no page is equally dead.  These point into our
+                # OWN manual, so the page must exist in docs/.  (Links into
+                # the SIBLING manuals are deliberately shape-checked only --
+                # verifying those would need the network, and a test that
+                # fails when GitHub is unreachable is worse than the bug it
+                # guards.)
+                page = path.lstrip('/')[:-len('.html')] + '.md'
+                if not os.path.exists(os.path.join(self.DOCS_DIR, page)):
+                    problems.append('%s: %s (no such page)' % (where, url))
+        assert checked >= 12, checked   # landmark: the links were found
+        self.assertEqual(problems, [],
+                         'absolute links to the published manual must be the '
+                         'bare root or name a real page as .html (a trailing '
+                         'slash 404s, and so does a well-formed wrong name)')
+        # jekyll-redirect-from's redirect_to is site-absolute and gets
+        # baseurl prefixed BY THE PLUGIN.  A slash form would send an old
+        # indexed URL to a 404 -- the opposite of the redirect's point --
+        # and writing baseurl in by hand yields /weewx-loopdata/weewx-loopdata/...
+        for name in self.doc_pages():
+            for target in re.findall(r'^redirect_to:\s*(\S+)\s*$',
+                                     self.doc_text(name), re.M):
+                self.assertTrue(target.endswith('.html'), (name, target))
+                self.assertNotIn('/weewx-loopdata/', target, (name, target))
+                self.assertTrue(os.path.exists(os.path.join(
+                    self.DOCS_DIR, os.path.basename(target)[:-len('.html')]
+                    + '.md')), (name, target))
+
+    def test_manual_theme_is_pinned_and_uncredited(self):
+        # An unpinned remote_theme lets an upstream change restyle the manual
+        # with no commit here.  And the theme prints a credit for itself, and
+        # a link to its own repository, on every page unless the capture of
+        # nav_footer_custom.html is NON-empty -- which cuts against the very
+        # reason the in-body link line above exists.
+        config = self.repo_text('docs', '_config.yml')
+        self.assertIn('remote_theme: just-the-docs/just-the-docs@v', config)
+        # jekyll-relative-links is a GitHub Pages default, but a LOCAL build
+        # renders every .md cross-link dead without it named explicitly.
+        self.assertIn('jekyll-relative-links', config)
+        override = self.repo_text('docs', '_includes', 'nav_footer_custom.html')
+        self.assertTrue(override.strip(),
+                        'nav_footer_custom.html must be NON-empty: the theme '
+                        'takes its self-credit branch when this renders empty')
+        # Doubled hyphens INSIDE the comment are legal in HTML but make the
+        # document unmappable to XML 1.0, which Nu reports and --Werror
+        # fails.  (The delimiters' own hyphens are stripped first, and this
+        # is the exact defect a sibling manual shipped on every page.)
+        interior = re.sub(r'^\s*<!--|-->\s*$', '', override.strip())
+        self.assertNotIn('--', interior)
+        # footer_custom.html is a DIFFERENT include -- it renders
+        # site.footer_content, the copyright.  Overriding it would delete the
+        # copyright and leave the advertisement, which is backwards.
+        self.assertFalse(os.path.exists(os.path.join(
+            self.DOCS_DIR, '_includes', 'footer_custom.html')))
+        self.assertIn('footer_content:', config)
+
+    # Config options the code reads, by [LoopData] sub-section.  The audits
+    # below derive this from loopdata.py rather than hand-listing it.
+    CONFIG_DICTS = {
+        'file_spec_dict': 'FileSpec',
+        'formatting_spec_dict': 'Formatting',
+        'loop_frequency_spec_dict': 'LoopFrequency',
+        'rsync_spec_dict': 'RsyncSpec',
+        'include_spec_dict': 'Include',
+    }
+
+    @classmethod
+    def config_options_read(cls) -> Dict[str, str]:
+        """option name -> code default ('' when the code supplies none)."""
+        source = cls.repo_text('bin', 'user', 'loopdata.py')
+        found: Dict[str, str] = {}
+        pattern = re.compile(
+            r"(%s)\.get\(\s*'([A-Za-z_0-9]+)'\s*"
+            r"(?:,\s*('[^']*'|\"[^\"]*\"|\[\]|\{\}|[-\w.]+))?\s*\)"
+            % '|'.join(cls.CONFIG_DICTS))
+        for _dict, key, dflt in pattern.findall(source):
+            found.setdefault(key, (dflt or '').strip('\'"'))
+        # loopdata.py reads windrose_bands off [LoopData] itself, not a
+        # sub-section, so it is matched separately.
+        if re.search(r"loop_config_dict\.get\('windrose_bands'", source):
+            found.setdefault('windrose_bands', '')
+        # Landmarks + a plausible count: if the extractor ever stops
+        # matching, these are the options it must never lose.
+        for landmark in ('filename', 'target_report', 'seconds', 'fields',
+                         'remote_server', 'timeout'):
+            assert landmark in found, (landmark, sorted(found))
+        assert len(found) >= 14, sorted(found)
+        return found
+
+    def test_manual_documents_every_config_option(self):
+        # BOTH directions.  An option the code reads but nothing documents is
+        # invisible to users (this is how remote_port went undocumented in
+        # every file for its whole life); an option the docs describe but no
+        # code reads is the kind users report as a bug.
+        options = set(self.config_options_read())
+        for where, text in (('docs/configuration.md',
+                             self.doc_text('configuration.md')),
+                            ('README.md', self.repo_text('README.md'))):
+            documented = set(re.findall(r'`([a-z_0-9]+)`', text))
+            documented |= set(re.findall(r'^\s*\*\s*`?([a-z_0-9]+)`?\s*:', text, re.M))
+            missing = sorted(o for o in options if o not in documented)
+            self.assertEqual(missing, [],
+                             '%s documents no such option: %s' % (where, missing))
+        # The other direction, against the option tables only: a name in
+        # backticks in a table row that the code never reads.
+        rows = re.findall(r'^\|\s*`([a-z_0-9]+)`\s*\|',
+                          self.doc_text('configuration.md'), re.M)
+        assert len(rows) >= 14, rows          # landmark: tables were parsed
+        stale = sorted(set(rows) - options)
+        self.assertEqual(stale, [],
+                         'configuration.md tables list options no code reads: %s'
+                         % stale)
+
+    @classmethod
+    def installer_loopdata_config(cls) -> Dict[str, Any]:
+        """The [LoopData] literal install.py writes into weewx.conf."""
+        source = cls.repo_text('install.py')
+        start = source.index('config = {')
+        start = source.index('{', start)
+        depth = 0
+        for end in range(start, len(source)):
+            if source[end] == '{':
+                depth += 1
+            elif source[end] == '}':
+                depth -= 1
+                if depth == 0:
+                    break
+        config = ast.literal_eval(source[start:end + 1])['LoopData']
+        assert set(config) >= {'FileSpec', 'Formatting', 'Include'}, sorted(config)
+        return config
+
+    @staticmethod
+    def documented_sample_config(text: str) -> Tuple[Dict[str, str], List[str]]:
+        """The page's full [LoopData] sample block, parsed.
+
+        Selected by content, not position: the README has 37 fenced blocks
+        and six of them mention [LoopData], but only the complete sample
+        carries every sub-section.
+        """
+        # Odd indices only: splitting on the fence puts block CONTENTS at
+        # odd positions and surrounding prose at even ones, and the prose
+        # before the first fence contains the whole page.
+        blocks = [b for i, b in enumerate(text.split('```'))
+                  if i % 2 == 1 and '[LoopData]' in b and '[[FileSpec]]' in b
+                  and '[[RsyncSpec]]' in b and '[[Include]]' in b]
+        assert len(blocks) == 1, 'expected exactly one full sample block, got %d' % len(blocks)
+        block = blocks[0]
+        values: Dict[str, str] = {}
+        fields: List[str] = []
+        for line in block.split('\n'):
+            line = line.strip()
+            if '=' not in line or line.startswith('['):
+                continue
+            key, _, value = line.partition('=')
+            if key.strip() == 'fields':
+                fields = [f.strip() for f in value.split(',')]
+            else:
+                values[key.strip()] = value.strip()
+        return values, fields
+
+    def test_manual_sample_config_matches_the_installer(self):
+        # Both the manual and the README print a [LoopData] block under the
+        # claim that it is "exactly what a fresh install writes".  That claim
+        # is falsifiable, and it was false: install.py wrote
+        # www.foobar.com / /home/weewx/loop-data while both documents printed
+        # foo.bar.com / /var/www/html.
+        config = self.installer_loopdata_config()
+        installed: Dict[str, str] = {}
+        for section in config.values():
+            if isinstance(section, dict):
+                for key, value in section.items():
+                    if key != 'fields':
+                        installed[key] = str(value)
+        installer_fields = list(config['Include']['fields'])
+        assert len(installer_fields) >= 40, len(installer_fields)
+        for where, text in (('docs/configuration.md',
+                             self.doc_text('configuration.md')),
+                            ('README.md', self.repo_text('README.md'))):
+            values, fields = self.documented_sample_config(text)
+            for key, value in sorted(installed.items()):
+                self.assertIn(key, values, (where, key))
+                self.assertEqual(values[key].lower(), value.lower(), (where, key))
+            # The fields line IS the sample panel's field list; order matters
+            # because the documents present it as copy-and-paste.
+            self.assertEqual(fields, installer_fields, where)
+
+    def test_manual_field_grammar_matches_the_code(self):
+        # The field reference enumerates the grammar's accepted sets.  Each
+        # of these is derived in loopdata.py from a dispatch table, so a new
+        # aggregate or format spec lands in the code's set automatically --
+        # and silently leaves the manual behind.
+        text = self.doc_text('field-reference.md')
+        # Fenced blocks must go FIRST: ``` is three backticks, so leaving
+        # the fences in desynchronizes inline-code pairing for everything
+        # after the first one (this silently shrank the set to 9 names).
+        prose = re.sub(r'```.*?```', ' ', text, flags=re.S)
+        # Names appear in backticks in three shapes: bare (`avg`), with a
+        # leading dot as a format spec (`.raw`), and as a call with its
+        # signature (`format(format_string, ...)`).  Take the identifier out
+        # of each.
+        quoted = {re.match(r'[a-z_0-9]*', q.lstrip('.')).group(0)
+                  for q in re.findall(r'`([^`]+)`', prose)}
+        quoted.discard('')
+        assert len(quoted) >= 40, sorted(quoted)   # landmark: names parsed
+        for agg in user.loopdata.AGG_TYPES:
+            self.assertIn(agg, quoted, 'aggregate not in the field reference')
+        for agg in user.loopdata.WINDROSE_AGG_TYPES:
+            self.assertIn(agg, self.doc_text('windrose.md') + text, agg)
+        for spec in user.loopdata.FORMAT_SPECS:
+            self.assertIn(spec, quoted, 'format spec not in the field reference')
+        for spec in user.loopdata.CALL_FORMAT_SPECS:
+            self.assertIn(spec, quoted, 'call spec not in the field reference')
+        # Periods, both directions.  'trend' and the rolling windows are
+        # spelled as ranges in the manual's table, so only the fixed span
+        # periods compare as literal names.
+        periods = {'current', 'hour', 'day', 'week', 'month', 'year',
+                   'rainyear', 'alltime'}
+        rows = set(re.findall(r'^\|\s*`([a-z]+)`\s*\|', text, re.M))
+        assert 'day' in rows, rows            # landmark: the table was parsed
+        self.assertEqual(sorted(periods - rows), [], 'period missing from table')
+        self.assertEqual(sorted(rows - periods - {'trend'}), [],
+                         'table lists a period the code does not accept')
+
+    def test_manual_almanac_cache_tiers_match_the_code(self):
+        # The day tier's membership is the difference between "recomputed
+        # once a day" and "recomputed every packet" in the manual's cost
+        # table, and it is a hand-maintained list in prose.  antitransit and
+        # visible_change were both missing from it.
+        text = self.doc_text('almanac-fields.md')
+        rows = [ln for ln in text.split('\n') if ln.startswith('| day |')]
+        self.assertEqual(len(rows), 1, 'expected exactly one day-tier row')
+        listed = set(re.findall(r'`([a-z_]+)`', rows[0]))
+        self.assertEqual(sorted(user.loopdata.LoopData.almanac_day_attrs - listed),
+                         [], 'day-tier attribute missing from the manual')
+        self.assertEqual(sorted(listed - user.loopdata.LoopData.almanac_day_attrs),
+                         [], 'manual lists a day-tier attribute the code lacks')
+
+    def test_manual_documents_every_skin_extra(self):
+        # [Extras] are the options a user editing skin.conf actually sees.
+        # refresh_rate -- the page's poll rate -- shipped undocumented.
+        skin = configobj.ConfigObj(
+            os.path.join(self.I18N_SKIN_DIR, 'skin.conf'),
+            encoding='utf-8', file_error=True)
+        extras = set(skin['Extras'])
+        assert 'loop_data_file' in extras, sorted(extras)
+        documented = set(re.findall(r'`([a-z_A-Z0-9]+)`',
+                                    self.doc_text('sample-skin.md')))
+        exempt = {
+            # Written by install/release tooling, not a user-facing knob.
+            'version',
+            # Google Analytics passthrough: ships commented out, and is
+            # documented by the commented lines in skin.conf itself.
+            'googleAnalyticsId', 'analytics_host',
+        }
+        missing = sorted(extras - documented - exempt)
+        self.assertEqual(missing, [],
+                         'sample-skin.md documents no such [Extras]: %s' % missing)
+
+    def test_manual_language_list_matches_the_shipped_lang_files(self):
+        # The shipped languages are named in three places that drift apart:
+        # the Translations page, the sample skin page's count, and
+        # skin.conf's own header comment (which sat four releases stale at
+        # "German, French, Dutch and Spanish").
+        lang_dir = os.path.join(self.I18N_SKIN_DIR, 'lang')
+        codes = sorted(n[:-len('.conf')] for n in os.listdir(lang_dir)
+                       if n.endswith('.conf'))
+        assert 'en' in codes and len(codes) >= 5, codes
+        translations = [c for c in codes if c != 'en']   # en is the reference
+        i18n = self.doc_text('i18n.md')
+        for code in translations:
+            self.assertIn('lang/%s.conf' % code, i18n,
+                          'docs/i18n.md does not name lang/%s.conf' % code)
+        for code in re.findall(r'lang/([a-z]{2})\.conf', i18n):
+            self.assertIn(code, codes,
+                          'docs/i18n.md names lang/%s.conf, which does not ship'
+                          % code)
+        # skin.conf's comment must name every shipped translation too.
+        header = self.repo_text('skins', 'LoopData', 'skin.conf').split('[Extras]')[0]
+        for code in translations:
+            self.assertIn('%s.conf' % code, header,
+                          'skin.conf header does not name %s.conf' % code)
+        # The sample skin page states the count, spelled out in prose.  It
+        # counts TRANSLATIONS, not lang files: en.conf is the reference
+        # dictionary (the identity translation), so nine files ship eight
+        # translations.  The page says so explicitly -- the bare word
+        # "languages" was ambiguous against the nine files on disk.
+        words = {2: 'two', 3: 'three', 4: 'four', 5: 'five', 6: 'six',
+                 7: 'seven', 8: 'eight', 9: 'nine', 10: 'ten', 11: 'eleven',
+                 12: 'twelve'}
+        count = len(translations)
+        self.assertIn(count, words, 'spell out %d in the words table' % count)
+        # Whitespace-normalized: the phrase wraps across source lines.
+        prose = ' '.join(self.doc_text('sample-skin.md').split())
+        self.assertIn('%s translations ship' % words[count], prose,
+                      'sample-skin.md must say "%s translations ship"'
+                      % words[count])
+        self.assertIn('en.conf', prose,
+                      'sample-skin.md must name en.conf as the ninth file')
+
+    @classmethod
+    def logged_messages(cls) -> Dict[str, List[str]]:
+        """level -> the literal log messages loopdata.py can emit."""
+        source = cls.repo_text('bin', 'user', 'loopdata.py')
+        found: Dict[str, List[str]] = {}
+        for level, msg in re.findall(
+                r"log\.(error|warning|info)\(\s*'([^']+)'", source):
+            found.setdefault(level, []).append(msg)
+        # Landmarks + a plausible count: the extractor must keep finding the
+        # fatal ones, which are the whole point of the table.
+        assert any('Could not find target_report' in m
+                   for m in found.get('error', [])), sorted(found)
+        assert len(found.get('error', [])) >= 6, found.get('error')
+        return found
+
+    def test_manual_windrose_defaults_match_the_code(self):
+        # The default band edges and the compass-bin count are code
+        # constants quoted as literal numbers on two pages each.  Nothing
+        # else would notice if a constant changed and the prose did not --
+        # and a wrong band edge silently misdescribes every rose drawn from
+        # the defaults.
+        edges = user.loopdata.WINDROSE_DEFAULT_BANDS_MPS
+        assert len(edges) >= 4, edges          # landmark: real constant
+        config = self.doc_text('configuration.md')
+        windrose = self.doc_text('windrose.md')
+        for page_name, text in (('configuration.md', config),
+                                ('windrose.md', windrose)):
+            for edge in edges:
+                self.assertIn(str(edge), text,
+                              '%s does not quote default band edge %s'
+                              % (page_name, edge))
+        # Sixteen compass bins, spelled out in the windrose page's prose.
+        words = {8: 'eight', 12: 'twelve', 16: 'sixteen', 32: 'thirty-two'}
+        bins = user.loopdata.WINDROSE_BINS
+        self.assertIn(bins, words, 'spell out %d in the words table' % bins)
+        self.assertIn('%s compass' % words[bins], windrose,
+                      'windrose.md must say "%s compass bins"' % words[bins])
+
+    def test_station_fields_page_lists_the_real_station_surface(self):
+        # The page enumerates what `$station` exposes, which is WeeWX's own
+        # Station object plus whatever it delegates to StationInfo through
+        # __getattr__.  That list lives in another project, so a WeeWX
+        # release can silently make it wrong in either direction.
+        import inspect
+        own = set(re.findall(r'self\.([a-z_]+)\s*=',
+                             inspect.getsource(weewx.station.Station.__init__)))
+        own |= {n for n, v in vars(weewx.station.Station).items()
+                if isinstance(v, property)}
+        delegated = set(re.findall(
+            r'self\.([a-z_]+)\s*=',
+            inspect.getsource(weewx.station.StationInfo.__init__)))
+        # Not user-facing field material: the formatter/converter are the
+        # rendering machinery, and stn_info is the delegation target itself.
+        plumbing = {'formatter', 'converter', 'stn_info'}
+        surface = (own | delegated) - plumbing
+        assert 'uptime' in surface and 'hardware' in surface, sorted(surface)
+        assert len(surface) >= 12, sorted(surface)
+
+        text = self.doc_text('station-fields.md')
+        listed = {m.lstrip('.') for m in
+                  re.findall(r'`(?:station\.)?([a-z_]+)`', text)}
+        missing = sorted(a for a in surface if a not in listed)
+        self.assertEqual(missing, [],
+                         'station-fields.md does not mention $station.%s'
+                         % (missing[0] if missing else ''))
+
+    def test_troubleshooting_documents_every_logged_error(self):
+        # Every log.error is something the user can act on, and the log is
+        # where they meet it -- so each must be findable in the manual by the
+        # text they actually see.  Before this table existed the page said
+        # "check the log" four times and quoted no message at all.
+        #
+        # Compared on the message's literal PREFIX (the text before the first
+        # %s), because the page shows placeholders as <name> rather than the
+        # format spec.
+        text = ' '.join(self.doc_text('troubleshooting.md').split())
+        for msg in self.logged_messages()['error']:
+            # The literal text before the first placeholder.  A trailing
+            # "Exception:" is dropped: the page renders the exception itself
+            # as prose ("the exception follows on the same line") rather than
+            # quoting a label with nothing after it.
+            prefix = msg.split('%')[0].strip()
+            prefix = re.sub(r'\s*Exception:$', '', prefix)
+            # Normalize the needle too: log strings carry the house
+            # two-spaces-between-sentences, and the haystack was collapsed.
+            prefix = ' '.join(prefix.split())
+            self.assertIn(prefix, text,
+                          'troubleshooting.md does not document the error '
+                          'the user will see: %r' % msg)
+
+    def test_troubleshooting_invents_no_log_messages(self):
+        # The other direction: a message quoted in the manual that the code
+        # cannot emit sends the reader hunting for a string that will never
+        # appear.  Every backticked line in the log tables must be real.
+        # Only the log tables: the page's first table lists the sample
+        # panel's LIVE/OFFLINE indicator states, which are javascript strings
+        # rather than anything loopdata.py logs.
+        section = self.doc_text('troubleshooting.md').split(
+            '## What LoopData writes to the log')
+        self.assertEqual(len(section), 2, 'log section heading not found')
+        quoted = re.findall(r'^\|\s*`([^`]+)`\s*\|', section[1], re.M)
+        assert len(quoted) >= 12, quoted   # landmark: the tables were parsed
+        emitted = [m for msgs in self.logged_messages().values() for m in msgs]
+        for row in quoted:
+            # A row may show several related messages ("a`, `b, ...");
+            # check each, and compare on the literal prefix as above.
+            for shown in re.split(r'`,\s*`', row):
+                shown = shown.split('<')[0].split('…')[0].strip().rstrip(',')
+                if not shown:
+                    continue
+                self.assertTrue(
+                    any(m.split('%')[0].strip().startswith(shown)
+                        or shown.startswith(m.split('%')[0].strip())
+                        for m in emitted),
+                    'troubleshooting.md quotes a log message no code emits: %r'
+                    % shown)
+
+    def test_version_is_in_lockstep(self):
+        # Three places, and skin.conf's copy shipped stale at 3.9 through the
+        # 4.0 release.  The manual's own "describes X and later" line is
+        # deliberately NOT pinned here: it names the oldest version the
+        # manual covers, which is not the current version.
+        version = user.loopdata.LOOP_DATA_VERSION
+        self.assertRegex(version, r'^\d+\.\d+(\.\d+)?$')
+        self.assertIn("version = \"%s\"" % version, self.repo_text('install.py'))
+        skin = configobj.ConfigObj(
+            os.path.join(self.I18N_SKIN_DIR, 'skin.conf'),
+            encoding='utf-8', file_error=True)
+        self.assertEqual(skin['Extras']['version'], version)
+        # changes.txt must carry a heading for the shipping version, and it
+        # must be the FIRST one (entries are newest-first under the file's
+        # own title block).
+        headings = re.findall(r'^(\d+\.\d+(?:\.\d+)?)\s',
+                              self.repo_text('changes.txt'), re.M)
+        assert len(headings) >= 5, headings   # landmark: the file was parsed
+        self.assertEqual(headings[0], version,
+                         'changes.txt leads with %s, not %s'
+                         % (headings[0], version))
 
 
 if __name__ == '__main__':

@@ -94,6 +94,25 @@ SPEC_TESTS = [
     'test_i18n_no_conf_is_complete',
     'test_i18n_sv_conf_is_complete',
     'test_i18n_lang_files_in_step_with_siblings',
+    # Manual/code lockstep audits: these read repo sources (the docs, the
+    # installer, skin.conf, changes.txt) and compare them against the code's
+    # own tables -- never against loopdata output -- so they are spec-derived.
+    'test_manual_heading_slug_rule',
+    'test_manual_internal_links_and_anchors_resolve',
+    'test_manual_page_furniture',
+    'test_published_manual_urls_are_not_trailing_slash',
+    'test_manual_theme_is_pinned_and_uncredited',
+    'test_manual_documents_every_config_option',
+    'test_manual_sample_config_matches_the_installer',
+    'test_manual_field_grammar_matches_the_code',
+    'test_manual_almanac_cache_tiers_match_the_code',
+    'test_manual_documents_every_skin_extra',
+    'test_manual_language_list_matches_the_shipped_lang_files',
+    'test_manual_windrose_defaults_match_the_code',
+    'test_station_fields_page_lists_the_real_station_surface',
+    'test_troubleshooting_documents_every_logged_error',
+    'test_troubleshooting_invents_no_log_messages',
+    'test_version_is_in_lockstep',
 ]
 
 suite = unittest.TestSuite([T.ProcessPacketTests(name) for name in SPEC_TESTS])

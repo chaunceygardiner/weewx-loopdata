@@ -1,10 +1,14 @@
 ---
 title: The live windrose
 layout: default
-nav_order: 5
+nav_order: 7
 ---
 
 # The live windrose
+
+[weewx-loopdata manual](https://chaunceygardiner.github.io/weewx-loopdata/) · [weewx-loopdata on GitHub](https://github.com/chaunceygardiner/weewx-loopdata) · [Report an issue](https://github.com/chaunceygardiner/weewx-loopdata/issues)
+
+---
 
 In addition to the usual observation types (which include `windrun`), there
 is a special `windrose` observation type (new in 6.0, replacing the

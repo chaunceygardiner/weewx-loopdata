@@ -1,10 +1,14 @@
 ---
 title: The sample skin
 layout: default
-nav_order: 9
+nav_order: 10
 ---
 
 # The sample skin
+
+[weewx-loopdata manual](https://chaunceygardiner.github.io/weewx-loopdata/) · [weewx-loopdata on GitHub](https://github.com/chaunceygardiner/weewx-loopdata) · [Report an issue](https://github.com/chaunceygardiner/weewx-loopdata/issues)
+
+---
 
 A sample skin (`skins/LoopData`, registered as the report `LoopDataReport`)
 is included with the extension.  After installing and restarting, and after
@@ -58,8 +62,9 @@ any fields other pages of yours use) and restart weewxd.
 ## Translations
 
 As of 6.4 the page is translatable through WeeWX lang files, and eight
-languages ship (`lang = de` on the report's stanza selects German; the
-full list is in [Translations](i18n.html)).  Two languages meet on a
+translations ship (a ninth lang file, `en.conf`, is the English reference
+dictionary).  `lang = de` on the report's stanza selects German; the full
+list is in [Translations](i18n.html).  Two languages meet on a
 loopdata page — the page's labels follow this report's `lang`, the live
 values follow the `[LoopData]` target report's — see
 [Translations](i18n.html) for the mechanism and the coupling.
@@ -70,10 +75,16 @@ In the skin's `[Extras]` (see `skins/LoopData/skin.conf`):
 
 * `loop_data_file` — the URL the page polls for the json file (default
   `../loop-data.txt`, matching the default `loop_data_dir = .`).
-* `expiration_time` — hours after which the page stops polling (so
-  abandoned browser tabs don't poll forever).
+* `refresh_rate` — seconds between polls (default `2`).  Set it to your
+  station's loop frequency; polling faster than the file is rewritten just
+  re-reads the same json.
+* `expiration_time` — hours after which the page stops polling (default
+  `4`), so abandoned browser tabs don't poll forever.  A click restarts it.
 * `page_update_pwd` — loading the page as `?pageUpdate=<page_update_pwd>`
-  exempts it from expiration (for a kiosk display).
+  exempts it from expiration (for a kiosk display).  Note the URL parameter
+  is `pageUpdate`, while the option that sets its expected value is
+  `page_update_pwd`.  This password is visible to anyone reading the page
+  source.
 
 ## Files to crib from
 

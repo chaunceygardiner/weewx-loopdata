@@ -1,19 +1,21 @@
 ---
 title: Field reference
 layout: default
-nav_order: 4
+nav_order: 6
 ---
 
 # Field reference
 
+[weewx-loopdata manual](https://chaunceygardiner.github.io/weewx-loopdata/) · [weewx-loopdata on GitHub](https://github.com/chaunceygardiner/weewx-loopdata) · [Report an issue](https://github.com/chaunceygardiner/weewx-loopdata/issues)
+
+---
+
 Every entry on the `fields` line of `[LoopData] [[Include]]` is a WeeWX
 report tag with the `$` removed, and becomes a key in loop-data.txt — the
-key is the field entry verbatim.  Generally, if you can specify a field in a
-Cheetah template, and that field begins with `$current`, `$trend`, `$hour`,
-`$day`, `$week`, `$month`, `$year`, or `$rainyear`, you can specify it here
-(without the dollar sign).  For all time, use `alltime`.  Rolling-window
-periods are also available: any number of minutes from `1m` through `1440m`
-and any number of hours from `1h` through `24h`.
+key is the field entry verbatim.  As a rule, a tag that works in a Cheetah
+template works here too, minus the dollar sign; LoopData adds the
+rolling-window periods, which reports have no equivalent of, and spells
+`$alltime` as `alltime`.
 
 Three field families follow their own grammars and have their own pages:
 [almanac fields](almanac-fields.html) (`almanac.sunrise`, ...),
@@ -234,7 +236,7 @@ If a field is requested but the data is missing — say a trend before enough
 packets have arrived, or an observation the station doesn't report — the
 field will not be present in loop-data.txt.  Your javascript should expect
 absent keys and react accordingly (see
-[Building a live page](build-a-live-page.html#handle-missing-fields)).
+[Building a live page](build-a-live-page.html#5-handle-missing-fields)).
 
 The exception: `string()`, or an explicit `None_string` argument to any
 formatting call, overrides the omission.  The field is then always emitted,

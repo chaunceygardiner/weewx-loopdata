@@ -1,10 +1,14 @@
 ---
 title: Syncing to a remote server
 layout: default
-nav_order: 11
+nav_order: 12
 ---
 
 # Syncing to a remote server
+
+[weewx-loopdata manual](https://chaunceygardiner.github.io/weewx-loopdata/) · [weewx-loopdata on GitHub](https://github.com/chaunceygardiner/weewx-loopdata) · [Report an issue](https://github.com/chaunceygardiner/weewx-loopdata/issues)
+
+---
 
 If weewxd and your web server are the same machine, you don't need any of
 this — just write loop-data.txt somewhere the web server serves.  If your

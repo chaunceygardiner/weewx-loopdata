@@ -6,16 +6,23 @@ nav_order: 2
 
 # Installation
 
+[weewx-loopdata manual](https://chaunceygardiner.github.io/weewx-loopdata/) · [weewx-loopdata on GitHub](https://github.com/chaunceygardiner/weewx-loopdata) · [Report an issue](https://github.com/chaunceygardiner/weewx-loopdata/issues)
+
+---
+
 **Requirements:** Python 3.7 or later and WeeWX 4 or 5.  No third-party
 Python packages are needed.  (Versions 3.0 through 3.9 required
-`sortedcontainers`; as of 4.0 it is no longer used.)
+`sortedcontainers`; as of 4.0 it is no longer used.)  Python 3.7 is the
+floor because LoopData's code carries type annotations, which do not work
+under Python 2 nor under earlier versions of Python 3.
 
 {: .important }
-This extension has been tested with the WeeWX vantage and cc3000 drivers.  It
-will likely also work with other drivers that, like the two drivers tested,
-report loop packets on a regular basis and report all observations on every
-loop packet.  Use loopdata with drivers that report loop packets on an
-irregular basis and/or report partial observations, at your own risk.
+LoopData is targeted at drivers that report loop packets on a regular
+cadence, with all observations present in every packet.  It has been tested
+with the WeeWX vantage and cc3000 drivers and will likely work with any
+other driver of that kind.  Drivers that report irregularly or send partial
+packets are untested: time-weighted aggregates assume the steady cadence set
+in `[[LoopFrequency]] seconds`.
 
 ## WeeWX 5
 
@@ -51,6 +58,11 @@ irregular basis and/or report partial observations, at your own risk.
    [First-time configuration](#first-time-configuration) below).
 
 1. Restart WeeWX.
+
+{: .note }
+Already running an older loopdata?  The command is the same, and your
+`[LoopData]` section is preserved — but some releases need a change to it.
+See [Upgrading](upgrading.html).
 
 ## First-time configuration
 

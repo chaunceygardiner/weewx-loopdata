@@ -1,6 +1,35 @@
 loopdata change history
 -----------------------
 
+Unreleased
+----------
+- The manual and README have been overhauled.  The manual gains an
+  Upgrading page that gathers the action-required items previously
+  scattered across four pages, and the README is now a front door that
+  deep-links into the manual rather than duplicating it.  The
+  [[RsyncSpec]] remote_port option is documented for the first time --
+  the code has always read it -- and so is [Extras] refresh_rate.  The
+  driver-support note now says what a mismatched driver actually costs
+  (windrun and the other time integrals, not the averages) instead of
+  "at your own risk".  The two items below came out of that review.
+- The German and French translations are marked Beta again.  The
+  manual described both as native-speaker reviewed, and 6.6 declared
+  the French out of Beta, on the strength of reviews that covered the
+  vocabulary this skin shares with weewx-skyfield and weewx-celestial
+  -- body names, moon phases, compass ordinates and the constellation
+  names -- which is copied verbatim from those files.  Those reviews
+  did not cover the strings only this skin renders: of the 36 [Texts]
+  keys in lang/de.conf, 7 are shared and 29 are loopdata's own,
+  including every gauge heading and all nine trend.barometer.desc
+  descriptions.  The translations themselves are unchanged; only the
+  claim made about them is.  Corrections welcome.
+- The sample skin's skin.conf comments are corrected.  The URL
+  parameter that keeps a page auto-updating is pageUpdate, not
+  page_update_pwd as the comment had said since the sample skin
+  shipped in 2.6 -- a reader who followed the comment would have had
+  the page time out on them.  The lang comment, four releases stale,
+  now lists all eight translations, and two typos are fixed.
+
 6.9 2026/08/08
 --------------
 - A next_* almanac field now expires the moment its event's own instant

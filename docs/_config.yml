@@ -6,9 +6,12 @@ description: >-
 url: "https://chaunceygardiner.github.io"
 baseurl: "/weewx-loopdata"
 
-remote_theme: just-the-docs/just-the-docs
+remote_theme: just-the-docs/just-the-docs@v0.12.0
 plugins:
   - jekyll-remote-theme
+  # GitHub Pages enables this one by default; naming it explicitly is what
+  # makes .md cross-links resolve in a LOCAL build too.
+  - jekyll-relative-links
 
 search_enabled: true
 heading_anchors: true
