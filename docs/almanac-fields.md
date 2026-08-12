@@ -10,13 +10,13 @@ nav_order: 8
 
 ---
 
-Any WeeWX report almanac tag can be listed as a field: write the tag as it
-would appear in a Cheetah template, with the `$` removed.  The values are
+Any WeeWX report almanac tag can be listed as a field (5.0): write the tag
+as it would appear in a Cheetah template, with the `$` removed.  The values are
 computed with whatever almanac WeeWX has registered —
 [weewx-skyfield](https://github.com/chaunceygardiner/weewx-skyfield) for the
 full Skyfield experience, PyEphem if installed, or WeeWX's built-in fallback
 (sunrise, sunset and moon phase only) — and are converted and formatted per
-the target report, exactly as the report tag would render.  New in 5.0.
+the target report, exactly as the report tag would render.
 
 Examples:
 

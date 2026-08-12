@@ -10,10 +10,10 @@ nav_order: 9
 
 ---
 
-Any `$station` report tag can be listed as a field, written with the `$`
-removed.  The values are evaluated against the exact object behind the
+Any `$station` report tag can be listed as a field (6.3), written with the
+`$` removed.  The values are evaluated against the exact object behind the
 report tag (`weewx.station.Station`), so they render as the report would
-render them.  New in 6.3.
+render them.
 
 Examples:
 
