@@ -35,6 +35,19 @@ The [sample skin](sample-skin.html) diagnoses its own data feed:
 
 A later successful poll rewrites the indicator to LIVE.
 
+## `loop-data.txt` stopped being written, and the log shows a traceback
+
+If the traceback ends in a
+`TypeError` about an `unexpected keyword argument 'texts'`, you are
+running a WeeWX earlier than 5.3 with a loopdata earlier than 6.10 and at
+least one [almanac field](almanac-fields.html) in your fields line.  WeeWX
+5.3 renamed the argument LoopData passes the almanac, and older versions
+reject it — the LoopData thread stops at the first loop packet, though
+weewxd itself keeps running, so a page just freezes at its last values.
+Upgrade to loopdata 6.10 or later, which passes whichever argument the
+running WeeWX takes; dropping the almanac fields from your fields line
+also clears it.
+
 ## The panel shows readouts but no needles, bands or windrose
 
 You upgraded to 6.0+ and kept a pre-6.0 fields line.  Upgrades keep your

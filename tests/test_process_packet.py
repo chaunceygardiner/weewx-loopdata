@@ -2097,7 +2097,11 @@ class ProcessPacketTests(unittest.TestCase):
         temperature_c = weewx.units.convert(
             weewx.units.as_value_tuple(pkt, 'outTemp'), 'degree_C')[0]
         oracle = weewx.almanac.Almanac(pkt['dateTime'], 37.4, -122.1, altitude=20.0,
-            temperature=temperature_c, texts={}, formatter=cfg.formatter, converter=cfg.converter)
+            temperature=temperature_c, formatter=cfg.formatter, converter=cfg.converter,
+            # texts= only exists from WeeWX 5.3; spell it as the running
+            # WeeWX takes it, so this test runs where the fix matters.
+            **user.loopdata.AlmanacFieldEvaluator.build_texts_kwargs(
+                weewx.almanac.Almanac, {}))
 
         self.assertEqual(loopdata_pkt['current.outTemp'], '77.4°F')
         self.assertEqual(loopdata_pkt['almanac.sunrise'], str(oracle.sunrise))
@@ -2120,6 +2124,45 @@ class ProcessPacketTests(unittest.TestCase):
                 loopdata_pkt['almanac.sunrise.raw'])
             self.assertEqual(loopdata_pkt['almanac.sun.visible.second.raw'],
                 oracle.sun.visible.second.raw)
+
+    def test_almanac_texts_kwargs_match_weewx_signature(self) -> None:
+        """The Almanac constructor's language argument is spelled texts=
+        from WeeWX 5.3 on and moon_phases= before it; loopdata must pass
+        whichever the running WeeWX takes (issue #15 -- texts= on a 5.2
+        Almanac is a TypeError, so every almanac field died there)."""
+        phases = ['New', 'Waxing crescent', 'First quarter', 'Waxing gibbous',
+                  'Full', 'Waning gibbous', 'Last quarter', 'Waning crescent']
+        texts = {'moon_phases': phases, 'mars': 'Mars'}
+        build = user.loopdata.AlmanacFieldEvaluator.build_texts_kwargs
+
+        class ModernAlmanac(object):
+            """WeeWX 5.3 and later."""
+            def __init__(self, time_ts, lat, lon, altitude=None, temperature=None,
+                    pressure=None, horizon=None, texts=None, moon_phases=None,
+                    formatter=None, converter=None) -> None:
+                pass
+
+        class LegacyAlmanac(object):
+            """WeeWX 5.2 and earlier."""
+            def __init__(self, time_ts, lat, lon, altitude=None, temperature=None,
+                    pressure=None, horizon=None, moon_phases=None,
+                    formatter=None, converter=None) -> None:
+                pass
+
+        self.assertEqual(build(ModernAlmanac, texts), {'texts': texts})
+        # Pre-5.3 takes the phase names alone; the rest of the section has
+        # nowhere to go.
+        self.assertEqual(build(LegacyAlmanac, texts), {'moon_phases': phases})
+        # ...and nothing at all when the report does not override them, so
+        # WeeWX's own default (weeutil.Moon.moon_phases) stands, exactly as
+        # it would for a report on that version.
+        self.assertEqual(build(LegacyAlmanac, {'mars': 'Mars'}), {})
+
+        # Whatever WeeWX is installed, what gets built is accepted by it and
+        # lands where the phase names belong.
+        almanac = weewx.almanac.Almanac(1593630000, 37.4, -122.1,
+            **build(weewx.almanac.Almanac, texts))
+        self.assertEqual(almanac.moon_phases, phases)
 
     def test_parse_station_field(self) -> None:
         parse = user.loopdata.LoopData.parse_station_field

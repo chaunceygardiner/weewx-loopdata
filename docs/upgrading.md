@@ -87,6 +87,10 @@ a restart.  Details, and the aggregates the new type adds, are under
 
 ## Worth knowing, but nothing to do
 
+* **6.10** — almanac fields work again on WeeWX earlier than 5.3.  If yours
+  stopped writing `loop-data.txt` and left a `TypeError` traceback in the
+  log, this release is the fix; see
+  [Troubleshooting](troubleshooting.html#loop-datatxt-stopped-being-written-and-the-log-shows-a-traceback).
 * **6.9** — a `next_*` almanac field now expires when its event's instant
   passes rather than at midnight, so an in-progress satellite pass rolls to
   the following one the moment it sets.  A day- or event-tier field that

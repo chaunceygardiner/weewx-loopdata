@@ -13,6 +13,7 @@ in the packet.
 import ast
 import copy
 import configobj
+import inspect
 import itertools
 import json
 import logging
@@ -55,7 +56,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '6.9'
+LOOP_DATA_VERSION = '6.10'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -2795,6 +2796,32 @@ class AlmanacFieldEvaluator:
         self.group_expiry: Dict[str, float] = {}  # group key -> cached event's governing instant (epoch)
         self.cache_day: Optional[date] = None
         self.warned: Set[str] = set()
+        # How this WeeWX's Almanac takes the target report's [Almanac]
+        # section.  Settled once here: the section does not change while
+        # weewxd runs, so the packet path just splats the result.
+        self.texts_kwargs = AlmanacFieldEvaluator.build_texts_kwargs(
+            weewx.almanac.Almanac, self.texts)
+
+    @staticmethod
+    def build_texts_kwargs(almanac_class: Any, texts: Dict[str, Any]) -> Dict[str, Any]:
+        """The Almanac constructor's language argument, spelled for the
+        running WeeWX.  WeeWX 5.3 added texts=, which takes the whole
+        [Almanac] section (moon_phases, body names, constellation names);
+        before that the constructor took only moon_phases=, the eight phase
+        names alone, and passing texts= to it is a TypeError.  Ask the
+        signature rather than weewx.__version__: the question is precisely
+        which parameters exist.
+
+        On a pre-5.3 WeeWX the phase names are all that can be passed, and
+        only when the target report overrides them -- passing nothing leaves
+        WeeWX's own default (weeutil.Moon.moon_phases) in place, which is
+        what a report on that version does too."""
+        parameters = inspect.signature(almanac_class.__init__).parameters
+        if 'texts' in parameters:
+            return {'texts': texts}
+        if 'moon_phases' in parameters and 'moon_phases' in texts:
+            return {'moon_phases': texts['moon_phases']}
+        return {}
 
     @staticmethod
     def shift_days(time_ts: float, days: int) -> float:
@@ -2826,9 +2853,9 @@ class AlmanacFieldEvaluator:
             altitude    = self.altitude_m,
             temperature = temperature_c,
             pressure    = pressure_mbar,
-            texts       = self.texts,
             formatter   = self.formatter,
-            converter   = self.converter)
+            converter   = self.converter,
+            **self.texts_kwargs)
 
     def evaluate(self, almanac_field: AlmanacField, base_almanac: weewx.almanac.Almanac,
             pkt_time: int) -> Any:

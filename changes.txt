@@ -1,8 +1,24 @@
 loopdata change history
 -----------------------
 
-Unreleased
-----------
+6.10 2026/08/13
+---------------
+- Almanac fields work again on WeeWX earlier than 5.3.  WeeWX 5.3
+  renamed the Almanac constructor's language argument: it now takes
+  texts (the target report's whole [Almanac] section -- moon phases,
+  body names, constellation names), where earlier versions took
+  moon_phases, the eight phase names alone.  Since almanac fields
+  shipped in 5.0 loopdata has passed texts unconditionally, which is a
+  TypeError on WeeWX 4.x through 5.2: at the first loop packet the
+  LoopData thread logged a traceback and stopped, and loop-data.txt was
+  never written again -- weewxd itself kept running, so the only signs
+  were the traceback in the log and a page frozen at its last values.
+  A fields line with no almanac field never built an Almanac and was
+  unaffected.  loopdata now asks the Almanac constructor which spelling
+  it takes and passes that one; on a pre-5.3 WeeWX it passes the moon
+  phases when the target report overrides them and otherwise leaves
+  WeeWX's own default in place -- what a report on that version does.
+  Reported by bellrichm (issue #15), running 5.2.
 - The manual and README have been overhauled.  The manual gains an
   Upgrading page that gathers the action-required items previously
   scattered across four pages, and the README is now a front door that

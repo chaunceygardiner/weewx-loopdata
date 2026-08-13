@@ -28,6 +28,7 @@ SPEC_TESTS = [
     'test_almanac_unit_segment',
     'test_almanac_autocall_parity',
     'test_almanac_field_end_to_end',
+    'test_almanac_texts_kwargs_match_weewx_signature',
     'test_parse_station_field',
     'test_get_station_fields',
     'test_station_field_evaluator',
