@@ -1,6 +1,20 @@
 loopdata change history
 -----------------------
 
+6.11 2026/08/13
+---------------
+- The sample report's dark theme is higher contrast and much easier to
+  read: white readouts, brighter numerals and labels, a recessed track
+  you can see on every dial, and windrose bands that no longer vanish
+  into the disc.  The field captions lose an opacity that had them
+  under AA for text that size.
+- The windrose is now the same size as the other eleven gauges, with
+  its N/E/S/W letters moved inside the disc.
+- Internal: a test pins the panel's two palettes to each other -- :root
+  in index.html.tmpl and the C object in realtime_updater.inc -- since
+  the canvases cannot read css variables and nothing else stopped the
+  copies drifting.
+
 6.10 2026/08/13
 ---------------
 - Almanac fields work again on WeeWX earlier than 5.3.  WeeWX 5.3

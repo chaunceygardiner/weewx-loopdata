@@ -87,6 +87,14 @@ a restart.  Details, and the aggregates the new type adds, are under
 
 ## Worth knowing, but nothing to do
 
+* **6.11** — the sample report's dark theme is higher contrast: white
+  readouts, a visible recessed track on every dial, a windrose whose calmest
+  band no longer disappears into the disc, and gauge titles and field
+  captions that read as separate things.  Nothing to configure — if you
+  installed the sample skin, the next report cycle looks different.  A skin
+  you copied and customized keeps whatever palette you gave it; the values
+  live in `:root` in `index.html.tmpl` and in the `C` and `RAMP` literals in
+  `realtime_updater.inc`, which must be kept in step.
 * **6.10** — almanac fields work again on WeeWX earlier than 5.3.  If yours
   stopped writing `loop-data.txt` and left a `TypeError` traceback in the
   log, this release is the fix; see

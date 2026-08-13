@@ -129,13 +129,23 @@
   // readout, and unit.label fields pick the dial scales, so the panel obeys
   // the target report's units and formatting like any other loopdata page.
 
+  // Mirrors the :root custom properties in index.html.tmpl -- canvases
+  // cannot read css variables, so the two must be kept in step.  track is
+  // the dial's recessed arc; tick is the quieter grey for minor ticks and
+  // the windrose's reference rings; rim is the face disc's own edge, a
+  // whisper here because the dials read as instruments without it, not
+  // because anything depends on it (the rose matches the dials by
+  // geometry now -- same face radius -- so a louder rim is a free choice).
   var C = {
-    face: '#171d28', track: '#232c3b', ink: '#e8edf4', muted: '#8b96a8',
-    amber: '#f5a83c', steel: '#5b87ad', steelDim: '#33506b'
+    face: '#121a26', track: '#5c718f', tick: '#3a4a63', rim: '#1e2a3a',
+    ink: '#ffffff', muted: '#c6d2e2',
+    amber: '#ffb92e', steel: '#9cceff', steelDim: '#8db0d6'
   };
   var SANS = 'system-ui, -apple-system, sans-serif';
-  // Sequential ramp for the windrose speed bands, dim to bright.
-  var RAMP = ['#24384e', '#33506b', '#44688a', '#5b87ad', '#7ba6c9', '#a3c8e3'];
+  // Sequential ramp for the windrose speed bands, dim to bright.  The floor
+  // clears 3:1 against the face: the calmest band is the biggest segment of
+  // most petals, and it used to disappear into the disc.
+  var RAMP = ['#4a739b', '#5d89b2', '#75a3c8', '#90bcdd', '#aed4ef', '#d2ecff'];
 
   // Dial scales by the report's unit, keyed off the unit.label fields.
   function tempScale(label) {
@@ -231,7 +241,7 @@
     ctx.arc(cx, cy, r, 0, 2 * Math.PI);
     ctx.fillStyle = C.face;
     ctx.fill();
-    ctx.strokeStyle = C.track;
+    ctx.strokeStyle = C.rim;
     ctx.lineWidth = 1;
     ctx.stroke();
   }
@@ -309,7 +319,7 @@
       ctx.beginPath();
       ctx.moveTo(cx + (rt - 9) * Math.cos(a), cy + (rt - 9) * Math.sin(a));
       ctx.lineTo(cx + (rt - 9 - len) * Math.cos(a), cy + (rt - 9 - len) * Math.sin(a));
-      ctx.strokeStyle = major ? C.muted : C.track;
+      ctx.strokeStyle = major ? C.muted : C.tick;
       ctx.lineWidth = major ? 1.5 : 1;
       ctx.stroke();
       if (major) {
@@ -323,7 +333,7 @@
     if (cfg.value !== undefined) {
       var na = dialAngle(cfg, cfg.value);
       ctx.save();
-      ctx.shadowColor = 'rgba(245, 168, 60, 0.45)';
+      ctx.shadowColor = 'rgba(255, 185, 46, 0.55)';
       ctx.shadowBlur = 6;
       ctx.beginPath();
       ctx.moveTo(cx - 14 * Math.cos(na), cy - 14 * Math.sin(na));
@@ -372,7 +382,7 @@
       ctx.moveTo(cx + rt * Math.cos(a), cy + rt * Math.sin(a));
       ctx.lineTo(cx + (rt - (major ? 8 : 4)) * Math.cos(a),
                  cy + (rt - (major ? 8 : 4)) * Math.sin(a));
-      ctx.strokeStyle = major ? C.muted : C.track;
+      ctx.strokeStyle = major ? C.muted : C.tick;
       ctx.lineWidth = major ? 1.5 : 1;
       ctx.stroke();
     }
@@ -389,7 +399,7 @@
       var a = compassAngle(deg);
       ctx.save();
       if (glow) {
-        ctx.shadowColor = 'rgba(245, 168, 60, 0.45)';
+        ctx.shadowColor = 'rgba(255, 185, 46, 0.55)';
         ctx.shadowBlur = 6;
       }
       ctx.beginPath();
@@ -444,11 +454,42 @@
   // ---- The NOAA windrose: petals by direction, stacked by speed band. ------
   function drawRose(ctx, rose) {
     var W = ctx.w, H = ctx.h, cx = W / 2, cy = H / 2;
-    // The rose's disc fills its face, so match the face to the dials'
-    // track ring (12 units inside their face) or the rose reads bigger;
-    // the compass letters sit outside the face in the reclaimed margin.
-    var rFace = Math.min(W, H) / 2 - 24;
-    var rMax = rFace - 8;
+    // The rose's face is the dials' face exactly -- both 12 units inside
+    // the canvas -- so the twelve instruments are one size by construction,
+    // whatever the palette does.  (Through 6.10 the face was pulled in to
+    // the dials' TRACK radius instead, matching the boundary the eye read
+    // back when the dials' own face edge was invisible; a palette with a
+    // visible face edge broke that.)  The compass letters move inside, sat
+    // so their outer edge lands on the circle the dials' track ring
+    // occupies, and the petals stop short of them: a petal points straight
+    // at its own letter, so the clearance is purely radial.  What faces the
+    // petal depends on the position, and the two tight ones are the BOTTOM
+    // and the SIDES.  textBaseline 'middle' seats a cap-height glyph with
+    // more of it above the anchor than below, so at the bottom of the disc
+    // that surplus points inward: S clears 2.70 where N, the same glyph
+    // height, clears 5.30.  At E and W the glyph's side faces inward, so
+    // the widest letter is as tight as the bottom one -- W clears 2.65.
+    // Worst is that S/W pair at about 3.3 units -- the letter's ink, skirt
+    // included, against the petals' outer arc at rMax -- in all nine shipped
+    // languages, the petals keeping the reach they have had since 6.0.
+    // Measure by rendering the rose three times through this function --
+    // normally, with CARDINALS blanked, with no petals -- and diffing, so
+    // anti-aliased skirts count as ink rather than being thresholded away.
+    // Two traps, both of which have produced a wrong answer here: sweep the
+    // petal's whole +/-8.2 degree span, because a glyph with a hollow centre
+    // (N, O) reads far clearer than it is on the cardinal's centre ray
+    // alone; and do not take the with-minus-without-petals diff as petal
+    // ink, because each segment is stroked 2px in the FACE colour and where
+    // that covers a reference ring it registers as ~1.5 units of reach that
+    // is invisible and eats no clearance.  weewx-liveseasons, which carries
+    // this same panel, measures 3.0 to 3.4 across its responsive canvas
+    // sizes; canvas size moves the figure only slightly.  Measured off the rendered canvas, not
+    // estimated; re-measure before moving either radius, and note the
+    // ordinates come from the TARGET report, so a custom one can serve any
+    // glyph it likes.
+    var rFace = Math.min(W, H) / 2 - 12;
+    var rLetter = rFace - 11;
+    var rMax = rFace - 20;
     var rCalm = 22;
     ctx.clearRect(0, 0, W, H);
     face(ctx, cx, cy, rFace);
@@ -466,7 +507,7 @@
     });
 
     // Recessive reference rings.
-    ctx.strokeStyle = C.track;
+    ctx.strokeStyle = C.tick;
     ctx.lineWidth = 1;
     [1 / 3, 2 / 3, 1].forEach(function (f) {
       ctx.beginPath();
@@ -501,14 +542,14 @@
       }
     }
 
-    // Compass letters just outside the face.
+    // Compass letters inside the rim, on the dials' track circle.
     ctx.font = '600 11px ' + SANS;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     CARDINALS.forEach(function (d, i) {
       var a = rad(i * 90 - 90);
       ctx.fillStyle = i === 0 ? C.ink : C.muted;
-      ctx.fillText(d, cx + (rFace + 12) * Math.cos(a), cy + (rFace + 12) * Math.sin(a));
+      ctx.fillText(d, cx + rLetter * Math.cos(a), cy + rLetter * Math.sin(a));
     });
 
     // Calm share, center.

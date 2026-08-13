@@ -94,5 +94,11 @@ In the skin's `[Extras]` (see `skins/LoopData/skin.conf`):
   LIVE/OFFLINE/NO DATA/BAD DATA indicator, the expiration timer, and the
   canvas gauge and windrose rendering.
 
+The palette lives in two places that must be kept in step: the `:root`
+custom properties in `index.html.tmpl` for the html, and the `C` and `RAMP`
+literals in `realtime_updater.inc` for the canvases, which cannot read css
+variables.  Retune it freely — the windrose and the dials share a face
+radius, so they read as one size whatever you do to the colors.
+
 [Building a live page](build-a-live-page.html) walks through the same
 pattern for your own skin.

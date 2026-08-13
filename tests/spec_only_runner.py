@@ -85,6 +85,7 @@ SPEC_TESTS = [
     'test_windrose_end_to_end',
     'test_i18n_en_conf_ships_exactly_what_renders',
     'test_i18n_javascript_lookups_match_the_t_feed',
+    'test_skin_palette_kept_in_step',
     'test_i18n_lang_files_consistent',
     'test_i18n_de_conf_is_complete',
     'test_i18n_fr_conf_is_complete',

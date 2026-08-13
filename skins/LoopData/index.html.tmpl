@@ -16,15 +16,23 @@
     #end if
     <meta name="description" content="$gettext('Up to date weather readings for {location}.').format(location=$station.location)">
     <style>
+      /* The panel's palette, mirrored by the C object in
+         realtime_updater.inc (the canvases cannot read these).  --rim is
+         the dial face's own edge, kept a whisper because the track ring
+         already reads as the instrument's rim; nothing depends on it. */
       :root {
-        --ground: #10141c;
-        --face: #171d28;
-        --track: #232c3b;
-        --ink: #e8edf4;
-        --muted: #8b96a8;
-        --amber: #f5a83c;
-        --steel: #5b87ad;
-        --steel-dim: #33506b;
+        --ground: #000206;
+        --face: #121a26;
+        --track: #5c718f;
+        --tick: #3a4a63;
+        --rim: #1e2a3a;
+        --ink: #ffffff;
+        --muted: #c6d2e2;
+        --heading: #dbe4f0;
+        --fields: #aab6c8;
+        --amber: #ffb92e;
+        --steel: #9cceff;
+        --steel-dim: #8db0d6;
       }
       html, body { background: var(--ground); }
       body {
@@ -62,7 +70,7 @@
       .gauge h2 {
         font-size: clamp(11px, 0.9vw, 16px); font-weight: 600;
         letter-spacing: 0.22em;
-        text-transform: uppercase; margin: 0; color: var(--muted);
+        text-transform: uppercase; margin: 0; color: var(--heading);
       }
       /* The gauges scale with the window: the engine draws in a 240-unit
          coordinate system stretched to the css size, so a wide window gets
@@ -82,8 +90,8 @@
         display: inline-block; border-radius: 2px;
       }
       .fields {
-        font-size: clamp(11px, 0.8vw, 14px); color: var(--muted);
-        opacity: 0.75; line-height: 1.7;
+        font-size: clamp(11px, 0.8vw, 14px); color: var(--fields);
+        line-height: 1.7;
         margin: 0; text-align: center; max-width: 100%;
         font-family: ui-monospace, Menlo, Consolas, monospace;
       }

@@ -7702,6 +7702,63 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(sorted(fmt_keys - t_keys), [], 'fmt key never fed into T')
         self.assertEqual(sorted(t_keys - fmt_keys), [], 'T entry no fmt call reads')
 
+    # Roles the html needs but no canvas draws: the page ground, and the
+    # two greys 6.11 split out of --muted for html-only text.
+    PALETTE_CSS_ONLY = {'ground', 'heading', 'fields'}
+
+    def test_skin_palette_kept_in_step(self):
+        # The panel's palette is declared twice -- as :root custom
+        # properties for the html, and as the C object for the canvases,
+        # which cannot read css variables -- so nothing but a test stops
+        # the two from drifting.  Pin them both ways: every canvas colour
+        # must have a css declaration with the same value, and the css
+        # must declare exactly the canvas roles plus the html-only ones,
+        # so adding a colour to one side alone fails here.
+        with open(os.path.join(self.I18N_SKIN_DIR, 'index.html.tmpl'),
+                  encoding='utf-8') as f:
+            template = f.read()
+        with open(os.path.join(self.I18N_SKIN_DIR, 'realtime_updater.inc'),
+                  encoding='utf-8') as f:
+            include = f.read()
+
+        root = re.search(r':root\s*\{(.*?)\}', template, re.DOTALL)
+        self.assertIsNotNone(root, 'no :root block in index.html.tmpl')
+        css = dict(re.findall(r'--([\w-]+)\s*:\s*(#[0-9a-fA-F]{3,8})\s*;',
+                              root.group(1)))
+        self.assertTrue(css)
+
+        block = re.search(r'\bvar C = \{(.*?)\};', include, re.DOTALL)
+        self.assertIsNotNone(block, 'no C palette object in realtime_updater.inc')
+        canvas = dict(re.findall(r"(\w+)\s*:\s*'(#[0-9a-fA-F]{3,8})'",
+                                 block.group(1)))
+        self.assertTrue(canvas)
+
+        # camelCase on the canvas side, kebab-case in css (steelDim/steel-dim).
+        def css_name(key: str) -> str:
+            return re.sub(r'([a-z])([A-Z])', r'\1-\2', key).lower()
+
+        for key, value in canvas.items():
+            name = css_name(key)
+            self.assertIn(name, css, 'C.%s has no --%s declaration' % (key, name))
+            self.assertEqual(css[name].lower(), value.lower(),
+                             '--%s and C.%s disagree' % (name, key))
+        self.assertEqual(
+            sorted(set(css) - {css_name(k) for k in canvas}),
+            sorted(self.PALETTE_CSS_ONLY),
+            'css declares a colour no canvas draws (or an html-only role went away)')
+
+        # The needle's glow is a third copy of the amber, spelled rgba;
+        # it has to track --amber or the lamp glow stops matching the lamp.
+        glows = set(re.findall(r'shadowColor\s*=\s*\'rgba\(([^)]+)\)\'', include))
+        self.assertTrue(glows)
+        amber = canvas['amber'].lstrip('#')
+        expected = tuple(int(amber[i:i + 2], 16) for i in (0, 2, 4))
+        for glow in glows:
+            channels = [p.strip() for p in glow.split(',')]
+            self.assertEqual(tuple(int(c) for c in channels[:3]), expected,
+                             'needle glow rgba(%s) is not C.amber %s'
+                             % (glow, canvas['amber']))
+
     def test_i18n_lang_files_consistent(self):
         # Every shipped lang file must parse, translate only keys en.conf
         # ships (a stale key would silently never render), keep each value's
