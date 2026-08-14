@@ -55,7 +55,30 @@ existing `[LoopData]` fields line, and the instrument panel reads fields the
 old default never included (`.raw` geometry, `unit.label` scales,
 `day.windrose.*`).  Replace the fields line with the
 [sample configuration](configuration.html#sample-configuration)'s, appending
-any fields other pages of yours use, and restart weewxd.
+any fields other pages of yours use, and restart weewxd.  The same cause can
+cost you a single needle rather than all of them — see below.
+
+## One gauge has no needle, and the others are fine
+
+The panel draws no needle for a value it doesn't have, so that gauge's
+`.raw` field isn't in `loop-data.txt`.
+[What each gauge reads](sample-skin.html#what-each-gauge-reads) lists the
+fields gauge by gauge; look up the missing one and check the file for it.
+
+Two things put it there.  Most often the field isn't in your `fields` line
+at all — the case above, but a hand-tuned fields line can be missing one
+`.raw` field rather than all of them, which costs you one needle instead of
+every needle.  Replace the fields line with the
+[sample configuration](configuration.html#sample-configuration)'s (appending
+any fields other pages of yours use) and restart weewxd.
+
+Otherwise the field is listed but had no value, and a field with no value is
+omitted from `loop-data.txt` entirely (see
+[Missing data](field-reference.html#missing-data)) — the same reason the
+wind compass loses its amber needle while `windDir` is null in a calm.  If
+it never appears, your station isn't reporting that observation in loop
+packets, which is a station or driver matter rather than a LoopData one; the
+`obstypes.current` line LoopData logs at startup says what it does report.
 
 ## A field I listed never appears in loop-data.txt
 

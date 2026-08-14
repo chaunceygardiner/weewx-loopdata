@@ -7703,8 +7703,8 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(sorted(t_keys - fmt_keys), [], 'T entry no fmt call reads')
 
     # Roles the html needs but no canvas draws: the page ground, and the
-    # two greys 6.11 split out of --muted for html-only text.
-    PALETTE_CSS_ONLY = {'ground', 'heading', 'fields'}
+    # grey 6.11 split out of --muted for the gauge titles.
+    PALETTE_CSS_ONLY = {'ground', 'heading'}
 
     def test_skin_palette_kept_in_step(self):
         # The panel's palette is declared twice -- as :root custom

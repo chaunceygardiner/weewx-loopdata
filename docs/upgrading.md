@@ -87,10 +87,13 @@ a restart.  Details, and the aggregates the new type adds, are under
 
 ## Worth knowing, but nothing to do
 
+* **6.11.1** — the sample report no longer prints the loopdata field names
+  under each gauge.  They read as a template that had failed to render;
+  the mapping is now in
+  [What each gauge reads](sample-skin.html#what-each-gauge-reads).
 * **6.11** — the sample report's dark theme is higher contrast: white
   readouts, a visible recessed track on every dial, a windrose whose calmest
-  band no longer disappears into the disc, and gauge titles and field
-  captions that read as separate things.  Nothing to configure — if you
+  band no longer disappears into the disc.  Nothing to configure — if you
   installed the sample skin, the next report cycle looks different.  A skin
   you copied and customized keeps whatever palette you gave it; the values
   live in `:root` in `index.html.tmpl` and in the `C` and `RAMP` literals in

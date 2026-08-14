@@ -29,7 +29,6 @@
         --ink: #ffffff;
         --muted: #c6d2e2;
         --heading: #dbe4f0;
-        --fields: #aab6c8;
         --amber: #ffb92e;
         --steel: #9cceff;
         --steel-dim: #8db0d6;
@@ -89,12 +88,6 @@
         width: clamp(10px, 0.8vw, 15px); height: clamp(10px, 0.8vw, 15px);
         display: inline-block; border-radius: 2px;
       }
-      .fields {
-        font-size: clamp(11px, 0.8vw, 14px); color: var(--fields);
-        line-height: 1.7;
-        margin: 0; text-align: center; max-width: 100%;
-        font-family: ui-monospace, Menlo, Consolas, monospace;
-      }
     </style>
   </head>
   <body>
@@ -117,98 +110,50 @@
           <h2>$gettext("Today's Windrose")</h2>
           <canvas id="gauge-rose" width="240" height="240"></canvas>
           <div class="legend" id="rose-legend"></div>
-          <div class="fields">
-            day.windrose.banded &middot; day.windrose.calm<br>
-            windrose.bands
-          </div>
         </div>
         <div class="gauge">
           <h2>$gettext("Wind")</h2>
           <canvas id="gauge-wind" width="240" height="240"></canvas>
-          <div class="fields">
-            current.windSpeed &middot; current.windDir.raw<br>
-            10m.windGust.max &middot; 10m.wind.gustdir.raw
-          </div>
         </div>
         <div class="gauge">
           <h2>$gettext("Temperature")</h2>
           <canvas id="gauge-temp" width="240" height="240"></canvas>
-          <div class="fields">
-            current.outTemp &middot; current.outTemp.raw<br>
-            day.outTemp.min.raw &middot; day.outTemp.max.raw
-          </div>
         </div>
         <div class="gauge">
           <h2>$gettext("Dew Point")</h2>
           <canvas id="gauge-dew" width="240" height="240"></canvas>
-          <div class="fields">
-            current.dewpoint &middot; current.dewpoint.raw<br>
-            day.dewpoint.min.raw &middot; day.dewpoint.max.raw
-          </div>
         </div>
         <div class="gauge">
           <h2>$gettext("Humidity")</h2>
           <canvas id="gauge-hum" width="240" height="240"></canvas>
-          <div class="fields">
-            current.outHumidity &middot; current.outHumidity.raw<br>
-            day.outHumidity.min.raw &middot; day.outHumidity.max.raw
-          </div>
         </div>
         <div class="gauge">
           <h2>$gettext("Barometer")</h2>
           <canvas id="gauge-baro" width="240" height="240"></canvas>
-          <div class="fields">
-            current.barometer &middot; trend.barometer.raw<br>
-            trend.barometer.desc
-          </div>
         </div>
         <div class="gauge">
           <h2>$gettext("Rain")</h2>
           <canvas id="gauge-rain" width="240" height="240"></canvas>
-          <div class="fields">
-            day.rain.sum &middot; day.rain.sum.raw<br>
-            current.rainRate
-          </div>
         </div>
         <div class="gauge">
           <h2>$gettext("Rain Rate")</h2>
           <canvas id="gauge-rrate" width="240" height="240"></canvas>
-          <div class="fields">
-            current.rainRate &middot; current.rainRate.raw<br>
-            day.rainRate.max
-          </div>
         </div>
         <div class="gauge" id="cell-feel">
           <h2>$gettext("Feels Like")</h2>
           <canvas id="gauge-feel" width="240" height="240"></canvas>
-          <div class="fields">
-            current.appTemp &middot; current.appTemp.raw<br>
-            day.appTemp.min.raw &middot; day.appTemp.max.raw
-          </div>
         </div>
         <div class="gauge" id="cell-uv">
           <h2>$gettext("UV Index")</h2>
           <canvas id="gauge-uv" width="240" height="240"></canvas>
-          <div class="fields">
-            current.UV &middot; current.UV.raw<br>
-            day.UV.max
-          </div>
         </div>
         <div class="gauge" id="cell-rad">
           <h2>$gettext("Solar Radiation")</h2>
           <canvas id="gauge-rad" width="240" height="240"></canvas>
-          <div class="fields">
-            current.radiation &middot; current.radiation.raw<br>
-            day.radiation.max
-          </div>
         </div>
         <div class="gauge" id="cell-aqi">
           <h2>$gettext("Air Quality")</h2>
           <canvas id="gauge-aqi" width="240" height="240"></canvas>
-          <div class="fields">
-            current.pm2_5_aqi.raw &middot; current.pm2_5_aqi.formatted<br>
-            current.pm2_5
-          </div>
         </div>
       </div>
     </div>

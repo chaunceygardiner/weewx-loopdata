@@ -1,6 +1,19 @@
 loopdata change history
 -----------------------
 
+6.11.1 2026/08/14
+-----------------
+- The sample report drops the loopdata field names printed under each
+  gauge.  They were meant as a key to what the panel reads, but on a
+  live page they read as a template that failed to render -- one user
+  asked which part of his install was broken.  The mapping lives in the
+  manual instead, gauge by gauge.
+- Troubleshooting covers a single gauge missing its needle.  An old
+  fields line carried over an upgrade is already documented, but only as
+  the whole panel losing its needles, bands and windrose; a hand-tuned
+  fields line can be short one .raw field and cost exactly one needle,
+  which is what the same user hit before he replaced his fields line.
+
 6.11 2026/08/13
 ---------------
 - The sample report's dark theme is higher contrast and much easier to

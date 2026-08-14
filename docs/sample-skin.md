@@ -50,6 +50,31 @@ The fields line the panel reads is exactly the
 [sample configuration](configuration.html#sample-configuration)'s `fields`
 line — fresh installs get it by default.
 
+## What each gauge reads
+
+Gauge by gauge, in the order the page lays them out.  A gauge whose
+formatted field is missing shows `--`; one whose `.raw` field is missing
+draws no needle, band or petal.
+
+| Gauge | Fields |
+|:--|:--|
+| Today's Windrose | `day.windrose.banded`, `day.windrose.calm` (and the automatic `windrose.bands`) |
+| Wind | `current.windSpeed`, `current.windSpeed.raw`, `current.windDir.raw`, `current.windDir.ordinal_compass`, `10m.windGust.max`, `10m.wind.gustdir.raw`, `10m.wind.gustdir.ordinal_compass` |
+| Temperature | `current.outTemp`, `current.outTemp.raw`, `day.outTemp.min.raw`, `day.outTemp.max.raw`, `day.outTemp.min.formatted`, `day.outTemp.max.formatted` |
+| Dew Point | `current.dewpoint`, `current.dewpoint.raw`, `day.dewpoint.min.raw`, `day.dewpoint.max.raw`, `day.dewpoint.min.formatted`, `day.dewpoint.max.formatted` |
+| Humidity | `current.outHumidity`, `current.outHumidity.raw`, `day.outHumidity.min.raw`, `day.outHumidity.max.raw` |
+| Barometer | `current.barometer`, `current.barometer.raw`, `trend.barometer.raw`, `trend.barometer.desc` |
+| Rain | `day.rain.sum`, `day.rain.sum.raw`, `current.rainRate` |
+| Rain Rate | `current.rainRate`, `current.rainRate.raw`, `day.rainRate.max`, `day.rainRate.max.raw` |
+| Feels Like | `current.appTemp`, `current.appTemp.raw`, `day.appTemp.min.raw`, `day.appTemp.max.raw`, `day.appTemp.min.formatted`, `day.appTemp.max.formatted` |
+| UV Index | `current.UV`, `current.UV.raw`, `day.UV.max` |
+| Solar Radiation | `current.radiation`, `current.radiation.raw`, `day.radiation.max` |
+| Air Quality | `current.pm2_5`, `current.pm2_5_aqi.raw`, `current.pm2_5_aqi.formatted` |
+
+`current.dateTime.raw` drives the timestamp and the LIVE indicator, and
+`unit.label.outTemp`, `unit.label.barometer`, `unit.label.rain`,
+`unit.label.rainRate` and `unit.label.windSpeed` pick the dial scales.
+
 {: .important }
 **Upgrading from a pre-6.0 loopdata:** upgrading replaces the sample skin's
 page with the instrument panel but keeps your existing `[LoopData]` fields
@@ -88,8 +113,9 @@ In the skin's `[Extras]` (see `skins/LoopData/skin.conf`):
 
 ## Files to crib from
 
-* `index.html.tmpl` — element ids match the json keys, and Cheetah renders
-  the report-time values so the page is populated before the first poll.
+* `index.html.tmpl` — the page skeleton: a `<canvas>` per gauge, the
+  palette, and the translated strings Cheetah hands to the javascript.  It
+  renders no readings itself; every value on the page arrives by poll.
 * `realtime_updater.inc` — the polling javascript: the fetch loop, the
   LIVE/OFFLINE/NO DATA/BAD DATA indicator, the expiration timer, and the
   canvas gauge and windrose rendering.
