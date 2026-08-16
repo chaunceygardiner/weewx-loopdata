@@ -123,9 +123,9 @@ all there is to it.
 
 Below, loopdata is driving weewx-celestial's satellite pages, captured live
 from the running page (2-second frames played at about 30&times; speed):
-NOAA-21 crosses the Palo Alto sky before dawn on August 8, 2026 —
-01:35&rarr;01:48 PDT, peaking 16&deg; in the east.  The dome places the
-satellite from per-packet almanac position fields, and the roster rows are
+NOAA-21 crosses the Palo Alto sky before dawn on August 15, 2026 —
+02:43&rarr;02:58 PDT, peaking 74&deg; in the east-southeast.  The dome places
+the satellite from per-packet almanac position fields, and the roster rows are
 `next_pass` fields.  The satellite rises sunlit at full brass, and mid-pass
 the dome's marker flips to a hollow ring as NOAA-21 enters Earth's shadow;
 the roster's NOAA-21 row reads "overhead now" for exactly as long as the
@@ -136,7 +136,8 @@ pass lasts, then rolls to the following pass the moment this one ends.
 The Next Visible Pass panel draws the whole pass at once — the dashed arc is
 the satellite's path, with its rise and set times at the ends — while the
 sweep mark rides the arc to show where along that path the satellite is
-right now.
+right now.  The sweep mark carries the satellite's live sunlit state as well,
+so it hollows out at the same instant the dome's marker does.
 
 ![NOAA-21's pass on the Next Visible Pass panel](https://raw.githubusercontent.com/chaunceygardiner/weewx-loopdata/master/LoopDataPassPanel-NOAA21.gif)
 
