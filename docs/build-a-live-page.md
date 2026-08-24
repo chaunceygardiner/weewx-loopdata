@@ -25,7 +25,10 @@ Set `target_report` to your report, so values arrive already in that
 report's units and formatting, and set `loop_data_dir`/`filename` so the
 json file lands somewhere your web server serves.  By default,
 `loop_data_dir` is relative to the target report's HTML directory, so the
-page can fetch the file with a relative URL.
+page can fetch the file with a relative URL.  It can live outside your
+reports tree instead — on a memory filesystem, say — in which case the
+page needs the absolute URL your web server serves it at; see
+[Where the loop-data file should live](configuration.html#where-the-loop-data-file-should-live).
 
 ## 3. Give elements ids matching the json keys
 

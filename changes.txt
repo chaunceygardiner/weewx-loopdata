@@ -1,6 +1,68 @@
 loopdata change history
 -----------------------
 
+6.11.2 2026/08/24
+-----------------
+- The manual says where the loop-data file should live.  The default --
+  inside your reports tree, in the target report's own directory --
+  works, and is what most stations keep.  Two things are worth knowing
+  all the same: the file is rewritten on every loop packet, which a
+  station running from an SD card may rather have land in RAM, and the
+  report sync copies that tree every report cycle, which buys nothing
+  when the pages are served from the same machine.  A memory filesystem outside the web root answers both, for
+  anyone comfortable editing a web server configuration: the new
+  section carries the /dev/shm and fstab recipes, the Apache and nginx
+  aliases (with the no-store header a live page wants), the URL the
+  reading page then needs, and the case none of it helps: where the
+  report sync is the only way to reach the machine serving the pages,
+  as it is when publishing by FTP, the file crosses only at report
+  cadence and cannot feed a live page at all.  That wants loopdata's
+  own rsync, or pages served from the machine weewx runs on.
+- Upgrading gains a 6.11.2 line.
+- The manual no longer calls the loop frequency crucial without saying
+  what it costs.  It is crucial; now it says why.  Only live packets are
+  weighted with this value: every period that outlives weewxd's startup
+  -- hour, day, week, month, year, rainyear, alltime and the rolling
+  windows -- is seeded from what is already in the database, at the
+  weights the archive gives it.  So a wrong value skews the ratio
+  between the seeded part of a period and the live part rather than
+  cancelling out of the average, and the manual works an example
+  through: a station emitting every two seconds but configured for four
+  counts its evening twice over, and day.outTemp.avg reads 16.0 where
+  it should read 17.5.  The skew is bounded by the period's own length
+  -- it clears when the period rolls or the seeded records age out of a
+  rolling window -- and minima and maxima never use the weight at all.
+  windrun and windrose are the ones that do not recover: both are wind
+  speed times that interval, so they scale straight with the error and
+  no roll-over cleans them, and day.windrose.banded is what the sample
+  panel draws.  Two seconds is also no longer stated as a fact about
+  hardware in general: it is what a Davis Vantage emits, with nothing
+  to set on the station side, while a driver you poll on a schedule
+  hands you the number directly.
+- The manual carries the new section everywhere a reader chooses the
+  value, not just where the option is defined: Installation and Build a
+  live page both point at it, and Troubleshooting's NO DATA (HTTP 404)
+  row no longer reads as a warning against the very arrangement the
+  manual now recommends -- keeping the file outside the web root is
+  fine, it just has to be served and named.
+- The fstab recipe in that section says to create the mount point and
+  give it to the user weewxd runs as.  A root-owned mode=0755 tmpfs is
+  not writable by a weewxd running as anyone else, and the failure is
+  unhelpful: the directory exists so makedirs succeeds, and it is the
+  temp file opened next that raises PermissionError, during service
+  init, so weewxd does not start.  /dev/shm needs neither step.
+- Internal: the absolute-manual-URL audit checks a link's #fragment
+  against the target page's headings again.  It had been made to strip
+  the fragment so an anchored link would pass the .html check, which
+  left the repo's first anchored absolute link unverified -- rename the
+  section and the link would have died silently.
+- The sample skin's shipped loop_data_file is the value every install
+  actually runs: loop-data.txt, the file beside the page, matching the
+  default loop_data_dir = . .  skin.conf shipped ../loop-data.txt --
+  dead text, since weewx.conf's own entry overrides it -- and the
+  manual documented that value and explained it wrongly.  No install
+  changes behaviour; a reader of either file is no longer misled.
+
 6.11.1 2026/08/14
 -----------------
 - The sample report drops the loopdata field names printed under each

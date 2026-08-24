@@ -87,6 +87,14 @@ a restart.  Details, and the aggregates the new type adds, are under
 
 ## Worth knowing, but nothing to do
 
+* **6.11.2** — the sample skin ships `loop_data_file = loop-data.txt`
+  where it shipped `../loop-data.txt` before.  Nothing about your
+  installation changes: `weewx.conf` carries its own copy of the option
+  and that copy has always won, so the old value in `skin.conf` was never
+  read.  The manual also gains [Where the loop-data file should
+  live](configuration.html#where-the-loop-data-file-should-live), for
+  anyone who would rather keep the file on a memory filesystem outside
+  the web root.
 * **6.11.1** — the sample report no longer prints the loopdata field names
   under each gauge.  They read as a template that had failed to render;
   the mapping is now in

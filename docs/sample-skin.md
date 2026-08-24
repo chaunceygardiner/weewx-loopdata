@@ -99,7 +99,9 @@ values follow the `[LoopData]` target report's — see
 In the skin's `[Extras]` (see `skins/LoopData/skin.conf`):
 
 * `loop_data_file` — the URL the page polls for the json file (default
-  `../loop-data.txt`, matching the default `loop_data_dir = .`).
+  `loop-data.txt`; relative values are relative to this report's
+  `HTML_ROOT`, and the default `loop_data_dir = .` writes the file beside
+  this page).
 * `refresh_rate` — seconds between polls (default `2`).  Set it to your
   station's loop frequency; polling faster than the file is rewritten just
   re-reads the same json.

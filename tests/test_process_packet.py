@@ -8062,7 +8062,7 @@ class ProcessPacketTests(unittest.TestCase):
         for where, text in sources:
             for url in re.findall(re.escape(site) + r"[^\s)\"'`<>\]]*", text):
                 checked += 1
-                path = url[len(site):]
+                path, _, frag = url[len(site):].partition('#')
                 if path in ('', '/'):
                     continue                       # the site root is fine
                 if not path.endswith('.html'):
@@ -8078,11 +8078,25 @@ class ProcessPacketTests(unittest.TestCase):
                 page = path.lstrip('/')[:-len('.html')] + '.md'
                 if not os.path.exists(os.path.join(self.DOCS_DIR, page)):
                     problems.append('%s: %s (no such page)' % (where, url))
+                    continue
+                # A well-formed URL naming a real page is still dead if its
+                # #fragment names no heading -- rename the section and the
+                # link passes every other check here while landing the
+                # reader at the top of the page.  Nothing else covers it:
+                # test_manual_internal_links_and_anchors_resolve walks only
+                # RELATIVE links between pages in docs/, and these are
+                # absolute URLs to the published site.
+                if frag and frag not in {
+                        self.heading_slug(h) for h in re.findall(
+                            r'^#{2,6}\s+(.*)$', self.doc_text(page), re.M)}:
+                    problems.append('%s: %s (no such heading)' % (where, url))
         assert checked >= 12, checked   # landmark: the links were found
         self.assertEqual(problems, [],
                          'absolute links to the published manual must be the '
-                         'bare root or name a real page as .html (a trailing '
-                         'slash 404s, and so does a well-formed wrong name)')
+                         'bare root or name a real page as .html, and any '
+                         '#fragment must name a heading on that page (a '
+                         'trailing slash 404s, and so does a well-formed '
+                         'wrong name)')
         # jekyll-redirect-from's redirect_to is site-absolute and gets
         # baseurl prefixed BY THE PLUGIN.  A slash form would send an old
         # indexed URL to a 404 -- the opposite of the redirect's point --

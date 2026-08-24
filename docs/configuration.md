@@ -32,6 +32,142 @@ page.
 The file is written atomically (a temp file in the same directory, then a
 rename), so a reader can never see a partial write.
 
+## Where the loop-data file should live
+
+The default puts the file inside your reports tree, in the target
+report's own directory.  That is where most stations leave it, and it
+works — nothing in this section is a repair.
+
+If you are comfortable editing your web server's configuration, there is
+a tidier place for it: a memory filesystem outside the web root.  Two
+reasons it is worth knowing about.
+
+**It is rewritten on every loop packet.**  Nothing needs it to survive a
+reboot, so if your station runs from an SD card you may prefer those
+writes to land in RAM.
+
+**Your report sync copies it, every cycle.**  A report sync pushes the
+whole HTML tree, and a loop-data file anywhere inside that tree goes
+along for the ride.  It cannot be skipped the way an unchanged page is
+skipped — rewritten that often, the file is always newer than the last
+upload.  If your pages are served from the machine WeeWX runs on, that
+upload buys nothing at all: the page reads the file where it is written,
+and the copy on the far end is read by nobody.
+
+If your reports go out by `RsyncGenerator` and LoopData is *also* sending
+the file at loop cadence with its own [rsync](rsync.md), it is worth
+checking whether those two end up in the same place — configuration alone
+will not tell you, since the two name their destinations separately and
+an alias or a symlink defeats comparing the strings.  If they do land
+together, two writers share one destination file: the report cycle's copy
+is opened moments before it is sent, so it is barely older, but it can
+still arrive after a fresher one and set the page's timestamp back for a
+second or so.  Nothing is damaged, and the next loop packet corrects it —
+it is just a puzzling thing to watch happen.
+
+One move answers both: put the file on a memory filesystem outside the
+web root, and let your web server serve it from there.  A page reading it
+cannot tell the difference — it fetches a URL either way.
+
+`/dev/shm` is already a memory filesystem on any Linux, so it needs no
+mounting:
+
+```
+[LoopData]
+    [[FileSpec]]
+        loop_data_dir = /dev/shm/weewx
+```
+
+LoopData creates that directory at startup, which matters because
+`/dev/shm` is empty after every reboot — as is the file, which the next
+loop packet rewrites seconds later.  If you would rather have a mount of
+your own, with a size cap and permissions you set, use an `/etc/fstab`
+line instead and put that path everywhere `/dev/shm/weewx` appears below:
+
+```
+tmpfs /var/loop-data tmpfs defaults,size=4M,mode=0755,uid=weewx,gid=weewx 0 0
+```
+
+Two details `/dev/shm` spares you, because it is already mounted and mode
+`1777` — world-writable, so anyone can create a subdirectory in it and
+LoopData makes its own:
+
+* Create the mount point first — `sudo mkdir /var/loop-data`.  Otherwise
+  `mount -a`, and every boot after it, fails with `mount point
+  /var/loop-data does not exist`.
+* Give it to the user weewxd runs as, with `uid=`/`gid=` as above (or a
+  `chown` afterwards).  A root-owned `mode=0755` tmpfs is not writable by
+  a weewxd running as anyone else, and the failure is unhelpful: the
+  directory already exists so LoopData's `makedirs` succeeds, and it is
+  the temp file it opens next that raises `PermissionError` — during
+  service init, so weewxd does not start.  Leave them off only if weewxd
+  runs as root.
+
+Then serve it.  For Apache, in your site's configuration — or a file of
+your own under `conf-available/`, enabled with `a2enconf`:
+
+```
+Alias /loop-data/ /dev/shm/weewx/
+<Directory /dev/shm/weewx>
+    Require all granted
+    Header set Cache-Control "no-store"
+</Directory>
+```
+
+{: .important }
+`Header` comes from `mod_headers`, which Debian and Ubuntu do **not**
+enable by default.  Without it Apache refuses to start at all — `Invalid
+command 'Header'`, which `apache2ctl configtest` will tell you.  Enable it
+first (`restart`, not `reload`: a server that failed to start has nothing
+to reload):
+
+```
+sudo a2enmod headers
+sudo systemctl restart apache2
+```
+
+The directory itself appears when weewxd next starts with the
+`loop_data_dir` above; until then the URL simply 404s (a `<Directory>`
+naming a path that does not exist yet is not an error to Apache).
+
+For nginx:
+
+```
+location /loop-data/ {
+    alias /dev/shm/weewx/;
+    add_header Cache-Control "no-store";
+}
+```
+
+The `Cache-Control` header is not decoration: a file this small, fetched
+this often, is exactly what an intermediate proxy likes to cache, and a
+cached loop-data file shows up on a live page as a timestamp that never
+catches up.
+
+Finally, tell the page that reads it where to look.  Every live page has
+an option naming the URL it polls — the sample skin's `loop_data_file`,
+and the same option in weewx-celestial — and it has to be the URL your
+alias serves, absolute now that the file no longer shares a tree with the
+page:
+
+```
+[StdReport]
+    [[LoopDataReport]]
+        [[[Extras]]]
+            loop_data_file = /loop-data/loop-data.txt
+```
+
+{: .important }
+**None of this helps if the report sync is the only way to reach the
+machine serving your pages** — as it is when you publish by FTP.  The
+loop-data file then crosses only when the report cycle runs, so between
+cycles it is minutes old: the sample panel, which calls its data stale
+after `expiration_time` seconds (4 by default), would show that almost
+all the time, and a page of your own has nothing fresher to read.
+LoopData needs a loop-cadence transport to whatever machine serves the
+page — its own [rsync](rsync.md), which goes over ssh, or serving the
+pages from the machine WeeWX runs on.
+
 ## `[[Formatting]]`
 
 | Option | Meaning |
@@ -57,11 +193,41 @@ the target report's lang file — see [Translations](i18n.html).
 
 | Option | Meaning |
 |---|---|
-| `seconds` | The frequency of loop packets emitted by your device.  This is needed to give the proper weight to accumulator entries.  For example, this value is `2.0` for Davis Vantage Pro 2 and RainWise CC3000 devices. |
+| `seconds` | How often your station emits loop packets.  LoopData weights its accumulator entries with it, and gives each packet an `interval` of `seconds / 60`.  `2.0` is the shipped default and is right for a Davis Vantage. |
 
-{: .important }
-It is crucial to specify the correct loop frequency.  For vantage and cc3000,
-this will be 2 seconds.
+{: .note }
+Set this correctly.  What a wrong value costs depends on which value you
+are reading.
+
+Every period that outlives the moment weewxd started — `hour`, `day`,
+`week`, `month`, `year`, `rainyear`, `alltime`, and the rolling windows —
+is seeded at startup from what is already in your database, and those
+seeded values carry the weights the archive gives them.  Only the loop
+packets arriving afterwards are weighted with `seconds`, so a wrong value
+changes the ratio between the seeded part of a period and the live part.
+Set too high it over-counts the live period and pulls an average toward
+the present; set too low, toward the archived history.  A station emitting
+every two seconds but configured for four counts its evening twice over:
+restart at 18:00 on a 20 °C day that cools to 10 °C, and
+`day.outTemp.avg` reads 16.0 where it should read 17.5.  The skew lasts
+only while both parts are in the accumulator — until the period rolls, or
+until the seeded records age out of a rolling window — so it is bounded by
+the period's own length.  Minima and maxima never use the weight at all,
+and once an accumulator holds nothing but live packets the value cancels
+out of the average exactly.
+
+`windrun` and `windrose` are the ones that do not recover.  Both are wind
+speed multiplied by this interval, so they scale straight with the error
+and no roll-over cleans them: a value half your real cadence halves every
+windrun, and halves every distance and every band time the windrose
+reports — and `day.windrose.banded` is what the sample panel draws.
+
+A Davis Vantage emits a loop packet about every two seconds, which is what
+the shipped `2.0` reflects, and there is nothing to set on the station
+side.  Other drivers vary, and many have a polling interval you chose
+yourself — use that number.  If you are unsure of either, time the
+`dateTime` in `loop-data.txt` over a few minutes and use the average you
+see.
 
 ## `[[RsyncSpec]]`
 

@@ -29,7 +29,7 @@ The [sample skin](sample-skin.html) diagnoses its own data feed:
 | Indicator | Meaning |
 |---|---|
 | `OFFLINE` | The fetch itself failed — the web server is unreachable. |
-| `NO DATA (HTTP 404) — check loop_data_file` | The web server answered, but not with the file.  The classic cause: `loop_data_dir` points outside the web server's tree (say `/dev/shm`) with nothing configured to serve it, or the skin's `loop_data_file` Extras option doesn't match where the file actually lands. |
+| `NO DATA (HTTP 404) — check loop_data_file` | The web server answered, but not with the file.  The classic cause: `loop_data_dir` points outside the web server's tree (say `/dev/shm`) with nothing configured to serve it, or the skin's `loop_data_file` Extras option doesn't match where the file actually lands.  Keeping the file outside the web root is a perfectly good arrangement — it just has to be served and named; see [Where the loop-data file should live](configuration.html#where-the-loop-data-file-should-live). |
 | `BAD DATA — check loop_data_file` | The poll got HTTP 200 but the body isn't json — usually a catch-all web server rule serving an HTML page at that URL. |
 | A growing age readout | The file is served but not being rewritten — check that weewxd is running and the log for loopdata errors; if you rsync, see below. |
 
@@ -137,10 +137,17 @@ translated page, check the value side:
 
 ## Aggregate values look slightly off
 
-Check `[[LoopFrequency]] seconds`.  It is the weight given to each loop
-packet in the accumulators, so a wrong value skews time-weighted aggregates
-(averages, windrose time bins).  It must match your device's actual loop
-cadence — `2.0` for Davis Vantage Pro 2 and RainWise CC3000.
+Check `[[LoopFrequency]] seconds`.  It is the weight given to each live
+loop packet in the accumulators, and the only weight that comes from your
+configuration — everything seeded from the database at startup carries the
+archive's own weights.  A wrong value therefore skews time-weighted
+aggregates, and it does so in a particular pattern worth recognising: an
+average is off only while the period still holds both seeded and live
+data, so it corrects itself when the period rolls over, whereas `windrun`
+and the windrose time and distance bins scale with the error and stay
+wrong.  Minima and maxima are never affected.  `2.0` is right for a Davis
+Vantage; if your driver polls on a schedule you set, use that interval.
+See [`[[LoopFrequency]]`](configuration.html#loopfrequency).
 
 ## My driver acts strangely with loopdata
 

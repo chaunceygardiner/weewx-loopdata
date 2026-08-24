@@ -225,7 +225,14 @@ one (appending any fields other pages of yours use).
 ## Entries in `LoopData` sections of `weewx.conf`:
  * `loop_data_dir`     : The directory into which the loop data file should be written.
                          If a relative path is specified, it is relative to the
-                         `target_report` directory.
+                         `target_report` directory.  The default (inside your reports
+                         tree) works and is what most stations use; if you are
+                         comfortable editing your web server's configuration, see
+                         [Where the loop-data file should
+                         live](https://chaunceygardiner.github.io/weewx-loopdata/configuration.html#where-the-loop-data-file-should-live)
+                         for a tidier arrangement — the file on a memory filesystem
+                         outside the web root, which keeps it out of your report sync
+                         and off an SD card.
  * `filename`          : The name of the loop data file to write.
  * `target_report`     : The WeeWX report to target.  Conversions are decided by this
                          report, not by the units stored in the database: if the
@@ -240,10 +247,16 @@ one (appending any fields other pages of yours use).
                          is first installed, target_report is set to the sample report
                          included with this skin: `LoopDataReport` (also the default if
                          the option is absent).
- * `seconds`           : The frequency of loop packets emitted by your device.  This is
-                         needed to give the proper weight to accumulator entries.  For
-                         example, this value is `2.0` for Vantage Pro 2 and
-                         RainWise CC3000 devices.
+ * `seconds`           : How often your station emits loop packets.  LoopData weights
+                         its accumulator entries with it, and gives each packet an
+                         `interval` of `seconds / 60`.  Get it right.  `2.0` is the
+                         shipped default and is right for a Davis Vantage; other
+                         drivers vary, and if yours has a polling interval you set,
+                         use that number.  Periods that outlive weewxd's startup are
+                         seeded from your database at the archive's own weights, so a
+                         wrong value skews the weighted averages until that period
+                         rolls over; `windrun` and `windrose` are wind speed times this
+                         interval and never recover, scaling directly with the error.
  * `enable`            : Set to true to rsync the loop data file to `remote_server`.
  * `remote_server`     : The server to which the loop data file will be copied.
                          To use rsync to sync loop-data.txt to a remote computer, passwordless ssh

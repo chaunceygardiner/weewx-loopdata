@@ -70,14 +70,21 @@ The install creates a `[LoopData]` section in weewx.conf (the full section is
 shown in [Configuration](configuration.html#sample-configuration)).  Adjust
 the values accordingly.  In particular:
 
-* Specify `seconds` with how often your device writes loop records (e.g.,
-  `2.0` for Davis Vantage Pro 2 and RainWise CC3000).  This value matters:
-  it is the weight given to each packet in the accumulators.
+* Specify `seconds` with how often your device writes loop records — `2.0`
+  is the shipped default and is right for a Davis Vantage.  It is the
+  weight given to each live packet in the accumulators, so it is worth
+  getting right; see
+  [`[[LoopFrequency]]`](configuration.html#loopfrequency) for
+  what a wrong value costs.
 * Specify the `target_report` for the report you wish to use for formatting
   and units.
 * Specify the `loop_data_dir` where the loop-data.txt file should be written.
   If `loop_data_dir` is a relative path, it is interpreted as relative to the
-  target report's directory.
+  target report's directory.  The default works and is what most stations
+  keep; see
+  [Where the loop-data file should live](configuration.html#where-the-loop-data-file-should-live)
+  if you would rather have the file on a memory filesystem outside the web
+  root.
 * You will eventually need to update the `fields` line with the fields you
   actually need for the report you are targeting.  Change this line later,
   after you are sure LoopData is running correctly.
