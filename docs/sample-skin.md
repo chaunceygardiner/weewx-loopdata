@@ -96,7 +96,8 @@ values follow the `[LoopData]` target report's — see
 
 ## Skin options
 
-In the skin's `[Extras]` (see `skins/LoopData/skin.conf`):
+In the skin's `[Extras]` — some in `skins/LoopData/skin.conf`, some
+written into `weewx.conf` by the installer, which is the copy that wins:
 
 * `loop_data_file` — the URL the page polls for the json file (default
   `loop-data.txt`; relative values are relative to this report's
@@ -112,6 +113,23 @@ In the skin's `[Extras]` (see `skins/LoopData/skin.conf`):
   is `pageUpdate`, while the option that sets its expected value is
   `page_update_pwd`.  This password is visible to anyone reading the page
   source.
+* `googleAnalyticsId` — a Google Analytics measurement id.  Set it and the
+  page loads Google's `gtag.js` and reports to that id; leave it empty, or
+  leave the option out, and the page loads nothing and reports nothing.
+  The installer writes it empty, so a fresh install sends no analytics
+  until you fill it in.
+* `analytics_host` — report only when the page is served from this
+  hostname, which keeps a copy you are testing locally out of your
+  figures.  Empty, or absent, means report from wherever the page is
+  served.  It does nothing unless `googleAnalyticsId` is set.
+
+{: .note }
+Before 6.11.3 both options were tested for *presence* rather than for a
+value.  Because the installer writes them present but empty, a default
+install fetched `gtag.js` with an empty id on every page view, and anyone
+who set an id but left `analytics_host` empty had the page compare its
+hostname against `""` — never true — and report nothing.  Both now test
+the value, as described above.
 
 ## Files to crib from
 

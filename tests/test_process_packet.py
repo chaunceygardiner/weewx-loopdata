@@ -30,8 +30,10 @@
 #
 """Test processing packets."""
 
-import ast
 import configobj
+import importlib
+import importlib.util
+import io
 import logging
 import math
 import os
@@ -52,11 +54,14 @@ import weewx.manager
 import weewx.station
 import weewx.units
 from weewx.schemas.wview_extended import schema as wview_extended_schema
+from weeutil.weeutil import to_bool
 from weeutil.weeutil import to_int
 from weeutil.weeutil import timestamp_to_string
 
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+import weecfg.extension
+import weeutil.config
 import weeutil.logger
 
 import user.loopdata
@@ -8196,20 +8201,27 @@ class ProcessPacketTests(unittest.TestCase):
                          % stale)
 
     @classmethod
+    def installer_config(cls) -> configobj.ConfigObj:
+        """The stanza install.py writes into a fresh weewx.conf.
+
+        It is a ConfigObj rather than a dict so the option comments ride
+        along -- weecfg merges with weeutil.config.conditional_merge, which
+        copies a key's comments only if the source has them.  Loading it
+        needs weecfg.extension imported first: that module aliases itself as
+        'setup' in sys.modules for installers written against the pre-5.0
+        name, which is what install.py's own import resolves through.
+        """
+        importlib.import_module('weecfg.extension')   # registers the alias
+        spec = importlib.util.spec_from_file_location(
+            'loopdata_install', os.path.join(cls.REPO_ROOT, 'install.py'))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.LoopDataInstaller()['config']
+
+    @classmethod
     def installer_loopdata_config(cls) -> Dict[str, Any]:
-        """The [LoopData] literal install.py writes into weewx.conf."""
-        source = cls.repo_text('install.py')
-        start = source.index('config = {')
-        start = source.index('{', start)
-        depth = 0
-        for end in range(start, len(source)):
-            if source[end] == '{':
-                depth += 1
-            elif source[end] == '}':
-                depth -= 1
-                if depth == 0:
-                    break
-        config = ast.literal_eval(source[start:end + 1])['LoopData']
+        """The [LoopData] section install.py writes into weewx.conf."""
+        config = cls.installer_config()['LoopData']
         assert set(config) >= {'FileSpec', 'Formatting', 'Include'}, sorted(config)
         return config
 
@@ -8320,21 +8332,30 @@ class ProcessPacketTests(unittest.TestCase):
                          [], 'manual lists a day-tier attribute the code lacks')
 
     def test_manual_documents_every_skin_extra(self):
-        # [Extras] are the options a user editing skin.conf actually sees.
-        # refresh_rate -- the page's poll rate -- shipped undocumented.
+        # [Extras] are the options a user actually sees.  They come from TWO
+        # files and the manual owes both: skin.conf, and the [[[Extras]]]
+        # the installer writes into weewx.conf -- which is the copy that
+        # wins when they disagree.  refresh_rate -- the page's poll rate --
+        # shipped undocumented.
+        #
+        # Reading skin.conf alone is what hid googleAnalyticsId and
+        # analytics_host through 6.11.2.  They sit COMMENTED OUT in
+        # skin.conf, so ConfigObj never sees them and an exemption for them
+        # here was doing nothing; meanwhile the installer had been writing
+        # both into every weewx.conf, undocumented, with semantics
+        # (present-but-empty) that turned out to be broken.
         skin = configobj.ConfigObj(
             os.path.join(self.I18N_SKIN_DIR, 'skin.conf'),
             encoding='utf-8', file_error=True)
-        extras = set(skin['Extras'])
+        installed = self.installer_config()['StdReport']['LoopDataReport']['Extras']
+        extras = set(skin['Extras']) | set(installed)
         assert 'loop_data_file' in extras, sorted(extras)
+        assert 'googleAnalyticsId' in extras, sorted(extras)
         documented = set(re.findall(r'`([a-z_A-Z0-9]+)`',
                                     self.doc_text('sample-skin.md')))
         exempt = {
             # Written by install/release tooling, not a user-facing knob.
             'version',
-            # Google Analytics passthrough: ships commented out, and is
-            # documented by the commented lines in skin.conf itself.
-            'googleAnalyticsId', 'analytics_host',
         }
         missing = sorted(extras - documented - exempt)
         self.assertEqual(missing, [],
@@ -8520,6 +8541,130 @@ class ProcessPacketTests(unittest.TestCase):
                          'changes.txt leads with %s, not %s'
                          % (headings[0], version))
 
+
+    def test_installer_stanza_is_commented(self):
+        # The whole point of writing the stanza as a ConfigObj rather than a
+        # Python dict: weectl merges it into a fresh weewx.conf with
+        # weeutil.config.conditional_merge, which carries a key's comments
+        # across only if the source has them.  A dict has none, which is why
+        # this stanza used to land as bare key = value lines.  Every option
+        # and every section must therefore arrive explained.
+        def walk(section, path: str) -> None:
+            for key in section.scalars:
+                comment = [line for line in section.comments.get(key, [])
+                           if line.strip()]
+                self.assertTrue(comment, 'uncommented option: %s%s' % (path, key))
+                for line in comment:
+                    self.assertTrue(line.strip().startswith('#'),
+                                    (path + key, line))
+            for name in section.sections:
+                # [StdReport] is WeeWX's own section, not ours: it is always
+                # already in weewx.conf, so conditional_merge never writes a
+                # header for it and a comment here would be a comment on
+                # somebody else's section.  Everything under it is ours.
+                if path or name != 'StdReport':
+                    self.assertTrue(
+                        [line for line in section.comments.get(name, [])
+                         if line.strip()],
+                        'uncommented section: %s[%s]' % (path, name))
+                walk(section[name], '%s%s.' % (path, name))
+        config = self.installer_config()
+        self.assertEqual(sorted(config.sections), ['LoopData', 'StdReport'])
+        walk(config, '')
+
+    def test_installer_comments_survive_the_merge(self):
+        """The stanza's comments reach weewx.conf, through weecfg's own code.
+
+        This drives ExtensionEngine._inject_config -- not conditional_merge
+        directly -- because _inject_config is where the stanza is COPIED
+        before it is merged, and the copy is what decides whether comments
+        survive at all: weeutil.config.deep_copy carries them, a plain
+        dict() would drop them.  Calling conditional_merge on its own skips
+        precisely the step under test.  It is also the step that rewrites
+        HTML_ROOT, pinned below.
+        """
+        target = configobj.ConfigObj(
+            io.StringIO('WEEWX_ROOT = %s\n'
+                        '[StdReport]\n'
+                        '    HTML_ROOT = public_html\n'
+                        '    [[SeasonsReport]]\n'
+                        '        skin = Seasons\n' % tempfile.gettempdir()),
+            encoding='utf-8')
+        engine = weecfg.extension.ExtensionEngine(
+            os.path.join(tempfile.gettempdir(), 'weewx.conf'), target)
+        engine._inject_config(self.installer_config(), 'loopdata')
+        buf = io.BytesIO()
+        target.write(buf)
+        written = buf.getvalue().decode('utf-8')
+        for landmark in [
+                '#   This section is for the weewx-loopdata extension',
+                '# Where to write the loop-data file.',
+                '# How often your station emits loop packets, in seconds.',
+                '# The fields to write into the json file',
+                '# PLACEHOLDER -- replace with the server to copy the file to.',
+                '# Hours the page keeps polling before it gives up',
+        ]:
+            self.assertIn(landmark, written)
+        # The user's own [StdReport] survives, and the report is added under it.
+        self.assertEqual(target['StdReport']['SeasonsReport']['skin'], 'Seasons')
+        self.assertEqual(target['StdReport']['LoopDataReport']['skin'], 'LoopData')
+        # prepend_path put the installation's HTML_ROOT in front of the bare
+        # subdirectory the stanza asks for -- exactly once.  Shipping
+        # 'public_html/loopdata' in the stanza would give
+        # public_html/public_html/loopdata here.
+        self.assertEqual(target['StdReport']['LoopDataReport']['HTML_ROOT'],
+                         os.path.join('public_html', 'loopdata'))
+
+    def test_installer_defaults(self):
+        """The values a fresh install writes.
+
+        They are only ever read on a fresh `weectl extension install`, so a
+        wrong one ships silently.  Compared through to_bool/to_int because a
+        ConfigObj stanza yields strings where the old Python dict yielded an
+        int -- the installed weewx.conf is text either way.
+        """
+        config = self.installer_config()
+        loopdata = config['LoopData']
+        self.assertEqual(loopdata['FileSpec']['loop_data_dir'], '.')
+        self.assertEqual(loopdata['FileSpec']['filename'], 'loop-data.txt')
+        self.assertEqual(loopdata['Formatting']['target_report'], 'LoopDataReport')
+        self.assertEqual(float(loopdata['LoopFrequency']['seconds']), 2.0)
+        rsync = loopdata['RsyncSpec']
+        self.assertFalse(to_bool(rsync['enable']))
+        self.assertFalse(to_bool(rsync['compress']))
+        self.assertFalse(to_bool(rsync['log_success']))
+        self.assertEqual(rsync['remote_server'], 'www.foobar.com')
+        self.assertEqual(rsync['remote_user'], 'root')
+        self.assertEqual(rsync['remote_dir'], '/home/weewx/loop-data')
+        self.assertEqual(to_int(rsync['timeout']), 1)
+        self.assertEqual(to_int(rsync['skip_if_older_than']), 3)
+        # fields must stay a list, not the one long string ConfigObj would
+        # hand back if it were ever quoted.
+        fields = loopdata['Include']['fields']
+        self.assertIsInstance(fields, list)
+        self.assertGreaterEqual(len(fields), 40)
+        self.assertEqual(fields[0], 'current.dateTime.raw')
+
+        report = config['StdReport']['LoopDataReport']
+        # HTML_ROOT must NOT carry a public_html prefix: weecfg prepends the
+        # installation's own StdReport HTML_ROOT at install time, so
+        # 'public_html/loopdata' would land the report in
+        # public_html/public_html/loopdata.
+        self.assertEqual(report['HTML_ROOT'], 'loopdata')
+        self.assertEqual(report['skin'], 'LoopData')
+        self.assertTrue(to_bool(report['enable']))
+        extras = report['Extras']
+        self.assertEqual(extras['loop_data_file'], 'loop-data.txt')
+        self.assertEqual(to_int(extras['expiration_time']), 4)
+        self.assertEqual(extras['page_update_pwd'], 'foobar')
+        self.assertEqual(extras['googleAnalyticsId'], '')
+        self.assertEqual(extras['analytics_host'], '')
+        self.assertEqual(report['Units']['StringFormats'], {
+            'mile_per_hour': '%.0f',
+            'degree_C': '%.1f',
+            'km_per_hour': '%.0f',
+            'degree_F': '%.1f',
+        })
 
 if __name__ == '__main__':
     unittest.main()

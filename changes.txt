@@ -1,6 +1,70 @@
 loopdata change history
 -----------------------
 
+6.11.3 2026/08/24
+-----------------
+- The sample page no longer loads Google Analytics when no analytics id
+  is configured.  analytics.inc tested whether googleAnalyticsId was
+  PRESENT, not whether it had a value -- and the installer writes it
+  present but empty.  Every install that took the default therefore
+  fetched https://www.googletagmanager.com/gtag/js?id= on every page
+  view, with an empty id: a third-party request nobody asked for, on a
+  page whose owner had never configured analytics.  The companion option
+  failed the same way in the other direction: with analytics_host present
+  but empty the page compared its hostname against "", which is never
+  true, so a user who did set an id and left the host alone got the
+  script loaded and not one event reported.  Both now test the value.
+  Empty means off for googleAnalyticsId, and means report from wherever
+  the page is served for analytics_host -- which is what both options
+  always claimed.  Existing installs pick this up on their next report
+  cycle; no configuration change is needed.  The manual documents both
+  options for the first time -- they had never appeared in docs/ or the
+  README, and the test that is supposed to catch that read only
+  skin.conf, where both sit commented out and so were invisible to it.
+  It now also reads the [[[Extras]]] the installer writes.
+- Blanking refresh_rate or expiration_time in weewx.conf no longer kills
+  the sample page.  realtime_updater.inc tested those two for PRESENCE and
+  emitted the value straight into a javascript assignment, so an empty one
+  rendered "refresh_rate = ;" -- a parse error that took down the whole
+  script block, and with it the polling, the gauges and the translated
+  strings, not merely the one setting.  Both now test the value and fall
+  back to their defaults, as a missing option always did.  Same fix as the
+  analytics options above; page_update_pwd was never affected, its value
+  being quoted.
+- The [LoopData] stanza a fresh install writes into weewx.conf arrives
+  commented.  It had always landed as bare key = value lines with
+  nothing to say what any of them did, which left the manual as the only
+  way to find out what, say, [[LoopFrequency]] seconds was for -- and
+  that is the option whose wrong value silently scales every windrun and
+  every windrose distance.  Now each section and each option carries a
+  line or two explaining itself, the three placeholders in
+  [[RsyncSpec]] say they are placeholders, and the fields line says what
+  a field is and where the full grammar lives.  The cause was that the
+  installer built its stanza as a Python dict: weectl merges it with
+  weeutil.config.conditional_merge, which copies a key's comments across
+  only if the source has any, and a dict has none.  The stanza is now a
+  ConfigObj, which does.  Existing installs are untouched -- the merge
+  fills in absent keys only, and every value written is unchanged, so
+  this matters only on a fresh install.
+- The manual no longer says the sample panel calls its data stale after
+  expiration_time seconds.  Both halves were wrong: expiration_time is in
+  hours, and it is the poll-forever timeout, not a staleness test.  The
+  panel reads LIVE while the packet is no older than three times the
+  skin's refresh_rate -- six seconds by default -- and shows the age
+  instead once it is older.  The passage's point is unchanged; only its
+  numbers were.
+- Internal: three tests pin the new stanza -- that every section and
+  option in it is commented, that the comments survive a merge driven
+  through weecfg's own ExtensionEngine._inject_config (which is where the
+  stanza is copied, and the copy is what decides whether comments survive
+  at all), and the values a fresh install writes.
+- Internal: install.py builds its ConfigObj inside the installer rather
+  than at import time, so loader()'s "requires WeeWX 4" message is
+  reachable again.  A module-level import of weeutil.config ran before
+  that check and could not survive a WeeWX 3 install -- the module is
+  absent before 3.9, and 3.9's copy has no config_from_str -- so the
+  user got a raw traceback instead of the message.
+
 6.11.2 2026/08/24
 -----------------
 - The manual says where the loop-data file should live.  The default --

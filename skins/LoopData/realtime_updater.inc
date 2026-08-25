@@ -9,12 +9,12 @@
   #else
     page_update_pwd = 'foo';
   #end if
-  #if $Extras.has_key('refresh_rate')
+  #if $Extras.get('refresh_rate')
     refresh_rate = $Extras.refresh_rate;
   #else
     refresh_rate = 2;
   #end if
-  #if $Extras.has_key('expiration_time')
+  #if $Extras.get('expiration_time')
     expiration_time = $Extras.expiration_time;
   #else
     expiration_time = 4;

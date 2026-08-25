@@ -194,11 +194,13 @@ Host www.paloaltoweather.com   # <-- CHANGE TO YOUR remote_server!
 
 ## Sample configuration
 
-Fresh installs add the following `[LoopData]` section to `weewx.conf`.  The
-`fields` line is exactly the fields the sample report's instrument panel
-reads.  Upgrading installs keep whatever `fields` line is already in
-`weewx.conf` — to adopt the panel, replace your `fields` line with this
-one (appending any fields other pages of yours use).
+Fresh installs add the following `[LoopData]` section to `weewx.conf`.  Since
+6.11.3 each section and option in it arrives with a comment saying what it is
+for; the block below strips those, so it is the values a fresh install writes,
+not the shape of the text.  The `fields` line is exactly the fields the sample
+report's instrument panel reads.  Upgrading installs keep whatever `fields`
+line is already in `weewx.conf` — to adopt the panel, replace your `fields`
+line with this one (appending any fields other pages of yours use).
 
 ```
 [LoopData]

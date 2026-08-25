@@ -115,6 +115,12 @@ SPEC_TESTS = [
     'test_troubleshooting_documents_every_logged_error',
     'test_troubleshooting_invents_no_log_messages',
     'test_version_is_in_lockstep',
+    # The installer's own stanza: that it arrives commented, that the
+    # comments survive weecfg's conditional_merge, and the values it
+    # writes on a fresh install.
+    'test_installer_stanza_is_commented',
+    'test_installer_comments_survive_the_merge',
+    'test_installer_defaults',
 ]
 
 suite = unittest.TestSuite([T.ProcessPacketTests(name) for name in SPEC_TESTS])

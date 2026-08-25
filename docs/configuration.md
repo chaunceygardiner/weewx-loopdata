@@ -13,7 +13,8 @@ nav_order: 4
 Most configuration lives in the `[LoopData]` section of weewx.conf, which the
 installer creates, and this page documents every option in it — the
 [sample configuration](#sample-configuration) at the bottom is exactly what a
-fresh install writes.
+fresh install writes (which since 6.11.3 arrives commented; the block below
+prints the values alone).
 
 Two settings LoopData obeys live on the **target report** rather than in
 `[LoopData]`, because they are ordinary WeeWX report settings that LoopData
@@ -161,9 +162,11 @@ page:
 **None of this helps if the report sync is the only way to reach the
 machine serving your pages** — as it is when you publish by FTP.  The
 loop-data file then crosses only when the report cycle runs, so between
-cycles it is minutes old: the sample panel, which calls its data stale
-after `expiration_time` seconds (4 by default), would show that almost
-all the time, and a page of your own has nothing fresher to read.
+cycles it is minutes old: the sample panel, which reads LIVE only while
+the packet is no older than three times its `refresh_rate` (six seconds,
+by default) and otherwise shows the age instead, would be reporting
+minutes almost all the time, and a page of your own has nothing fresher
+to read.
 LoopData needs a loop-cadence transport to whatever machine serves the
 page — its own [rsync](rsync.md), which goes over ssh, or serving the
 pages from the machine WeeWX runs on.
@@ -318,8 +321,10 @@ than 259200 (3 days), LoopData caps it at 259200.
 
 ## Sample configuration
 
-Fresh installs add the following `[LoopData]` section to weewx.conf.  The
-`fields` line is exactly the fields the
+Fresh installs add the following `[LoopData]` section to weewx.conf.  Since
+6.11.3 each section and option in it arrives with a comment saying what it is
+for; the block below strips those, so it is the values a fresh install writes,
+not the shape of the text.  The `fields` line is exactly the fields the
 [sample report's instrument panel](sample-skin.html) reads.  Upgrading
 installs keep whatever `fields` line is already in weewx.conf — to adopt the
 panel, replace your `fields` line with this one (appending any fields other
