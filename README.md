@@ -6,7 +6,7 @@
 
 Copyright (C)2022-2026 by John A Kline (john@johnkline.com)
 
-**This extension requires Python 3.7 or later and WeeWX 4 or 5.**
+**This extension requires Python 3.7 or later and WeeWX 4.6 or later.**
 
 ## Description
 
@@ -34,21 +34,22 @@ High today: $day.outTemp.max
 Sunset: $almanac.sunset
 ```
 
-List those same tags — with the `$` removed — on the `fields` line of the
-`[LoopData]` section of weewx.conf:
+Declare those same tags — with the `$` removed — in your skin's
+`skin.conf`:
 
 ```
 [LoopData]
-    [[Include]]
-        fields = current.outTemp, day.outTemp.max, almanac.sunset
+    [[fields]]
+        readings = current.outTemp, day.outTemp.max, almanac.sunset
 ```
 
 Now, on every loop packet, LoopData writes a json file, `loop-data.txt`, with
-those tags as its keys — and every value already unit-converted and formatted
-exactly as your report would render it:
+an entry for your report holding those tags as its keys — and every value
+already unit-converted and formatted exactly as your report would render
+it:
 
 ```json
-{"current.outTemp": "79.2°F", "day.outTemp.max": "85.1°F", "almanac.sunset": "20:32"}
+{"MyReport": {"current.outTemp": "79.2°F", "day.outTemp.max": "85.1°F", "almanac.sunset": "20:32"}}
 ```
 
 Finally, in the template, wrap each tag in an element whose id is the tag, and
@@ -59,10 +60,11 @@ Temperature: <span id="current.outTemp">$current.outTemp</span><br/>
 High today: <span id="day.outTemp.max">$day.outTemp.max</span><br/>
 Sunset: <span id="almanac.sunset">$almanac.sunset</span>
 
+#import json
 <script>
   async function updateLoopData() {
     const response = await fetch('loop-data.txt', {cache: 'no-store'});
-    const data = await response.json();
+    const data = (await response.json())[$json.dumps($REPORT_NAME)];
     for (const key in data) {
       const element = document.getElementById(key);
       if (element) element.innerHTML = data[key];
@@ -85,8 +87,9 @@ translations, and the recipe for building your own live page.
 * **Every period a report tag has**, live: `current`, `trend`, `hour`, `day`,
   `week`, `month`, `year`, `rainyear`, `alltime`, plus rolling windows of any
   length from `1m` through `1440m` and `1h` through `24h`.
-* **Values formatted as your report would render them** — unit-converted per a
-  target report, so page javascript can drop them straight into HTML.  Any
+* **Values formatted as your report would render them** — each report
+  declares the fields it needs and gets them in its own units, formats and
+  language, so page javascript can drop them straight into HTML.  Any
   field can override the unit (`day.outTemp.avg.degree_C`), round
   (`.round(1)`), or use the report tags' formatting calls.
 * **A live NOAA-style windrose** — sixteen compass bins by N speed bands,
@@ -197,18 +200,19 @@ Host www.paloaltoweather.com   # <-- CHANGE TO YOUR remote_server!
 Fresh installs add the following `[LoopData]` section to `weewx.conf`.  Since
 6.11.3 each section and option in it arrives with a comment saying what it is
 for; the block below strips those, so it is the values a fresh install writes,
-not the shape of the text.  The `fields` line is exactly the fields the sample
-report's instrument panel reads.  Upgrading installs keep whatever `fields`
-line is already in `weewx.conf` — to adopt the panel, replace your `fields`
-line with this one (appending any fields other pages of yours use).
+not the shape of the text.  There is no fields line: since 7.0 each report
+declares the fields it needs in its own `skin.conf` — the sample report's
+declares its panel's — see
+[Declaring fields](https://chaunceygardiner.github.io/weewx-loopdata/declaring-fields.html).
+Upgrading installs keep whatever `[[Include]]` fields line and
+`[[Formatting]]` target_report are already in `weewx.conf`, and those keep
+working as before.
 
 ```
 [LoopData]
     [[FileSpec]]
         loop_data_dir = .
         filename = loop-data.txt
-    [[Formatting]]
-        target_report = LoopDataReport
     [[LoopFrequency]]
         seconds = 2.0
     [[RsyncSpec]]
@@ -220,14 +224,13 @@ line with this one (appending any fields other pages of yours use).
         log_success = False
         timeout = 1
         skip_if_older_than = 3
-    [[Include]]
-        fields = current.dateTime.raw, current.outTemp, current.outTemp.raw, day.outTemp.min.raw, day.outTemp.max.raw, day.outTemp.min.formatted, day.outTemp.max.formatted, current.outHumidity, current.outHumidity.raw, day.outHumidity.min.raw, day.outHumidity.max.raw, current.windSpeed, current.windSpeed.raw, current.windDir.raw, current.windDir.ordinal_compass, 10m.windGust.max, 10m.wind.gustdir.raw, 10m.wind.gustdir.ordinal_compass, current.barometer, current.barometer.raw, trend.barometer.raw, trend.barometer.desc, current.rainRate, current.rainRate.raw, day.rain.sum, day.rain.sum.raw, day.rainRate.max, day.rainRate.max.raw, current.dewpoint, current.dewpoint.raw, day.dewpoint.min.raw, day.dewpoint.max.raw, day.dewpoint.min.formatted, day.dewpoint.max.formatted, current.appTemp, current.appTemp.raw, day.appTemp.min.raw, day.appTemp.max.raw, day.appTemp.min.formatted, day.appTemp.max.formatted, current.UV, current.UV.raw, day.UV.max, current.radiation, current.radiation.raw, day.radiation.max, current.pm2_5, current.pm2_5_aqi.raw, current.pm2_5_aqi.formatted, day.windrose.banded, day.windrose.calm, unit.label.outTemp, unit.label.barometer, unit.label.rain, unit.label.rainRate, unit.label.windSpeed
 ```
 
 ## Entries in `LoopData` sections of `weewx.conf`:
  * `loop_data_dir`     : The directory into which the loop data file should be written.
                          If a relative path is specified, it is relative to the
-                         `target_report` directory.  The default (inside your reports
+                         sample report's directory (`LoopDataReport`, or the report named
+                         by `target_report` if you set one).  The default (inside your reports
                          tree) works and is what most stations use; if you are
                          comfortable editing your web server's configuration, see
                          [Where the loop-data file should
@@ -236,19 +239,18 @@ line with this one (appending any fields other pages of yours use).
                          outside the web root, which keeps it out of your report sync
                          and off an SD card.
  * `filename`          : The name of the loop data file to write.
- * `target_report`     : The WeeWX report to target.  Conversions are decided by this
-                         report, not by the units stored in the database: if the
-                         database is metric but the target report specifies US units,
-                         values arrive in US units, converted and formatted exactly as
-                         the report would render them.  The target report also supplies
-                         the language — the `trend.barometer.desc` descriptions, moon
-                         phases, compass ordinates, almanac body and constellation
-                         names, and hemisphere letters all follow its lang file.
-                         Also, if `loop_data_dir` is a relative path, it will be
-                         relative to the directory of `target_report`.  When LoopData
-                         is first installed, target_report is set to the sample report
-                         included with this skin: `LoopDataReport` (also the default if
-                         the option is absent).
+
+Deprecated, still honored on an upgraded station, not written by a fresh
+install:
+
+ * `target_report`     : The report the old station-wide `fields` line is rendered
+                         through -- its units, formatting and language -- and the
+                         report whose directory a relative `loop_data_dir` is relative
+                         to.  `LoopDataReport`, the sample report, when absent.
+ * `fields`            : The old station-wide list of fields, written as flat keys at
+                         the top level of the file.  Reports declare their own fields
+                         now; do not edit this line by hand -- a later release removes
+                         it once every extension that used it declares its fields.
  * `seconds`           : How often your station emits loop packets.  LoopData weights
                          its accumulator entries with it, and gives each packet an
                          `interval` of `seconds / 60`.  Get it right.  `2.0` is the
@@ -285,11 +287,13 @@ line with this one (appending any fields other pages of yours use).
                          bounds described under `ssh_options`.  0 disables all time bounds.
  * `skip_if_older_than`: Don't bother to rsync if greater than this number of seconds.  Default is 3.
                          (Skip this and move on to the next if this data is older than 3 seconds.)
- * `fields`            : Used to specify which fields to include in the file.
- * `windrose_bands`    : Overrides the wind-speed band edges used by the `windrose`
-                         observation.  Ascending edges, in the target report's
-                         windSpeed unit; the first edge doubles as the calm
-                         threshold.  Defaults to the classic WRPLOT/NOAA bands.
+ * `windrose_bands`    : Pre-7.0 spelling of the `windrose` band edges, in
+                         `target_report`'s windSpeed unit; it bands that report's rose
+                         and no other's, as it did before 7.0.  Since 7.0
+                         `windrose_bands` is a report option: on a report's stanza in
+                         `[StdReport]` (in that report's unit) or under
+                         `[StdReport] [[Defaults]]` for every report -- see
+                         [Declaring fields](https://chaunceygardiner.github.io/weewx-loopdata/declaring-fields.html#windrose_bands-per-report).
                          Note this one sits directly under `[LoopData]`, not in a
                          sub-section.
 
@@ -307,6 +311,8 @@ Everything below is in the
 | Build a live windrose, or tune its speed bands | [The live windrose](https://chaunceygardiner.github.io/weewx-loopdata/windrose.html) |
 | Publish sunrise, moon phase, planet positions or satellite passes | [Almanac fields](https://chaunceygardiner.github.io/weewx-loopdata/almanac-fields.html) |
 | Publish `$station` tags, including a live uptime | [Station fields](https://chaunceygardiner.github.io/weewx-loopdata/station-fields.html) |
+| Declare the fields a report needs | [Declaring fields](https://chaunceygardiner.github.io/weewx-loopdata/declaring-fields.html) |
+| Feed a script, an SNMP check or anything that isn't a page | [Fields for scripts](https://chaunceygardiner.github.io/weewx-loopdata/declaring-fields.html#fields-for-scripts-and-other-non-report-consumers) |
 | Use LoopData in your own skin | [Building a live page](https://chaunceygardiner.github.io/weewx-loopdata/build-a-live-page.html) |
 | Know what the sample panel does, or crib from it | [The sample skin](https://chaunceygardiner.github.io/weewx-loopdata/sample-skin.html) |
 | Read the page in another language | [Translations](https://chaunceygardiner.github.io/weewx-loopdata/i18n.html) |

@@ -37,6 +37,7 @@ import io
 import logging
 import math
 import os
+import pathlib
 import queue
 import random
 import re
@@ -1116,9 +1117,9 @@ class ProcessPacketTests(unittest.TestCase):
         # m/s * 3.6 (km/h).
         L = user.loopdata.LoopData
         us_converter = ProcessPacketTests._get_config(
-            'us', 10800, 1, 6, []).converter
+            'us', 10800, 1, 6, []).legacy.converter
         metric_converter = ProcessPacketTests._get_config(
-            'metric', 10800, 1, 6, []).converter
+            'metric', 10800, 1, 6, []).legacy.converter
 
         self.assertEqual(L.parse_windrose_bands(None, us_converter),
                          [1.1, 4.7, 8.1, 12.8, 19.7, 24.8])
@@ -1601,14 +1602,14 @@ class ProcessPacketTests(unittest.TestCase):
             'almanac.no_such_attr',                             # unknown: skipped
         ]
         cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, ['current.outTemp'])
-        cfg.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
-        self.assertEqual(len(cfg.almanac_fields), len(specified_fields))
+        cfg.legacy.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
+        self.assertEqual(len(cfg.legacy.almanac_fields), len(specified_fields))
         cfg.latitude, cfg.longitude, cfg.altitude_m = 37.4, -122.1, 20.0
 
         stub = StubAlmanacType()
         weewx.almanac.almanacs.insert(0, stub)
         try:
-            evaluator = user.loopdata.AlmanacFieldEvaluator(cfg)
+            evaluator = user.loopdata.AlmanacFieldEvaluator(cfg.legacy, cfg)
 
             # 2020-07-01 (PDT) noon; day boundaries computed the same way the stub does.
             day1_noon = 1593630000
@@ -1626,7 +1627,7 @@ class ProcessPacketTests(unittest.TestCase):
             self.assertEqual(loopdata_pkt['almanac.sunrise.raw'], six_am(0))
             expected_vh = weewx.units.ValueHelper(
                 weewx.units.ValueTuple(six_am(0), 'unix_epoch', 'group_time'),
-                context='ephem_day', formatter=cfg.formatter, converter=cfg.converter)
+                context='ephem_day', formatter=cfg.legacy.formatter, converter=cfg.legacy.converter)
             self.assertEqual(loopdata_pkt['almanac.sunrise'], str(expected_vh))
             self.assertEqual(loopdata_pkt['almanac(days=1).sunrise.raw'], six_am(1))
             self.assertEqual(loopdata_pkt['almanac(days=-1).sunrise.raw'], six_am(-1))
@@ -1712,14 +1713,14 @@ class ProcessPacketTests(unittest.TestCase):
             'almanac.sunrise.no_such_unit.raw', # day tier, raises: SKIP still caches
         ]
         cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, ['current.outTemp'])
-        cfg.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
-        self.assertEqual(len(cfg.almanac_fields), len(specified_fields))
+        cfg.legacy.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
+        self.assertEqual(len(cfg.legacy.almanac_fields), len(specified_fields))
         cfg.latitude, cfg.longitude, cfg.altitude_m = 37.4, -122.1, 20.0
 
         stub = StubAlmanacType()
         weewx.almanac.almanacs.insert(0, stub)
         try:
-            evaluator = user.loopdata.AlmanacFieldEvaluator(cfg)
+            evaluator = user.loopdata.AlmanacFieldEvaluator(cfg.legacy, cfg)
 
             # 2020-07-01 (PDT) noon, as in test_almanac_field_evaluator.
             day1_noon = 1593630000
@@ -1738,7 +1739,7 @@ class ProcessPacketTests(unittest.TestCase):
             self.assertNotIn('almanac.sunrise.raw', loopdata_pkt)
             empty_vh = weewx.units.ValueHelper(
                 weewx.units.ValueTuple(None, 'unix_epoch', 'group_time'),
-                context='ephem_day', formatter=cfg.formatter, converter=cfg.converter)
+                context='ephem_day', formatter=cfg.legacy.formatter, converter=cfg.legacy.converter)
             self.assertEqual(loopdata_pkt['almanac.sunrise'], str(empty_vh))
             self.assertNotIn('almanac.next_full_moon.raw', loopdata_pkt)
             self.assertNotIn('almanac.sunrise.no_such_unit.raw', loopdata_pkt)
@@ -1793,14 +1794,14 @@ class ProcessPacketTests(unittest.TestCase):
             'almanac.next_full_moon.raw',
         ]
         cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, ['current.outTemp'])
-        cfg.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
-        self.assertEqual(len(cfg.almanac_fields), len(specified_fields))
+        cfg.legacy.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
+        self.assertEqual(len(cfg.legacy.almanac_fields), len(specified_fields))
         cfg.latitude, cfg.longitude, cfg.altitude_m = 37.4, -122.1, 20.0
 
         stub = StubAlmanacType()
         weewx.almanac.almanacs.insert(0, stub)
         try:
-            evaluator = user.loopdata.AlmanacFieldEvaluator(cfg)
+            evaluator = user.loopdata.AlmanacFieldEvaluator(cfg.legacy, cfg)
             # The three pass fields share one group; the full moon is its own.
             self.assertEqual(len(evaluator.groups), 2)
 
@@ -1862,14 +1863,14 @@ class ProcessPacketTests(unittest.TestCase):
             'almanac.next_pass.max_altitude',
         ]
         cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, ['current.outTemp'])
-        cfg.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
-        self.assertEqual(len(cfg.almanac_fields), len(specified_fields))
+        cfg.legacy.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
+        self.assertEqual(len(cfg.legacy.almanac_fields), len(specified_fields))
         cfg.latitude, cfg.longitude, cfg.altitude_m = 37.4, -122.1, 20.0
 
         stub = StubAlmanacType()
         weewx.almanac.almanacs.insert(0, stub)
         try:
-            evaluator = user.loopdata.AlmanacFieldEvaluator(cfg)
+            evaluator = user.loopdata.AlmanacFieldEvaluator(cfg.legacy, cfg)
             day1_noon = 1593630000    # 2020-07-01 noon PDT
             pass_a = (day1_noon + 3600, day1_noon + 3600 + 600, 45.0)
 
@@ -1916,14 +1917,14 @@ class ProcessPacketTests(unittest.TestCase):
             'almanac.next_pass.duration.raw',
         ]
         cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, ['current.outTemp'])
-        cfg.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
-        self.assertEqual(len(cfg.almanac_fields), len(specified_fields))
+        cfg.legacy.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
+        self.assertEqual(len(cfg.legacy.almanac_fields), len(specified_fields))
         cfg.latitude, cfg.longitude, cfg.altitude_m = 37.4, -122.1, 20.0
 
         stub = StubAlmanacType()
         weewx.almanac.almanacs.insert(0, stub)
         try:
-            evaluator = user.loopdata.AlmanacFieldEvaluator(cfg)
+            evaluator = user.loopdata.AlmanacFieldEvaluator(cfg.legacy, cfg)
             day1_noon = 1593630000    # 2020-07-01 noon PDT
             pass_a = (day1_noon + 3600, day1_noon + 3600 + 600, 45.0)
             pass_b = (day1_noon + 86400, day1_noon + 86400 + 480, 62.0)
@@ -1960,16 +1961,16 @@ class ProcessPacketTests(unittest.TestCase):
         rest of the local day, and recomputed when the day advances."""
         specified_fields = ['almanac.previous_full_moon.raw']
         cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, ['current.outTemp'])
-        cfg.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
-        self.assertEqual(len(cfg.almanac_fields), len(specified_fields))
+        cfg.legacy.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
+        self.assertEqual(len(cfg.legacy.almanac_fields), len(specified_fields))
         # previous_* fields are per-field day-rolled, never grouped.
-        self.assertIsNone(cfg.almanac_fields[0].group)
+        self.assertIsNone(cfg.legacy.almanac_fields[0].group)
         cfg.latitude, cfg.longitude, cfg.altitude_m = 37.4, -122.1, 20.0
 
         stub = StubAlmanacType()
         weewx.almanac.almanacs.insert(0, stub)
         try:
-            evaluator = user.loopdata.AlmanacFieldEvaluator(cfg)
+            evaluator = user.loopdata.AlmanacFieldEvaluator(cfg.legacy, cfg)
             day1_noon = 1593630000    # 2020-07-01 noon PDT
             stub.previous_full_moon_ts = day1_noon - 5 * 86400
 
@@ -2007,19 +2008,19 @@ class ProcessPacketTests(unittest.TestCase):
             'almanac.sunrise.no_such_unit.raw',       # illegal conversion: skipped
         ]
         cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, ['current.outTemp'])
-        cfg.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
-        self.assertEqual(len(cfg.almanac_fields), len(specified_fields))
+        cfg.legacy.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
+        self.assertEqual(len(cfg.legacy.almanac_fields), len(specified_fields))
         cfg.latitude, cfg.longitude, cfg.altitude_m = 37.4, -122.1, 20.0
         # The hazard the unit segment exists for: a target report that
         # overrides unit groups (skyfield issue #2's lesson -- ValueHelper
         # .raw is unformatted, NOT unconverted).
-        cfg.converter = weewx.units.Converter(
+        cfg.legacy.converter = weewx.units.Converter(
             {'group_time': 'unix_epoch_ms', 'group_deltatime': 'hour'})
 
         stub = StubAlmanacType()
         weewx.almanac.almanacs.insert(0, stub)
         try:
-            evaluator = user.loopdata.AlmanacFieldEvaluator(cfg)
+            evaluator = user.loopdata.AlmanacFieldEvaluator(cfg.legacy, cfg)
             day1_noon = 1593630000    # 2020-07-01 noon PDT
             day_start = time.mktime(date.fromtimestamp(day1_noon).timetuple())
             sunrise_ts = day_start + 6 * 3600
@@ -2049,14 +2050,14 @@ class ProcessPacketTests(unittest.TestCase):
             'almanac.sun.duration_method',                # method at chain end
         ]
         cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, ['current.outTemp'])
-        cfg.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
-        self.assertEqual(len(cfg.almanac_fields), len(specified_fields))
+        cfg.legacy.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
+        self.assertEqual(len(cfg.legacy.almanac_fields), len(specified_fields))
         cfg.latitude, cfg.longitude, cfg.altitude_m = 37.4, -122.1, 20.0
 
         stub = StubAlmanacType()
         weewx.almanac.almanacs.insert(0, stub)
         try:
-            evaluator = user.loopdata.AlmanacFieldEvaluator(cfg)
+            evaluator = user.loopdata.AlmanacFieldEvaluator(cfg.legacy, cfg)
             loopdata_pkt: Dict[str, Any] = {}
             evaluator.insert_fields(loopdata_pkt, {'dateTime': 1593630000, 'usUnits': 1})
 
@@ -2087,9 +2088,9 @@ class ProcessPacketTests(unittest.TestCase):
             'almanac.sun.visible.second.raw',
         ]
         cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, specified_fields)
-        cfg.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
+        cfg.legacy.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
         cfg.latitude, cfg.longitude, cfg.altitude_m = 37.4, -122.1, 20.0
-        evaluator = user.loopdata.AlmanacFieldEvaluator(cfg)
+        evaluator = user.loopdata.AlmanacFieldEvaluator(cfg.legacy, cfg)
 
         # July 1, 2020 Noon PDT
         pkt: Dict[str, Any] = {'dateTime': 1593630000, 'usUnits': 1, 'outTemp': 77.4}
@@ -2102,11 +2103,13 @@ class ProcessPacketTests(unittest.TestCase):
         temperature_c = weewx.units.convert(
             weewx.units.as_value_tuple(pkt, 'outTemp'), 'degree_C')[0]
         oracle = weewx.almanac.Almanac(pkt['dateTime'], 37.4, -122.1, altitude=20.0,
-            temperature=temperature_c, formatter=cfg.formatter, converter=cfg.converter,
+            temperature=temperature_c, formatter=cfg.legacy.formatter, converter=cfg.legacy.converter,
             # texts= only exists from WeeWX 5.3; spell it as the running
             # WeeWX takes it, so this test runs where the fix matters.
+            # The report's own [Almanac] texts, exactly as the context
+            # carries them (SeasonsReport's moon_phases in the fixture).
             **user.loopdata.AlmanacFieldEvaluator.build_texts_kwargs(
-                weewx.almanac.Almanac, {}))
+                weewx.almanac.Almanac, cfg.legacy.almanac_texts))
 
         self.assertEqual(loopdata_pkt['current.outTemp'], '77.4°F')
         self.assertEqual(loopdata_pkt['almanac.sunrise'], str(oracle.sunrise))
@@ -2271,8 +2274,8 @@ class ProcessPacketTests(unittest.TestCase):
             'station.no_such_attr',                # unknown: skipped
         ]
         cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, specified_fields)
-        cfg.station_fields = user.loopdata.LoopData.get_station_fields(specified_fields)
-        self.assertEqual(len(cfg.station_fields), len(specified_fields) - 1) # less current.outTemp
+        cfg.legacy.station_fields = user.loopdata.LoopData.get_station_fields(specified_fields)
+        self.assertEqual(len(cfg.legacy.station_fields), len(specified_fields) - 1) # less current.outTemp
 
         # The Station exactly as LoopData.__init__ builds it: the engine's
         # StationInfo plus the target report's formatter/converter/skin dict.
@@ -2281,7 +2284,7 @@ class ProcessPacketTests(unittest.TestCase):
         stn_info = weewx.station.StationInfo(altitude=['700', 'foot'],
             latitude='37.4', longitude='-122.1', location='Palo Alto, California',
             station_type='Vantage', week_start='6', rain_year_start='10')
-        cfg.station = weewx.station.Station(stn_info, cfg.formatter, cfg.converter,
+        cfg.legacy.station = weewx.station.Station(stn_info, cfg.legacy.formatter, cfg.legacy.converter,
             target_report_dict)
 
         saved_launchtime = weewx.launchtime_ts
@@ -2289,7 +2292,7 @@ class ProcessPacketTests(unittest.TestCase):
         # so long_form stays stable for the duration of the test.
         weewx.launchtime_ts = time.time() - 90061
         try:
-            evaluator = user.loopdata.StationFieldEvaluator(cfg.station_fields, cfg.station)
+            evaluator = user.loopdata.StationFieldEvaluator(cfg.legacy.station_fields, cfg.legacy.station)
 
             # Through generate_loopdata_dictionary, as LoopProcessor drives it.
             pkt: Dict[str, Any] = {'dateTime': int(time.time()), 'usUnits': 1, 'outTemp': 77.4}
@@ -2319,7 +2322,7 @@ class ProcessPacketTests(unittest.TestCase):
             self.assertNotIn('station.no_such_attr', loopdata_pkt)
 
             # Static values are computed once and cached; dynamic values tick.
-            cfg.station.version = 'bogus'
+            cfg.legacy.station.version = 'bogus'
             weewx.launchtime_ts -= 3600
             loopdata_pkt2: Dict[str, Any] = {}
             evaluator.insert_fields(loopdata_pkt2)
@@ -4647,8 +4650,8 @@ class ProcessPacketTests(unittest.TestCase):
                             'current.outTemp.formatted',
                             'current.windDir.ordinal_compass']
         cfg = ProcessPacketTests._get_config('us', 10800, 1, 6, specified_fields)
-        converter = cfg.converter
-        formatter = cfg.formatter
+        converter = cfg.legacy.converter
+        formatter = cfg.legacy.formatter
 
         pkt = {'dateTime': 1000, 'usUnits': 1, 'outTemp': 72.5, 'windDir': 90.0}
 
@@ -4709,7 +4712,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         pkt = {'dateTime': pkt_time, 'usUnits': 1, 'outTemp': 65.0}
         loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(
-            pkt, cfg, accums)
+            pkt, cfg.legacy, accums, cfg.loop_frequency)
 
         # Each period routed to its own accum (cross-checks routing).
         self.assertAlmostEqual(loopdata_pkt['day.outTemp.max.raw'], 80.0)
@@ -4731,8 +4734,8 @@ class ProcessPacketTests(unittest.TestCase):
                             'current.outTemp.degree_C.raw',
                             'current.outTemp.beaufort.raw']
         cfg = ProcessPacketTests._get_config('us', 10800, 1, 6, specified_fields)
-        converter = cfg.converter
-        formatter = cfg.formatter
+        converter = cfg.legacy.converter
+        formatter = cfg.legacy.formatter
 
         pkt = {'dateTime': 1000, 'usUnits': 1, 'windSpeed': 25.0, 'outTemp': 68.0}
 
@@ -4777,8 +4780,8 @@ class ProcessPacketTests(unittest.TestCase):
         US = weewx.units.unit_constants['US']
         cfg = ProcessPacketTests._get_config('us', 10800, 1, 6,
                 ['day.outTemp.avg.degree_C'])
-        converter = cfg.converter
-        formatter = cfg.formatter
+        converter = cfg.legacy.converter
+        formatter = cfg.legacy.formatter
 
         day_accum = weewx.accum.Accum(
             weeutil.weeutil.archiveDaySpan(1593630000), US)
@@ -4841,8 +4844,8 @@ class ProcessPacketTests(unittest.TestCase):
         import weewx.units
         US = weewx.units.unit_constants['US']
         cfg = ProcessPacketTests._get_config('us', 10800, 1, 6, ['day.outTemp.maxtime'])
-        converter = cfg.converter
-        formatter = cfg.formatter
+        converter = cfg.legacy.converter
+        formatter = cfg.legacy.formatter
 
         t_max = 1593630000
         day_accum = weewx.accum.Accum(
@@ -5054,8 +5057,8 @@ class ProcessPacketTests(unittest.TestCase):
         from weewx.units import ValueHelper, ValueTuple
         US = weewx.units.unit_constants['US']
         cfg = ProcessPacketTests._get_config('us', 10800, 1, 6, ['day.outTemp.max'])
-        converter = cfg.converter
-        formatter = cfg.formatter
+        converter = cfg.legacy.converter
+        formatter = cfg.legacy.formatter
 
         t_max = 1593630000
         day_accum = weewx.accum.Accum(weeutil.weeutil.archiveDaySpan(t_max), US)
@@ -5207,9 +5210,9 @@ class ProcessPacketTests(unittest.TestCase):
         # to_json_value renders through the actual ValueHelper, so its output
         # IS the report tag's.
         cfg = ProcessPacketTests._get_config('us', 10800, 10, 6, ['current.outTemp'])
-        evaluator = user.loopdata.AlmanacFieldEvaluator(cfg)
+        evaluator = user.loopdata.AlmanacFieldEvaluator(cfg.legacy, cfg)
         vh = ValueHelper(ValueTuple(1593630000, 'unix_epoch', 'group_time'),
-            'ephem_day', cfg.formatter, cfg.converter)
+            'ephem_day', cfg.legacy.formatter, cfg.legacy.converter)
         af = parse('almanac.sunrise.format("%H:%M")')
         assert af is not None
         self.assertEqual(evaluator.to_json_value(af, vh), vh.format("%H:%M"))
@@ -5220,7 +5223,7 @@ class ProcessPacketTests(unittest.TestCase):
         # ordinal_compass is a ValueHelper METHOD (not a property); a bare
         # callable spec is invoked, as Cheetah's auto-call renders it.
         vh_dir = ValueHelper(ValueTuple(225.0, 'degree_compass', 'group_direction'),
-            'current', cfg.formatter, cfg.converter)
+            'current', cfg.legacy.formatter, cfg.legacy.converter)
         af = parse('almanac.sun.az.ordinal_compass')
         assert af is not None
         self.assertEqual(evaluator.to_json_value(af, vh_dir),
@@ -5236,7 +5239,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(af.format_spec, 'raw')
         self.assertEqual(af.tier, 'continuous')
         vh_az = ValueHelper(ValueTuple(225.6789, 'degree_compass', 'group_direction'),
-            'current', cfg.formatter, cfg.converter)
+            'current', cfg.legacy.formatter, cfg.legacy.converter)
         self.assertEqual(evaluator.to_json_value(af, vh_az), vh_az.round(1).raw)
         af = parse('almanac.sun.az.round(1)')  # no spec: default str() rendering
         assert af is not None
@@ -6997,8 +7000,8 @@ class ProcessPacketTests(unittest.TestCase):
             accums.hour_accum            = weewx.accum.Accum(weeutil.weeutil.archiveHoursAgoSpan(pkt_time), cfg.unit_system)
         # Make continous accums if there are matching continous obs types.
         for per in cfg.obstypes.continuous:
-            if per == 'trend':
-                timelength = cfg.time_delta
+            if user.loopdata.LoopData.is_trend_key(per):
+                timelength = user.loopdata.LoopData.trend_key_seconds(per)
             elif user.loopdata.LoopData.is_hour_period(per):
                 timelength = int(per[:-1])*3600
             elif user.loopdata.LoopData.is_minute_period(per):
@@ -7007,37 +7010,51 @@ class ProcessPacketTests(unittest.TestCase):
 
         # Make windrose accums (unseeded; seeding is create_windrose_accums'
         # job and needs a database).
-        if len(cfg.windrose_span_periods) > 0 or len(cfg.windrose_continuous_periods) > 0:
-            banding = user.loopdata.LoopData.create_windrose_banding(cfg)
-            for per in cfg.windrose_span_periods:
-                accums.windrose_span[per] = user.loopdata.WindRoseSpanAccum(
-                    banding, user.loopdata.LoopData.windrose_span_fn(
-                        per, cfg.week_start, cfg.rainyear_start), pkt_time)
-            for per in cfg.windrose_continuous_periods:
-                timelength = int(per[:-1]) * (3600 if per.endswith('h') else 60)
-                accums.windrose_continuous[per] = user.loopdata.WindRoseContinuousAccum(
-                    banding, timelength)
+        for windrose_key, (tgt_unit, bands) in cfg.windrose_bandings.items():
+            banding = user.loopdata.LoopData.create_windrose_banding(cfg.unit_system, tgt_unit, bands)
+            for key, per in cfg.windrose_span_periods:
+                if key == windrose_key:
+                    accums.windrose_span[(key, per)] = user.loopdata.WindRoseSpanAccum(
+                        banding, user.loopdata.LoopData.windrose_span_fn(
+                            per, cfg.week_start, cfg.rainyear_start), pkt_time)
+            for key, per in cfg.windrose_continuous_periods:
+                if key == windrose_key:
+                    timelength = int(per[:-1]) * (3600 if per.endswith('h') else 60)
+                    accums.windrose_continuous[(key, per)] = user.loopdata.WindRoseContinuousAccum(
+                        banding, timelength)
 
         return accums
 
     @staticmethod
     def _get_config(config_dict_kind, time_delta, rainyear_start, week_start, specified_fields) -> user.loopdata.Configuration:
+        """A Configuration whose one context is the LEGACY one: the test's
+        fields are the [[Include]] fields line, rendered flat through
+        SeasonsReport -- the shape every packet assertion below reads.
+        Declaring-report tests add ReportContexts to cfg.reports."""
         os.environ['TZ'] = 'America/Los_Angeles'
         config_dict: Dict[str, Any] = configobj.ConfigObj('tests/weewx.conf.%s' % config_dict_kind, encoding='utf-8')
-        unit_system: int = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
-        std_archive_dict: Dict[str, Any] = config_dict.get('StdArchive', {})
-        (fields_to_include, obstypes) = user.loopdata.LoopData.get_fields_to_include(specified_fields)
-        windrose_span_periods, windrose_continuous_periods = \
-            user.loopdata.LoopData.get_windrose_periods(fields_to_include)
 
         # Get converter and formatter from SeasonsReport.
         target_report_dict: Dict[str, Any] = user.loopdata.LoopData.get_target_report_dict(config_dict, 'SeasonsReport')
-        converter: weewx.units.Converter = weewx.units.Converter.fromSkinDict(target_report_dict)
-        assert type(converter) == weewx.units.Converter
-        formatter: weewx.units.Formatter = weewx.units.Formatter.fromSkinDict(target_report_dict)
-        assert type(formatter) == weewx.units.Formatter
+        ctx = user.loopdata.LoopData.build_report_context(
+            None, list(specified_fields), target_report_dict, None, None)
+        assert type(ctx.converter) == weewx.units.Converter
+        assert type(ctx.formatter) == weewx.units.Formatter
+        # The test names the trend window; the skin dict's is overridden
+        # (trend_key follows, being derived from it).
+        ctx.time_delta = time_delta
+        return ProcessPacketTests._make_config(config_dict, rainyear_start, week_start,
+            legacy=ctx, reports=[])
 
-        return user.loopdata.Configuration(
+    @staticmethod
+    def _make_config(config_dict: Dict[str, Any], rainyear_start: int, week_start: int,
+            legacy: Optional[user.loopdata.ReportContext],
+            reports: List[user.loopdata.ReportContext]) -> user.loopdata.Configuration:
+        """The shared Configuration over the given contexts, with the
+        unions exactly as LoopData.__init__ computes them."""
+        unit_system: int = weewx.units.unit_constants[config_dict['StdConvert'].get('target_unit', 'US').upper()]
+        std_archive_dict: Dict[str, Any] = config_dict.get('StdArchive', {})
+        cfg = user.loopdata.Configuration(
             queue                    = queue.SimpleQueue(), # dummy
             config_dict              = config_dict,
             unit_system              = unit_system,
@@ -7045,12 +7062,8 @@ class ProcessPacketTests(unittest.TestCase):
             archive_delay            = to_int(std_archive_dict.get('archive_delay', 15)),
             loop_data_dir            = '', # dummy
             filename                 = '', # dummy
-            target_report            = '', # dummy
+            target_report            = 'SeasonsReport',
             loop_frequency           = 2.0,
-            specified_fields         = specified_fields,
-            fields_to_include        = fields_to_include,
-            formatter                = formatter,
-            converter                = converter,
             tmpname                  = '', # dummy
             enable                   = True, # dummy
             remote_server            = '', # dummy
@@ -7062,14 +7075,12 @@ class ProcessPacketTests(unittest.TestCase):
             ssh_options              = '', # dummy
             timeout                  = 1, # dummy
             skip_if_older_than       = 3, # dummy
-            time_delta               = time_delta,
             week_start               = week_start,
             rainyear_start           = rainyear_start,
-            obstypes                 = obstypes,
-            baro_trend_descs         = user.loopdata.LoopData.construct_baro_trend_descs({}),
-            windrose_bands           = user.loopdata.LoopData.parse_windrose_bands(None, converter),
-            windrose_span_periods    = windrose_span_periods,
-            windrose_continuous_periods = windrose_continuous_periods)
+            legacy                   = legacy,
+            reports                  = list(reports))
+        cfg.recompute()
+        return cfg
 
     @staticmethod
     def _get_specified_fields() -> List[str]:
@@ -7569,16 +7580,17 @@ class ProcessPacketTests(unittest.TestCase):
             'unit.label.windrose',
         ]
         cfg = ProcessPacketTests._get_config('us', 10800, 1, 6, specified_fields)
-        self.assertEqual(cfg.windrose_span_periods, {'day'})
-        self.assertEqual(cfg.windrose_continuous_periods, {'30m'})
+        key = cfg.legacy.windrose_key
+        self.assertEqual(cfg.windrose_span_periods, {(key, 'day')})
+        self.assertEqual(cfg.windrose_continuous_periods, {(key, '30m')})
         # windrose needs the underlying observations in the packet.
         self.assertIn('windSpeed', cfg.obstypes.current)
         self.assertIn('windDir', cfg.obstypes.current)
 
         pkt_time = 1593630000  # noon PDT, 2020-07-01 (TZ set by _get_config)
         accums = ProcessPacketTests._get_accums(cfg, pkt_time)
-        self.assertIn('day', accums.windrose_span)
-        self.assertIn('30m', accums.windrose_continuous)
+        self.assertIn((key, 'day'), accums.windrose_span)
+        self.assertIn((key, '30m'), accums.windrose_continuous)
 
         pkts = [
             {'dateTime': pkt_time,     'usUnits': 1, 'windSpeed': 7.2,  'windDir': 90.0},   # bin 4, band 1
@@ -7600,7 +7612,7 @@ class ProcessPacketTests(unittest.TestCase):
         sums_km = loopdata_pkt['day.windrose.sum.km.round(3)']
         self.assertAlmostEqual(sums_km[4], round(expected_e * 1.609344, 3))
 
-        fmt = cfg.formatter.get_format_string('mile')
+        fmt = cfg.legacy.formatter.get_format_string('mile')
         formatted = loopdata_pkt['day.windrose.sum.formatted']
         self.assertEqual(formatted[4], fmt % expected_e)
 
@@ -7620,7 +7632,7 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(loopdata_pkt['windrose.bands'],
                          [1.1, 4.7, 8.1, 12.8, 19.7, 24.8])
         self.assertEqual(loopdata_pkt['unit.label.windrose'],
-                         cfg.formatter.get_label_string('mile'))
+                         cfg.legacy.formatter.get_label_string('mile'))
 
     # ---- Sample-report i18n (6.4) -----------------------------------------
     # The translation plumbing ported from weewx-skyfield 1.12/weewx-celestial
@@ -8219,10 +8231,20 @@ class ProcessPacketTests(unittest.TestCase):
         return module.LoopDataInstaller()['config']
 
     @classmethod
+    def installer_files(cls) -> List[str]:
+        """Every file install.py ships, repo-relative."""
+        importlib.import_module('weecfg.extension')
+        spec = importlib.util.spec_from_file_location(
+            'loopdata_install_files', os.path.join(cls.REPO_ROOT, 'install.py'))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return [f for _dest, files in module.LoopDataInstaller()['files'] for f in files]
+
+    @classmethod
     def installer_loopdata_config(cls) -> Dict[str, Any]:
         """The [LoopData] section install.py writes into weewx.conf."""
         config = cls.installer_config()['LoopData']
-        assert set(config) >= {'FileSpec', 'Formatting', 'Include'}, sorted(config)
+        assert set(config) >= {'FileSpec', 'LoopFrequency', 'RsyncSpec'}, sorted(config)
         return config
 
     @staticmethod
@@ -8238,7 +8260,7 @@ class ProcessPacketTests(unittest.TestCase):
         # before the first fence contains the whole page.
         blocks = [b for i, b in enumerate(text.split('```'))
                   if i % 2 == 1 and '[LoopData]' in b and '[[FileSpec]]' in b
-                  and '[[RsyncSpec]]' in b and '[[Include]]' in b]
+                  and '[[RsyncSpec]]' in b and '[[LoopFrequency]]' in b]
         assert len(blocks) == 1, 'expected exactly one full sample block, got %d' % len(blocks)
         block = blocks[0]
         values: Dict[str, str] = {}
@@ -8265,10 +8287,8 @@ class ProcessPacketTests(unittest.TestCase):
         for section in config.values():
             if isinstance(section, dict):
                 for key, value in section.items():
-                    if key != 'fields':
-                        installed[key] = str(value)
-        installer_fields = list(config['Include']['fields'])
-        assert len(installer_fields) >= 40, len(installer_fields)
+                    installed[key] = str(value)
+        assert len(installed) >= 11, sorted(installed)
         for where, text in (('docs/configuration.md',
                              self.doc_text('configuration.md')),
                             ('README.md', self.repo_text('README.md'))):
@@ -8276,9 +8296,11 @@ class ProcessPacketTests(unittest.TestCase):
             for key, value in sorted(installed.items()):
                 self.assertIn(key, values, (where, key))
                 self.assertEqual(values[key].lower(), value.lower(), (where, key))
-            # The fields line IS the sample panel's field list; order matters
-            # because the documents present it as copy-and-paste.
-            self.assertEqual(fields, installer_fields, where)
+            # BOTH directions: a documented option the installer no longer
+            # writes (7.0 dropped target_report and the fields line) is a
+            # stale claim too.
+            self.assertEqual(sorted(values), sorted(installed), where)
+            self.assertEqual(fields, [], where)
 
     def test_manual_field_grammar_matches_the_code(self):
         # The field reference enumerates the grammar's accepted sets.  Each
@@ -8600,7 +8622,6 @@ class ProcessPacketTests(unittest.TestCase):
                 '#   This section is for the weewx-loopdata extension',
                 '# Where to write the loop-data file.',
                 '# How often your station emits loop packets, in seconds.',
-                '# The fields to write into the json file',
                 '# PLACEHOLDER -- replace with the server to copy the file to.',
                 '# Hours the page keeps polling before it gives up',
         ]:
@@ -8615,6 +8636,303 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(target['StdReport']['LoopDataReport']['HTML_ROOT'],
                          os.path.join('public_html', 'loopdata'))
 
+    def test_legacy_bands_follow_the_target_report(self):
+        """The [[Include]] line is rendered through target_report, so it
+        bands the way that report bands.  A station that moved
+        windrose_bands to [StdReport] [[Defaults]] while still on the line
+        -- what the manual tells it to do -- must not have the flat rose
+        revert to the WRPLOT defaults, and the shared rendering must
+        survive."""
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp)
+            fields = ['current.outTemp', 'day.windrose.calm']
+            config_dict['LoopData']['Include'] = {'fields': fields}
+            config_dict['LoopData']['Formatting'] = {'target_report': 'LoopDataReport'}
+            # The value moved to [[Defaults]]; nothing under [LoopData].
+            config_dict['StdReport']['Defaults']['windrose_bands'] = ['1', '4', '8']
+            service = user.loopdata.LoopData(self.FakeEngine(config_dict), config_dict)
+            cfg = service.cfg
+            twin = [c for c in cfg.reports if c.report_name == 'LoopDataReport'][0]
+            self.assertEqual(cfg.legacy.windrose_bands, [1.0, 4.0, 8.0])
+            self.assertEqual(twin.windrose_bands, [1.0, 4.0, 8.0])
+            # Agreeing, they share one windrose set and the fields render once.
+            self.assertEqual(len(cfg.windrose_bandings), 1)
+            self.assertEqual(set(cfg.legacy_shared), set(fields) | {'windrose.bands'})
+            self.assertEqual(set(cfg.legacy_shared.values()), {'LoopDataReport'})
+            os.unlink(cfg.tmpname)
+
+        # And with the value still under [LoopData] -- every pre-7.0
+        # station -- the answer is what it always was.
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp)
+            config_dict['LoopData']['Include'] = {'fields': ['current.outTemp']}
+            config_dict['LoopData']['windrose_bands'] = ['2', '5']
+            with self.assertLogs('user.loopdata', level='WARNING'):
+                service = user.loopdata.LoopData(self.FakeEngine(config_dict), config_dict)
+            self.assertEqual(service.cfg.legacy.windrose_bands, [2.0, 5.0])
+            os.unlink(service.cfg.tmpname)
+
+    def test_legacy_fields_are_shared_with_any_matching_report(self):
+        """The fields line carries other extensions' entries -- what every
+        celestial and weatherboard installer wrote for years -- and those
+        reports are not target_report.  Any report whose rendering is
+        identical may stand in, so those fields are computed ONCE instead
+        of twice per packet; a report that renders differently may not."""
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp)
+            # A second declaring report, not the target, declaring fields
+            # the sample skin does not -- the celestial case.
+            other = os.path.join(tmp, 'skins', 'Other')
+            os.makedirs(other)
+            open(os.path.join(other, 'skin.conf'), 'w').write(
+                '[Generators]\n    generator_list = weewx.cheetahgenerator.CheetahGenerator\n'
+                '[LoopData]\n    [[fields]]\n        a = hour.outTemp.max.raw, week.rain.sum\n')
+            # And a third whose trend window differs, so it renders trends
+            # differently and must NOT be used as a stand-in.  The window
+            # goes on the report's stanza: [[Defaults]] beats a skin.conf.
+            odd = os.path.join(tmp, 'skins', 'Odd')
+            os.makedirs(odd)
+            open(os.path.join(odd, 'skin.conf'), 'w').write(
+                '[Generators]\n    generator_list = weewx.cheetahgenerator.CheetahGenerator\n'
+                '[LoopData]\n    [[fields]]\n        a = trend.outTemp.raw\n')
+            config_dict['StdReport']['Other'] = {'skin': 'Other', 'HTML_ROOT': 'public_html/other'}
+            config_dict['StdReport']['Odd'] = {'skin': 'Odd', 'HTML_ROOT': 'public_html/odd',
+                                               'Units': {'Trend': {'time_delta': '3600'}}}
+            config_dict['LoopData']['Include'] = {'fields': [
+                'current.outTemp',        # LoopDataReport's (the target)
+                'hour.outTemp.max.raw',   # Other's
+                'week.rain.sum',          # Other's
+                'trend.outTemp.raw',      # Odd's -- different trend window
+                'current.inHumidity.raw']}   # nobody's
+            config_dict['LoopData']['Formatting'] = {'target_report': 'LoopDataReport'}
+            with self.assertLogs('user.loopdata', level='INFO') as logs:
+                service = user.loopdata.LoopData(self.FakeEngine(config_dict), config_dict)
+            cfg = service.cfg
+            self.assertEqual(cfg.legacy_shared, {
+                'current.outTemp': 'LoopDataReport',
+                'hour.outTemp.max.raw': 'Other',
+                'week.rain.sum': 'Other'})
+            # Odd renders trends over a different window, so its field stays
+            # the legacy context's own, along with the one nobody declares.
+            self.assertEqual(sorted(cfg.legacy.specified_fields),
+                             ['current.inHumidity.raw', 'trend.outTemp.raw'])
+            self.assertTrue(any('LoopDataReport: 1' in m and 'Other: 2' in m for m in logs.output),
+                            logs.output)
+            odd_ctx = [c for c in cfg.reports if c.report_name == 'Odd'][0]
+            self.assertEqual(odd_ctx.time_delta, 3600)
+            self.assertNotEqual(odd_ctx.render_signature, cfg.legacy.render_signature)
+            # Two trend accumulators, since the windows genuinely differ.
+            self.assertEqual(sorted(k for k in cfg.obstypes.continuous
+                                    if user.loopdata.LoopData.is_trend_key(k)),
+                             ['trend@10800', 'trend@3600'])
+
+            # The flat keys are all still there, and each shared one is
+            # byte-identical to the entry it was copied from.
+            pkt_time = 1593630000
+            accums = ProcessPacketTests._get_accums(cfg, pkt_time)
+            renderers = user.loopdata.LoopProcessor(cfg).renderers
+            for offset in (0, 2):
+                out = user.loopdata.LoopProcessor.generate_output(
+                    {'dateTime': pkt_time + offset, 'usUnits': 1, 'outTemp': 77.0 + offset,
+                     'inHumidity': 40.0, 'rain': 0.0, 'windSpeed': 4.0, 'windDir': 90.0},
+                    cfg, accums, renderers)
+            for field, report in cfg.legacy_shared.items():
+                self.assertIn(field, out, field)
+                self.assertEqual(out[field], out[report][field], field)
+            self.assertIn('current.inHumidity.raw', out)      # the legacy context's own
+            self.assertIn('trend.outTemp.raw', out['Odd'])
+            os.unlink(cfg.tmpname)
+
+    def test_a_failing_report_does_not_stop_the_file(self):
+        """Every enabled report's declaration is rendered, including skins
+        this station never wrote.  One of them raising must cost that
+        report its entry, not the whole file -- process_queue re-raises,
+        which would end the LoopProcessor thread and freeze loop-data.txt
+        for good."""
+        L = user.loopdata.LoopData
+        config_dict = configobj.ConfigObj('tests/weewx.conf.us', encoding='utf-8')
+        skin_dict = L.get_target_report_dict(config_dict, 'SeasonsReport')
+        good = L.build_report_context('Good', ['current.outTemp'], skin_dict, None, None)
+        bad = L.build_report_context('Bad', ['current.outTemp'], skin_dict, None, None)
+        cfg = ProcessPacketTests._make_config(config_dict, 1, 6, legacy=None, reports=[good, bad])
+        t = 1593630000
+        accums = ProcessPacketTests._get_accums(cfg, t)
+        renderers = [user.loopdata.ReportRenderer.for_context(c, cfg) for c in cfg.contexts]
+
+        class Exploding:
+            fields = []
+            def insert_fields(self, loopdata_pkt, pkt):
+                raise ValueError('boom')
+        renderers[1].almanac_eval = Exploding()   # the 'Bad' context blows up
+
+        pkt = {'dateTime': t, 'usUnits': 1, 'outTemp': 77.0}
+        failures: Set[str] = set()
+        with self.assertLogs('user.loopdata', level='ERROR') as logs:
+            out = user.loopdata.LoopProcessor.generate_output(pkt, cfg, accums, renderers, failures)
+        self.assertEqual(sorted(out), ['Good'])              # Bad is dropped, Good survives
+        self.assertEqual(out['Good']['current.outTemp'], '77.0°F')
+        self.assertTrue(any('Could not render report Bad' in m for m in logs.output), logs.output)
+        # Logged once, not on every packet -- and the record of that is the
+        # processor's own, not shared class state.
+        out = user.loopdata.LoopProcessor.generate_output(pkt, cfg, accums, renderers, failures)
+        self.assertEqual(sorted(out), ['Good'])
+        self.assertEqual(failures, {'report Bad'})
+        self.assertFalse(hasattr(user.loopdata.LoopProcessor, 'render_failures'))
+        self.assertEqual(user.loopdata.LoopProcessor(cfg).render_failures, set())
+
+    def test_version_tuple_is_shared_with_the_installer(self):
+        """One helper, so the service's floor check and the installer's
+        cannot disagree about a version string."""
+        L = user.loopdata
+        self.assertEqual(L.version_tuple('4.10.2'), (4, 10, 2))
+        self.assertEqual(L.version_tuple('5.1'), (5, 1))
+        self.assertEqual(L.version_tuple('4.6.0b7'), (4, 6, 0))
+        self.assertLess(L.version_tuple('4.5.1'), (4, 6))
+        self.assertGreater(L.version_tuple('4.10'), (4, 6))
+        self.assertGreater(L.version_tuple('5.0.0'), (4, 6))
+        # The installer defers to it rather than keeping its own rule.
+        source = self.repo_text('install.py')
+        self.assertIn('user.loopdata.version_tuple(version)', source)
+
+    def test_finish_migration_reports_then_applies(self):
+        """python3 -m user.loopdata: report only, and change nothing while
+        any entry on the fields line is claimed by nobody; then remove the
+        deprecated trio once every entry is accounted for."""
+        L = user.loopdata
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp)
+            config_dict['LoopData']['Formatting'] = {'target_report': 'LoopDataReport'}
+            config_dict['LoopData']['windrose_bands'] = ['1', '4', '8']
+            config_dict['LoopData']['Include'] = {'fields': [
+                'current.outTemp',          # LoopDataReport declares it
+                'day.rain.sum',             # ditto
+                'almanac.moon.rise',        # cruft: nobody declares it
+                'current.extraTemp2']}      # a script's, also undeclared here
+            report = L.migration_report(config_dict)
+            self.assertEqual(report['owner'], {'current.outTemp': 'LoopDataReport',
+                                               'day.rain.sum': 'LoopDataReport'})
+            self.assertEqual(report['unclaimed'], ['almanac.moon.rise', 'current.extraTemp2'])
+            self.assertEqual(report['differs'], set())      # the target renders identically
+            # Nothing may be removed while anything is unclaimed.
+            config_path = os.path.join(tmp, 'weewx.conf')
+            config_dict.filename = config_path
+            config_dict.write()
+            self.assertEqual(L.main.__module__, 'user.loopdata')
+
+            # Account for the two, and it applies.
+            config_dict['LoopData']['Include']['fields'] = ['current.outTemp', 'day.rain.sum']
+            report = L.migration_report(config_dict)
+            self.assertEqual(report['unclaimed'], [])
+            changes = L.apply_migration(config_dict, report)
+            self.assertNotIn('Include', config_dict['LoopData'])
+            self.assertNotIn('Formatting', config_dict['LoopData'])
+            self.assertNotIn('windrose_bands', config_dict['LoopData'])
+            # It bands target_report's rose, so it moves to target_report's
+            # stanza -- already in that report's unit, so unconverted.
+            self.assertEqual(config_dict['StdReport']['LoopDataReport']['windrose_bands'], ['1', '4', '8'])
+            self.assertNotIn('windrose_bands', config_dict['StdReport']['Defaults'])
+            self.assertTrue(any('moved [LoopData] windrose_bands' in c and 'LoopDataReport' in c
+                                for c in changes), changes)
+            self.assertTrue(any('[[Include]] fields (2 entries)' in c for c in changes), changes)
+            self.assertTrue(any('target_report = LoopDataReport' in c for c in changes), changes)
+            # What is left starts cleanly: no legacy context, no warning.
+            config_dict.write()
+            reread = configobj.ConfigObj(config_path, encoding='utf-8')
+            service = user.loopdata.LoopData(self.FakeEngine(reread), reread)
+            self.assertIsNone(service.cfg.legacy)
+            os.unlink(service.cfg.tmpname)
+
+    def test_finish_migration_does_not_move_the_file(self):
+        """Removing target_report re-anchors a relative loop_data_dir, so
+        --apply pins the path first: a page polling the old URL must not
+        start reading a 404 because the file quietly moved."""
+        L = user.loopdata
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp)
+            config_dict['StdReport']['MyReport'] = {'skin': 'LoopData',
+                                                    'HTML_ROOT': 'public_html/mine'}
+            config_dict['LoopData']['FileSpec']['loop_data_dir'] = '.'
+            config_dict['LoopData']['Formatting'] = {'target_report': 'MyReport'}
+            config_dict['LoopData']['Include'] = {'fields': ['current.outTemp']}
+            here = L.anchored_loop_data_dir(config_dict, 'MyReport')
+            self.assertEqual(here, os.path.join(tmp, 'public_html', 'mine'))
+            report = L.migration_report(config_dict)
+            changes = L.apply_migration(config_dict, report)
+            self.assertEqual(config_dict['LoopData']['FileSpec']['loop_data_dir'], here)
+            self.assertTrue(any('pinned' in c for c in changes), changes)
+            self.assertNotIn('Formatting', config_dict['LoopData'])
+
+        # An absolute loop_data_dir needs no pinning, and neither does one
+        # already anchored on LoopDataReport.
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp)
+            config_dict['LoopData']['FileSpec']['loop_data_dir'] = '/dev/shm/weewx'
+            config_dict['LoopData']['Formatting'] = {'target_report': 'LoopDataReport'}
+            config_dict['LoopData']['Include'] = {'fields': ['current.outTemp']}
+            self.assertIsNone(L.anchored_loop_data_dir(config_dict, 'LoopDataReport'))
+            changes = L.apply_migration(config_dict, L.migration_report(config_dict))
+            self.assertEqual(config_dict['LoopData']['FileSpec']['loop_data_dir'], '/dev/shm/weewx')
+            self.assertFalse(any('pinned' in c for c in changes), changes)
+
+    def test_finish_migration_still_has_work_when_the_line_is_gone(self):
+        """A user who deletes the last cruft entry by hand -- which the
+        command itself tells them to do -- still has target_report and
+        [LoopData] windrose_bands to lose."""
+        L = user.loopdata
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp)
+            config_dict['LoopData']['FileSpec']['loop_data_dir'] = '/dev/shm/weewx'
+            config_dict['LoopData']['Formatting'] = {'target_report': 'LoopDataReport'}
+            config_dict['LoopData']['windrose_bands'] = ['1', '4', '8']
+            report = L.migration_report(config_dict)
+            self.assertEqual(report['line'], [])
+            changes = L.apply_migration(config_dict, report)
+            self.assertNotIn('Formatting', config_dict['LoopData'])
+            self.assertNotIn('windrose_bands', config_dict['LoopData'])
+            self.assertEqual(config_dict['StdReport']['LoopDataReport']['windrose_bands'], ['1', '4', '8'])
+            self.assertNotIn('Include', config_dict['LoopData'])
+            self.assertEqual([k for k in config_dict['LoopData']
+                              if k in ('Include', 'Formatting', 'windrose_bands')], [])
+            self.assertEqual(len(changes), 2, changes)
+
+    def test_finish_migration_leaves_the_reports_own_bands_alone(self):
+        """windrose_bands moves to target_report's stanza -- unless that
+        report already sets its own, in which case the deprecated value is
+        simply dropped rather than overwriting a choice already made."""
+        L = user.loopdata
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp)
+            config_dict['LoopData']['Formatting'] = {'target_report': 'LoopDataReport'}
+            config_dict['LoopData']['windrose_bands'] = ['1', '4', '8']
+            config_dict['LoopData']['Include'] = {'fields': ['current.outTemp']}
+            config_dict['StdReport']['LoopDataReport']['windrose_bands'] = ['2', '9']
+            changes = L.apply_migration(config_dict, L.migration_report(config_dict))
+            self.assertEqual(config_dict['StdReport']['LoopDataReport']['windrose_bands'], ['2', '9'])
+            self.assertNotIn('windrose_bands', config_dict['LoopData'])
+            self.assertTrue(any('already sets the bands' in c for c in changes), changes)
+            # And nothing station-wide is invented on the way.
+            self.assertNotIn('windrose_bands', config_dict['StdReport']['Defaults'])
+
+    def test_shipped_skins_exist_and_scriptdata_generates_nothing(self):
+        """Every file install.py ships is in the tree, and the ScriptData
+        skin stays what it is for: no generators (WeeWX would run them) and
+        no field declaration (this file is replaced on every upgrade, so a
+        user's fields must live in weewx.conf, and ours would be a trap)."""
+        shipped = self.installer_files()
+        missing = [f for f in shipped
+                   if not os.path.exists(os.path.join(self.REPO_ROOT, f))]
+        self.assertEqual(missing, [])
+        self.assertIn('skins/ScriptData/skin.conf', shipped)
+
+        skin = configobj.ConfigObj(
+            os.path.join(self.REPO_ROOT, 'skins', 'ScriptData', 'skin.conf'), encoding='utf-8')
+        self.assertNotIn('Generators', skin)
+        self.assertEqual(user.loopdata.LoopData.declared_fields_from_skin_dict(skin, 'ScriptData'), [])
+        # It must say where fields really go, since the answer is not "here".
+        text = self.repo_text('skins', 'ScriptData', 'skin.conf')
+        self.assertIn('weewx.conf', text)
+        self.assertIn('[[[[fields]]]]', text)
+
     def test_installer_defaults(self):
         """The values a fresh install writes.
 
@@ -8627,7 +8945,12 @@ class ProcessPacketTests(unittest.TestCase):
         loopdata = config['LoopData']
         self.assertEqual(loopdata['FileSpec']['loop_data_dir'], '.')
         self.assertEqual(loopdata['FileSpec']['filename'], 'loop-data.txt')
-        self.assertEqual(loopdata['Formatting']['target_report'], 'LoopDataReport')
+        # 7.0: the legacy trio is not written.  A fresh install declares
+        # its fields in the sample skin's skin.conf (see
+        # test_sample_skin_declares_what_the_manual_says) and every
+        # declaring report is its own target.
+        self.assertNotIn('Formatting', loopdata)
+        self.assertNotIn('Include', loopdata)
         self.assertEqual(float(loopdata['LoopFrequency']['seconds']), 2.0)
         rsync = loopdata['RsyncSpec']
         self.assertFalse(to_bool(rsync['enable']))
@@ -8638,12 +8961,12 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(rsync['remote_dir'], '/home/weewx/loop-data')
         self.assertEqual(to_int(rsync['timeout']), 1)
         self.assertEqual(to_int(rsync['skip_if_older_than']), 3)
-        # fields must stay a list, not the one long string ConfigObj would
-        # hand back if it were ever quoted.
-        fields = loopdata['Include']['fields']
-        self.assertIsInstance(fields, list)
-        self.assertGreaterEqual(len(fields), 40)
-        self.assertEqual(fields[0], 'current.dateTime.raw')
+        # The ScriptData report: shipped disabled, for fields read by
+        # something that is not a report.  Its skin generates nothing.
+        script_data = config['StdReport']['ScriptData']
+        self.assertFalse(to_bool(script_data['enable']))
+        self.assertEqual(script_data['skin'], 'ScriptData')
+        self.assertNotIn('LoopData', script_data)   # the user declares, not us
 
         report = config['StdReport']['LoopDataReport']
         # HTML_ROOT must NOT carry a public_html prefix: weecfg prepends the
@@ -8665,6 +8988,792 @@ class ProcessPacketTests(unittest.TestCase):
             'km_per_hour': '%.0f',
             'degree_F': '%.1f',
         })
+
+    # ------------------------------------------------------------------
+    # 7.0: reports declare their own fields; each is its own target.
+    # ------------------------------------------------------------------
+
+    def test_normalize_fields(self):
+        L = user.loopdata.LoopData
+        self.assertEqual(L.normalize_fields(None), [])
+        # ConfigObj hands a single value back as a str: one field, not a
+        # run of characters.
+        self.assertEqual(L.normalize_fields('current.outTemp'), ['current.outTemp'])
+        self.assertEqual(L.normalize_fields(' current.outTemp '), ['current.outTemp'])
+        self.assertEqual(L.normalize_fields(['current.outTemp', ' day.rain.sum ', '', '  ']),
+                         ['current.outTemp', 'day.rain.sum'])
+        self.assertEqual(L.normalize_fields(''), [])
+        self.assertEqual(L.normalize_fields([]), [])
+        # A single quoted entry with a comma inside comes back from ConfigObj
+        # as a str; it is ONE field, and splitting it would be exactly the
+        # mangling the quoting prevents.
+        call = 'day.rain.sum.format("%.2f", add_label=False)'
+        self.assertEqual(L.normalize_fields(call), [call])
+        self.assertEqual(L.normalize_fields('almanac(horizon=-6, days=1).sunrise'),
+                         ['almanac(horizon=-6, days=1).sunrise'])
+
+    def test_declared_fields_from_skin_dict(self):
+        L = user.loopdata.LoopData
+        self.assertEqual(L.declared_fields_from_skin_dict({}, 'R'), [])
+        self.assertEqual(L.declared_fields_from_skin_dict({'LoopData': {}}, 'R'), [])
+        self.assertEqual(L.declared_fields_from_skin_dict({'LoopData': {'windrose_bands': '1, 5'}}, 'R'), [])
+        # Groups union in order; a field in two groups counts once.
+        skin = configobj.ConfigObj([
+            '[LoopData]',
+            '    [[fields]]',
+            '        a = current.outTemp, current.outTemp.raw',
+            '        b = day.rain.sum',
+            '        c = current.outTemp.raw, unit.label.outTemp',
+            '        only = station.version',
+            '        quoted = \'day.rain.sum.format("%.2f", add_label=False)\'',
+            '        mixed = current.rain, \'almanac(horizon=-6, days=1).sunrise\'',
+        ])
+        self.assertEqual(L.declared_fields_from_skin_dict(skin, 'R'),
+            ['current.outTemp', 'current.outTemp.raw', 'day.rain.sum',
+             'unit.label.outTemp', 'station.version',
+             'day.rain.sum.format("%.2f", add_label=False)',
+             'current.rain', 'almanac(horizon=-6, days=1).sunrise'])
+        # The likely mistake -- a single fields = line -- is refused with a
+        # warning naming the report, not read as a run of characters.
+        scalar = configobj.ConfigObj(['[LoopData]', '    fields = current.outTemp, day.rain.sum'])
+        with self.assertLogs('user.loopdata', level='WARNING') as logs:
+            self.assertEqual(L.declared_fields_from_skin_dict(scalar, 'MyReport'), [])
+        self.assertTrue(any('MyReport' in m and 'named groups' in m for m in logs.output), logs.output)
+        # A nested section under [[fields]] is not a group.
+        nested = configobj.ConfigObj([
+            '[LoopData]', '    [[fields]]', '        a = current.outTemp',
+            '        [[[deeper]]]', '            b = day.rain.sum'])
+        with self.assertLogs('user.loopdata', level='WARNING'):
+            self.assertEqual(L.declared_fields_from_skin_dict(nested, 'R'), ['current.outTemp'])
+
+    def test_declaration_merges_like_a_report(self):
+        """The declaration is read from the MERGED skin dict, so a report's
+        stanza in weewx.conf adds or replaces one group and leaves the
+        skin's other groups alone -- how an extension declares fields that
+        depend on the user's configuration.  Two reports on one skin each
+        get the skin's groups plus their own."""
+        L = user.loopdata.LoopData
+        with tempfile.TemporaryDirectory() as tmp:
+            skin_dir = os.path.join(tmp, 'skins', 'Declaring')
+            os.makedirs(skin_dir)
+            with open(os.path.join(skin_dir, 'skin.conf'), 'w') as f:
+                f.write('[LoopData]\n    [[fields]]\n'
+                        '        temperature = current.outTemp, current.outTemp.raw\n'
+                        '        satellites = almanac.ISS.next_pass.rise\n')
+            config_dict = configobj.ConfigObj('tests/weewx.conf.us', encoding='utf-8')
+            config_dict['WEEWX_ROOT'] = tmp
+            config_dict['StdReport']['ReportA'] = {'skin': 'Declaring'}
+            config_dict['StdReport']['ReportB'] = {'skin': 'Declaring', 'LoopData': {'fields': {
+                'satellites': ['almanac.NOAA-21.next_pass.rise', 'almanac.NOAA-21.next_pass.set'],
+                'extra': 'day.rain.sum'}}}
+            config_dict['StdReport']['ReportOff'] = {'skin': 'Declaring', 'enable': 'false'}
+            self.assertEqual(L.enabled_reports(config_dict)[-2:], ['ReportA', 'ReportB'])
+            self.assertNotIn('ReportOff', L.enabled_reports(config_dict))
+            self.assertNotIn('Defaults', L.enabled_reports(config_dict))
+            a = L.declared_fields_from_skin_dict(L.get_target_report_dict(config_dict, 'ReportA'), 'ReportA')
+            b = L.declared_fields_from_skin_dict(L.get_target_report_dict(config_dict, 'ReportB'), 'ReportB')
+            self.assertEqual(a, ['current.outTemp', 'current.outTemp.raw', 'almanac.ISS.next_pass.rise'])
+            # ReportB's stanza replaced the satellites group and added one;
+            # the skin's temperature group is untouched.
+            self.assertEqual(b, ['current.outTemp', 'current.outTemp.raw',
+                                 'almanac.NOAA-21.next_pass.rise', 'almanac.NOAA-21.next_pass.set',
+                                 'day.rain.sum'])
+
+    def test_enabled_reports(self):
+        L = user.loopdata.LoopData
+        config_dict = configobj.ConfigObj('tests/weewx.conf.us', encoding='utf-8')
+        reports = L.enabled_reports(config_dict)
+        self.assertIn('SeasonsReport', reports)
+        self.assertNotIn('SmartphoneReport', reports)     # enable = false
+        self.assertNotIn('Defaults', reports)
+        for scalar in ('SKIN_ROOT', 'HTML_ROOT', 'data_binding'):
+            self.assertNotIn(scalar, reports)
+        # A plain dict (no .sections) works the same way.
+        self.assertEqual(L.enabled_reports({'StdReport': {
+            'HTML_ROOT': 'public_html', 'A': {'skin': 'S'},
+            'B': {'skin': 'S', 'enable': 'false'}, 'Defaults': {}}}), ['A'])
+        self.assertEqual(L.enabled_reports({}), [])
+        # Another report's malformed enable must not take weewxd down with
+        # loopdata's __init__: warn and treat it as enabled.
+        with self.assertLogs('user.loopdata', level='WARNING') as logs:
+            self.assertEqual(L.enabled_reports({'StdReport': {
+                'A': {'skin': 'S', 'enable': ''}, 'B': {'skin': 'S', 'enable': 'maybe'},
+                'C': {'skin': 'S', 'enable': 'false'}}}), ['A', 'B'])
+        self.assertEqual(len(logs.output), 2)
+
+    def test_shared_windrose_edges_builds_the_converter_only_on_a_miss(self):
+        """The [[Defaults]] converter costs a whole skin dict to build, so
+        the memo must not pay for it once the value is known."""
+        L = user.loopdata.LoopData
+        config_dict = configobj.ConfigObj('tests/weewx.conf.us', encoding='utf-8')
+        config_dict['StdReport']['Defaults']['windrose_bands'] = ['2', '10']
+        us_dict = L.get_target_report_dict(config_dict, 'SeasonsReport')
+        builds = []
+        def counting_converter():
+            builds.append(1)
+            return L.defaults_converter(config_dict)
+        shared: Dict[str, Any] = {}
+        for _ in range(3):
+            edges, _converter = L.shared_windrose_edges(
+                shared, 'std', ['2', '10'], '[StdReport] [[Defaults]]', counting_converter)
+            self.assertEqual(edges, [2.0, 10.0])
+        self.assertEqual(len(builds), 1)
+        # And through the real caller: three reports, one Defaults build.
+        builds.clear()
+        real_defaults_converter = L.defaults_converter
+        try:
+            user.loopdata.LoopData.defaults_converter = staticmethod(
+                lambda cd: (builds.append(1), real_defaults_converter(cd))[1])
+            shared = {}
+            for report in ('SeasonsReport', 'SmartphoneReport', 'MobileReport'):
+                self.assertEqual(
+                    L.report_windrose_bands(config_dict, report, us_dict, {}, None, shared),
+                    [2.0, 10.0])
+        finally:
+            user.loopdata.LoopData.defaults_converter = real_defaults_converter
+        self.assertEqual(len(builds), 1)
+
+    def test_shim_builds_each_evaluator_independently(self):
+        """generate_loopdata_dictionary is the test-facing entry; a caller
+        supplying one evaluator must still get the other, or that family's
+        fields vanish from the result with no signal."""
+        L = user.loopdata.LoopData
+        specified_fields = ['current.outTemp', 'almanac.sunrise.raw', 'station.version']
+        cfg = ProcessPacketTests._get_config('us', 10800, 1, 6, specified_fields)
+        cfg.latitude, cfg.longitude, cfg.altitude_m = 37.4, -122.1, 20.0
+        cfg.legacy.station = weewx.station.Station(
+            weewx.station.StationInfo(altitude=['700', 'foot'], latitude='37.4',
+                longitude='-122.1', location='Test', station_url=''),
+            cfg.legacy.formatter, cfg.legacy.converter,
+            L.get_target_report_dict(cfg.config_dict, 'SeasonsReport'))
+        pkt = {'dateTime': 1593630000, 'usUnits': 1, 'outTemp': 77.4}
+        accums = ProcessPacketTests._get_accums(cfg, pkt['dateTime'])
+        # Neither supplied: both families present.
+        both = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
+        self.assertIn('almanac.sunrise.raw', both)
+        self.assertIn('station.version', both)
+        # Only the almanac evaluator supplied: station fields must survive.
+        almanac_eval = user.loopdata.AlmanacFieldEvaluator(cfg.legacy, cfg)
+        one = user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+            pkt, cfg, accums, almanac_eval)
+        self.assertEqual(one['almanac.sunrise.raw'], both['almanac.sunrise.raw'])
+        self.assertIn('station.version', one)
+        # ... and the other way round.
+        station_eval = user.loopdata.StationFieldEvaluator(cfg.legacy.station_fields, cfg.legacy.station)
+        other = user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+            pkt, cfg, accums, None, station_eval)
+        self.assertIn('almanac.sunrise.raw', other)
+        self.assertEqual(other['station.version'], both['station.version'])
+
+    def test_unit_label_windrose_is_not_a_rose(self):
+        """unit.label.windrose is a label; alone it declares no windrose,
+        so no banding is registered and no windrose.bands is emitted."""
+        L = user.loopdata.LoopData
+        config_dict = configobj.ConfigObj('tests/weewx.conf.us', encoding='utf-8')
+        skin_dict = L.get_target_report_dict(config_dict, 'SeasonsReport')
+        label_only = L.build_report_context('A', ['current.windSpeed', 'unit.label.windrose'], skin_dict, None, None)
+        self.assertFalse(label_only.windrose)
+        rose = L.build_report_context('B', ['day.windrose.calm'], skin_dict, None, None)
+        self.assertTrue(rose.windrose)
+        cfg = ProcessPacketTests._make_config(config_dict, 1, 6, legacy=None, reports=[label_only])
+        self.assertEqual(cfg.windrose_bandings, {})
+        accums = ProcessPacketTests._get_accums(cfg, 1593630000)
+        out = user.loopdata.LoopProcessor.generate_output(
+            {'dateTime': 1593630000, 'usUnits': 1, 'windSpeed': 5.0, 'windDir': 90.0}, cfg, accums,
+            [user.loopdata.ReportRenderer.for_context(c, cfg) for c in cfg.contexts])
+        self.assertNotIn('windrose.bands', out['A'])
+        self.assertEqual(out['A']['unit.label.windrose'], ' miles')
+
+    def test_unrecognized_field_is_reported(self):
+        """A field none of the three parsers accept is logged, attributed to
+        the declaring report; almanac and station fields that failed their
+        own parser are not double-logged."""
+        L = user.loopdata.LoopData
+        config_dict = configobj.ConfigObj('tests/weewx.conf.us', encoding='utf-8')
+        skin_dict = L.get_target_report_dict(config_dict, 'SeasonsReport')
+        with self.assertLogs('user.loopdata', level='WARNING') as logs:
+            ctx = L.build_report_context('MyReport',
+                ['current.outTemp', 'curent.outTemp', 'nonsense', 'station.version'],
+                skin_dict, None, None)
+        self.assertEqual({c.field for c in ctx.fields_to_include}, {'current.outTemp'})
+        self.assertEqual([f.field for f in ctx.station_fields], ['station.version'])
+        warned = [m for m in logs.output if 'Ignoring unrecognized field' in m]
+        self.assertEqual(len(warned), 2, logs.output)
+        self.assertTrue(all('report MyReport' in m for m in warned), warned)
+        self.assertTrue(any('curent.outTemp' in m for m in warned), warned)
+        self.assertTrue(any("'nonsense'" in m or ' nonsense ' in m for m in warned), warned)
+
+    def test_trend_accumulators_keyed_by_window(self):
+        """Two reports with different trend windows get two trend
+        accumulators, each rendering its own trend; two with the same
+        window share one."""
+        L = user.loopdata.LoopData
+        config_dict = configobj.ConfigObj('tests/weewx.conf.us', encoding='utf-8')
+        skin_dict = L.get_target_report_dict(config_dict, 'SeasonsReport')
+        fields = ['current.outTemp', 'trend.outTemp.raw']
+        def ctx(name, time_delta):
+            c = L.build_report_context(name, fields, skin_dict, None, None)
+            c.time_delta = time_delta
+            self.assertEqual(c.trend_key, 'trend@%d' % time_delta)   # derived
+            return c
+        three_hours, one_hour, three_hours_too = ctx('A', 10800), ctx('B', 3600), ctx('C', 10800)
+        cfg = ProcessPacketTests._make_config(config_dict, 1, 6, legacy=None,
+            reports=[three_hours, one_hour, three_hours_too])
+        self.assertEqual(sorted(cfg.obstypes.continuous), ['trend@10800', 'trend@3600'])
+        self.assertEqual(cfg.obstypes.continuous['trend@10800'], {'outTemp'})
+        self.assertEqual(cfg.obstypes.continuous['trend@3600'], {'outTemp'})
+
+        pkt_time = 1593630000  # noon PDT, 2020-07-01
+        accums = ProcessPacketTests._get_accums(cfg, pkt_time)
+        self.assertEqual(sorted(accums.continuous), ['trend@10800', 'trend@3600'])
+        self.assertEqual(accums.continuous['trend@10800'].timelength, 10800)
+        self.assertEqual(accums.continuous['trend@3600'].timelength, 3600)
+        renderers = [user.loopdata.ReportRenderer.for_context(c, cfg) for c in cfg.contexts]
+        for offset, temp in ((0, 60.0), (1800, 70.0), (3000, 80.0)):
+            out = user.loopdata.LoopProcessor.generate_output(
+                {'dateTime': pkt_time + offset, 'usUnits': 1, 'outTemp': temp},
+                cfg, accums, renderers)
+        self.assertEqual(sorted(out), ['A', 'B', 'C'])
+        # get_trend spreads the observed change over the report's window:
+        # time_delta / (lasttime - firsttime + loop_frequency) * change.
+        change, actual = 20.0, 3000 + cfg.loop_frequency
+        self.assertAlmostEqual(out['A']['trend.outTemp.raw'], 10800 / actual * change)
+        self.assertAlmostEqual(out['C']['trend.outTemp.raw'], 10800 / actual * change)
+        self.assertAlmostEqual(out['B']['trend.outTemp.raw'], 3600 / actual * change)
+
+    def test_per_report_rendering_off_shared_accumulators(self):
+        """One observation, two reports, two unit systems: each report's
+        values render through its own converter and formatter, off ONE
+        accumulator that saw each packet exactly once."""
+        L = user.loopdata.LoopData
+        config_dict = configobj.ConfigObj('tests/weewx.conf.us', encoding='utf-8')
+        us_dict = L.get_target_report_dict(config_dict, 'SeasonsReport')
+        metric_dict = L.get_target_report_dict(
+            configobj.ConfigObj('tests/weewx.conf.db-us.report-metric', encoding='utf-8'),
+            'SeasonsReport')
+        fields = ['current.outTemp', 'day.outTemp.max', 'day.outTemp.max.raw', 'unit.label.outTemp']
+        us = L.build_report_context('USReport', fields, us_dict, None, None)
+        metric = L.build_report_context('MetricReport', fields, metric_dict, None, None)
+        cfg = ProcessPacketTests._make_config(config_dict, 1, 6, legacy=None, reports=[us, metric])
+        pkt_time = 1593630000
+        accums = ProcessPacketTests._get_accums(cfg, pkt_time)
+        renderers = [user.loopdata.ReportRenderer.for_context(c, cfg) for c in cfg.contexts]
+        for offset, temp in ((0, 68.0), (2, 77.0)):
+            out = user.loopdata.LoopProcessor.generate_output(
+                {'dateTime': pkt_time + offset, 'usUnits': 1, 'outTemp': temp},
+                cfg, accums, renderers)
+        self.assertEqual(sorted(out), ['MetricReport', 'USReport'])
+        self.assertEqual(out['USReport']['current.outTemp'], '77.0°F')
+        self.assertEqual(out['USReport']['day.outTemp.max'], '77.0°F')
+        self.assertEqual(out['USReport']['unit.label.outTemp'], '°F')
+        self.assertEqual(out['MetricReport']['current.outTemp'], '25.0°C')
+        self.assertEqual(out['MetricReport']['day.outTemp.max'], '25.0°C')
+        self.assertEqual(out['MetricReport']['unit.label.outTemp'], '°C')
+        # The .raw value follows the report too (the accumulator holds °F).
+        self.assertAlmostEqual(out['USReport']['day.outTemp.max.raw'], 77.0)
+        self.assertAlmostEqual(out['MetricReport']['day.outTemp.max.raw'], 25.0)
+        # Accumulated once per packet, not once per report.
+        self.assertEqual(accums.day_accum['outTemp'].count, 2)
+
+    def test_legacy_flat_beside_report_keys(self):
+        """An upgraded station: the [[Include]] fields line renders flat at
+        the top level exactly as before, and the declaring reports land
+        beside it under their names, in the same file."""
+        L = user.loopdata.LoopData
+        cfg = ProcessPacketTests._get_config('us', 10800, 1, 6, ['current.outTemp', 'day.outTemp.max'])
+        config_dict = cfg.config_dict
+        skin_dict = L.get_target_report_dict(config_dict, 'SeasonsReport')
+        cfg.reports.append(L.build_report_context('LoopDataReport',
+            ['current.outTemp', 'current.outTemp.raw'], skin_dict, None, None))
+        cfg.recompute()
+        pkt_time = 1593630000
+        accums = ProcessPacketTests._get_accums(cfg, pkt_time)
+        renderers = [user.loopdata.ReportRenderer.for_context(c, cfg) for c in cfg.contexts]
+        out = user.loopdata.LoopProcessor.generate_output(
+            {'dateTime': pkt_time, 'usUnits': 1, 'outTemp': 77.0}, cfg, accums, renderers)
+        self.assertEqual(sorted(out), ['LoopDataReport', 'current.outTemp', 'day.outTemp.max'])
+        self.assertEqual(out['current.outTemp'], '77.0°F')
+        self.assertEqual(out['LoopDataReport'],
+            {'current.outTemp': '77.0°F', 'current.outTemp.raw': 77.0})
+        # And the legacy line alone: the file is what it always was.
+        cfg.reports.clear()
+        out = user.loopdata.LoopProcessor.generate_output(
+            {'dateTime': pkt_time + 2, 'usUnits': 1, 'outTemp': 77.0}, cfg, accums, renderers[:1])
+        self.assertEqual(sorted(out), ['current.outTemp', 'day.outTemp.max'])
+
+    def test_windrose_accumulators_keyed_by_bands(self):
+        """Two reports with different band edges get two windrose sets,
+        each banding the same packet its own way and each publishing its
+        own legend; the same edges share one set."""
+        L = user.loopdata.LoopData
+        config_dict = configobj.ConfigObj('tests/weewx.conf.us', encoding='utf-8')
+        skin_dict = L.get_target_report_dict(config_dict, 'SeasonsReport')
+        fields = ['day.windrose.banded']
+        default_a = L.build_report_context('A', fields, skin_dict, None, None)
+        custom = L.build_report_context('B', fields, skin_dict, [1.0, 5.0, 10.0], None)
+        default_c = L.build_report_context('C', fields, skin_dict, None, None)
+        self.assertEqual(default_a.windrose_key, default_c.windrose_key)
+        self.assertNotEqual(default_a.windrose_key, custom.windrose_key)
+        cfg = ProcessPacketTests._make_config(config_dict, 1, 6, legacy=None,
+            reports=[default_a, custom, default_c])
+        self.assertEqual(len(cfg.windrose_bandings), 2)
+        self.assertEqual(cfg.windrose_span_periods,
+            {(default_a.windrose_key, 'day'), (custom.windrose_key, 'day')})
+        pkt_time = 1593630000
+        accums = ProcessPacketTests._get_accums(cfg, pkt_time)
+        self.assertEqual(len(accums.windrose_span), 2)
+        renderers = [user.loopdata.ReportRenderer.for_context(c, cfg) for c in cfg.contexts]
+        # 9 mph from the east: band 2 of the WRPLOT mph edges
+        # (1.1, 4.7, 8.1, ...), band 1 of the custom edges (1, 5, 10).
+        out = user.loopdata.LoopProcessor.generate_output(
+            {'dateTime': pkt_time, 'usUnits': 1, 'windSpeed': 9.0, 'windDir': 90.0},
+            cfg, accums, renderers)
+        east = 4
+        self.assertEqual(out['A']['windrose.bands'], [1.1, 4.7, 8.1, 12.8, 19.7, 24.8])
+        self.assertEqual(out['B']['windrose.bands'], [1.0, 5.0, 10.0])
+        self.assertEqual(out['A']['day.windrose.banded'][east][2], cfg.loop_frequency)
+        self.assertEqual(out['A']['day.windrose.banded'][east][1], 0)
+        self.assertEqual(out['B']['day.windrose.banded'][east][1], cfg.loop_frequency)
+        self.assertEqual(out['B']['day.windrose.banded'][east][2], 0)
+        self.assertEqual(out['C'], out['A'])
+
+    def test_almanac_evaluators_are_per_report(self):
+        """The same almanac field in two reports with different [Almanac]
+        texts renders differently: the evaluator's cache holds RENDERED
+        values, so it must be one per report."""
+        L = user.loopdata.LoopData
+        config_dict = configobj.ConfigObj('tests/weewx.conf.us', encoding='utf-8')
+        skin_dict = L.get_target_report_dict(config_dict, 'SeasonsReport')
+        phases = ['P0', 'P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7']
+        a = L.build_report_context('A', ['almanac.moon_phase'], skin_dict, None, None)
+        b = L.build_report_context('B', ['almanac.moon_phase'], skin_dict, None, None)
+        b.almanac_texts = {'moon_phases': phases}
+        cfg = ProcessPacketTests._make_config(config_dict, 1, 6, legacy=None, reports=[a, b])
+        cfg.latitude, cfg.longitude, cfg.altitude_m = 37.4, -122.1, 20.0
+        pkt_time = 1593630000
+        accums = ProcessPacketTests._get_accums(cfg, pkt_time)
+        renderers = [user.loopdata.ReportRenderer.for_context(c, cfg) for c in cfg.contexts]
+        self.assertIsNot(renderers[0].almanac_eval, renderers[1].almanac_eval)
+        pkt = {'dateTime': pkt_time, 'usUnits': 1, 'outTemp': 77.4}
+        out = user.loopdata.LoopProcessor.generate_output(pkt, cfg, accums, renderers)
+        def oracle(texts):
+            return str(weewx.almanac.Almanac(pkt_time, 37.4, -122.1, altitude=20.0,
+                formatter=skin_dict and a.formatter, converter=a.converter,
+                **user.loopdata.AlmanacFieldEvaluator.build_texts_kwargs(
+                    weewx.almanac.Almanac, texts)).moon_phase)
+        self.assertEqual(out['A']['almanac.moon_phase'], oracle(a.almanac_texts))
+        self.assertEqual(out['B']['almanac.moon_phase'], oracle(b.almanac_texts))
+        self.assertNotEqual(out['A']['almanac.moon_phase'], out['B']['almanac.moon_phase'])
+        self.assertIn(out['B']['almanac.moon_phase'], phases)
+
+    def test_sample_skin_declares_what_the_manual_says(self):
+        """skins/LoopData/skin.conf declares the panel's fields; every one
+        parses, and the set is exactly the manual's "What each gauge reads"
+        (plus the clock and dial-scale fields named under the table)."""
+        L = user.loopdata.LoopData
+        skin = configobj.ConfigObj(os.path.join(self.I18N_SKIN_DIR, 'skin.conf'), encoding='utf-8')
+        declared = L.declared_fields_from_skin_dict(skin, 'LoopDataReport')
+        self.assertGreaterEqual(len(declared), 40)
+        for field in declared:
+            self.assertTrue(L.parse_cname(field) is not None
+                            or L.parse_almanac_field(field) is not None
+                            or L.parse_station_field(field) is not None, field)
+        text = self.doc_text('sample-skin.md')
+        section = text.split('## What each gauge reads')[1].split('\n## ')[0]
+        section = re.split(r'\n\{: \.', section)[0]   # the table and the paragraph under it, not the callout
+        documented = set(re.findall(r'`([^`]+)`', section))
+        documented.discard('--')
+        documented.discard('windrose.bands')     # automatic, never declared
+        documented.discard('.raw')
+        self.assertEqual(set(declared), documented,
+            'skins/LoopData/skin.conf and docs/sample-skin.md disagree: %s'
+            % sorted(set(declared) ^ documented))
+        # The page reads its own report's entries.
+        updater = self.repo_text('skins', 'LoopData', 'realtime_updater.inc')
+        self.assertIn("(await response.json())[$json.dumps($REPORT_NAME)]", updater)
+        self.assertNotIn("'$REPORT_NAME'", updater)
+
+    def test_defaults_unit_follows_stdreport_however_it_is_written(self):
+        """A [StdReport]-level windrose_bands is in the units [StdReport]
+        specifies -- and WeeWX lets that be said three ways: an explicit
+        [[[Units]]] [[[[Groups]]]], a unit_system, or a lang whose language
+        file carries one.  All three must be honored, or the edges are
+        converted from the wrong unit into every report."""
+        L = user.loopdata.LoopData
+        base = configobj.ConfigObj('tests/weewx.conf.us', encoding='utf-8')
+        self.assertEqual(L.defaults_converter(base).getTargetUnit('windSpeed')[0], 'mile_per_hour')
+
+        # 1: explicit Groups (the fixture's own form) -- already US above.
+        # 2: unit_system, with Groups removed.
+        by_system = weeutil.config.deep_copy(base)
+        del by_system['StdReport']['Defaults']['Units']['Groups']
+        by_system['StdReport']['Defaults']['unit_system'] = 'metricwx'
+        self.assertEqual(L.defaults_converter(by_system).getTargetUnit('windSpeed')[0],
+                         'meter_per_second')
+
+        # 3: lang alone.  WeeWX's own de.conf declares unit_system = metricwx,
+        # and a report inheriting the language renders in it -- so a value
+        # written at [[Defaults]] level is in that unit too.
+        by_lang = weeutil.config.deep_copy(base)
+        del by_lang['StdReport']['Defaults']['Units']['Groups']
+        by_lang['StdReport']['Defaults']['lang'] = 'de'
+        report_unit = weewx.units.Converter.fromSkinDict(
+            L.get_target_report_dict(by_lang, 'SeasonsReport')).getTargetUnit('windSpeed')[0]
+        self.assertEqual(L.defaults_converter(by_lang).getTargetUnit('windSpeed')[0], report_unit)
+        self.assertEqual(L.lang_unit_system(by_lang, 'de'), 'metricwx')
+
+        # An explicit setting still wins over the language's.
+        both = weeutil.config.deep_copy(by_lang)
+        both['StdReport']['Defaults']['unit_system'] = 'us'
+        self.assertEqual(L.defaults_converter(both).getTargetUnit('windSpeed')[0], 'mile_per_hour')
+        # And an explicit GROUP wins over the language's unit system for
+        # that group alone, which is the order build_skin_dict uses: the
+        # unit system underneath, the explicit groups on top.
+        mixed = weeutil.config.deep_copy(by_lang)
+        mixed['StdReport']['Defaults']['Units'] = {'Groups': {'group_pressure': 'mbar'}}
+        converter = L.defaults_converter(mixed)
+        self.assertEqual(converter.getTargetUnit('barometer')[0], 'mbar')          # explicit
+        self.assertEqual(converter.getTargetUnit('windSpeed')[0], 'meter_per_second')  # the language's
+
+        # get_lang_dict's second parameter is the language directory only
+        # from WeeWX 5.3; from 4.6 through 5.2 it is the whole config_dict.
+        # Both must work, or a station below 5.3 silently loses the
+        # language's unit system -- the extension's floor is 4.6.
+        real = weewx.reportengine.get_lang_dict
+        passed: List[str] = []
+        # Its parameters are (lang_spec, config_dict, report) before 5.3, so
+        # a stand-in with no 'lang_spec_dir' parameter is what a 4.6-5.2
+        # WeeWX looks like.  WeeWX's own merge_lang calls it too, with a
+        # Path, so take either and record what loopdata passed.
+        def pre_5_3(lang_spec, config_dict, report):
+            passed.append(type(config_dict).__name__)
+            lang_dir = config_dict if not isinstance(config_dict, dict) else pathlib.Path(
+                config_dict['WEEWX_ROOT'], config_dict['StdReport']['SKIN_ROOT'],
+                config_dict['StdReport'][report].get('skin', ''), 'lang')
+            return real(lang_spec, lang_dir, report)
+        try:
+            weewx.reportengine.get_lang_dict = pre_5_3
+            passed.clear()
+            self.assertEqual(L.lang_unit_system(by_lang, 'de'), 'metricwx')
+            self.assertIn('ConfigObj', passed)      # the whole config, not a Path
+            self.assertEqual(L.defaults_converter(by_lang).getTargetUnit('windSpeed')[0],
+                             'meter_per_second')
+        finally:
+            weewx.reportengine.get_lang_dict = real
+        # A language nothing ships is simply not found.
+        self.assertIsNone(L.lang_unit_system(by_lang, 'xx'))
+        # A station that repeats lang on every report still resolves: the
+        # language file asked for is the same file whichever report points
+        # at the skin holding it.
+        repeated = weeutil.config.deep_copy(by_lang)
+        for report in L.enabled_reports(repeated):
+            if 'skin' in repeated['StdReport'][report]:
+                repeated['StdReport'][report]['lang'] = 'de'
+        self.assertEqual(L.lang_unit_system(repeated, 'de'), 'metricwx')
+        self.assertEqual(L.defaults_converter(repeated).getTargetUnit('windSpeed')[0],
+                         'meter_per_second')
+
+        # And the whole point: edges written at [[Defaults]] level in the
+        # language's unit reach a report unconverted, not multiplied.
+        by_lang['StdReport']['Defaults']['windrose_bands'] = ['1', '5', '12']
+        skin_dict = L.get_target_report_dict(by_lang, 'SeasonsReport')
+        self.assertEqual(L.report_windrose_bands(by_lang, 'SeasonsReport', skin_dict, {}, None),
+                         [1.0, 5.0, 12.0])
+
+    def test_windrose_bands_resolution(self):
+        """windrose_bands is a report option, and where it is written says
+        its unit: the report's stanza or its skin.conf, in the report's
+        unit; [StdReport] [[Defaults]], in the Defaults' unit, converted to
+        each report's; then the deprecated [LoopData] windrose_bands (in
+        target_report's unit, converted) as the upgrade fallback; then the
+        WRPLOT defaults."""
+        L = user.loopdata.LoopData
+        config_dict = configobj.ConfigObj('tests/weewx.conf.us', encoding='utf-8')
+        us_dict = L.get_target_report_dict(config_dict, 'SeasonsReport')       # mph
+        metric_config = configobj.ConfigObj('tests/weewx.conf.db-us.report-metric', encoding='utf-8')
+        km_dict = L.get_target_report_dict(metric_config, 'SeasonsReport')      # km/h
+        self.assertEqual(weewx.units.Converter.fromSkinDict(us_dict).getTargetUnit('windSpeed')[0], 'mile_per_hour')
+        self.assertEqual(weewx.units.Converter.fromSkinDict(km_dict).getTargetUnit('windSpeed')[0], 'km_per_hour')
+        wrplot_mph = [1.1, 4.7, 8.1, 12.8, 19.7, 24.8]
+
+        # Nothing anywhere: the defaults, in the report's unit.
+        self.assertEqual(L.report_windrose_bands(config_dict, 'SeasonsReport', us_dict, {}, None), wrplot_mph)
+        # The report's own stanza, in its unit, verbatim.
+        config_dict['StdReport']['SeasonsReport']['windrose_bands'] = ['1', '5', '10']
+        self.assertEqual(L.report_windrose_bands(config_dict, 'SeasonsReport', us_dict, {}, None), [1.0, 5.0, 10.0])
+        del config_dict['StdReport']['SeasonsReport']['windrose_bands']
+        # [StdReport] [[Defaults]]: in the Defaults' unit (mph in this
+        # fixture), converted and rounded for a km/h report.
+        config_dict['StdReport']['Defaults']['windrose_bands'] = ['2', '10']
+        self.assertEqual(L.defaults_converter(config_dict).getTargetUnit('windSpeed')[0], 'mile_per_hour')
+        self.assertEqual(L.report_windrose_bands(config_dict, 'SeasonsReport', us_dict, {}, None), [2.0, 10.0])
+        self.assertEqual(L.report_windrose_bands(config_dict, 'MetricReport', km_dict, {}, None), [3.2, 16.1])
+        # A stock weewx.conf sets the Defaults' units as unit_system = ...
+        # with [[[Units]]] [[[[Groups]]]] commented out; the Defaults'
+        # converter must honor it exactly as WeeWX's skin-dict build does.
+        stock = weeutil.config.deep_copy(config_dict)
+        del stock['StdReport']['Defaults']['Units']['Groups']
+        stock['StdReport']['Defaults']['unit_system'] = 'metricwx'
+        self.assertEqual(L.defaults_converter(stock).getTargetUnit('windSpeed')[0], 'meter_per_second')
+        # unit_system PLUS an explicit group: WeeWX applies unit_system first
+        # and the explicit group over it, and so must the Defaults converter.
+        both = weeutil.config.deep_copy(stock)
+        both['StdReport']['Defaults']['Units'] = {'Groups': {'group_speed': 'km_per_hour'}}
+        self.assertEqual(L.defaults_converter(both).getTargetUnit('windSpeed')[0], 'km_per_hour')
+        self.assertEqual(weewx.units.Converter.fromSkinDict(
+            L.get_target_report_dict(both, 'SeasonsReport')).getTargetUnit('windSpeed')[0], 'km_per_hour')
+        # No [[Defaults]] at all: WeeWX's own defaults.
+        bare = weeutil.config.deep_copy(config_dict)
+        del bare['StdReport']['Defaults']
+        self.assertEqual(L.defaults_converter(bare).getTargetUnit('windSpeed')[0], 'mile_per_hour')
+        stock['StdReport']['Defaults']['windrose_bands'] = ['1', '5', '10']
+        mps_dict = L.get_target_report_dict(stock, 'SeasonsReport')
+        self.assertEqual(weewx.units.Converter.fromSkinDict(mps_dict).getTargetUnit('windSpeed')[0], 'meter_per_second')
+        self.assertEqual(L.report_windrose_bands(stock, 'SeasonsReport', mps_dict, {}, None), [1.0, 5.0, 10.0])
+        self.assertEqual(L.report_windrose_bands(stock, 'MetricReport', km_dict, {}, None), [3.6, 18.0, 36.0])
+        stock['StdReport']['Defaults']['unit_system'] = 'metric'
+        self.assertEqual(L.defaults_converter(stock).getTargetUnit('windSpeed')[0], 'km_per_hour')
+        # The report's stanza beats Defaults, and is in the report's unit.
+        config_dict['StdReport']['MetricReport'] = {'skin': 'Seasons', 'windrose_bands': ['3', '9']}
+        self.assertEqual(L.report_windrose_bands(config_dict, 'MetricReport', km_dict, {}, None), [3.0, 9.0])
+        del config_dict['StdReport']['MetricReport']
+        # A bare [StdReport] scalar is the older spelling of a default and
+        # wins over [[Defaults]], as in WeeWX's own skin-dict build.
+        config_dict['StdReport']['windrose_bands'] = ['4', '8']
+        self.assertEqual(L.report_windrose_bands(config_dict, 'SeasonsReport', us_dict, {}, None), [4.0, 8.0])
+        del config_dict['StdReport']['windrose_bands']
+        del config_dict['StdReport']['Defaults']['windrose_bands']
+        # skin.conf's own top-level windrose_bands, in the report's unit.
+        skin_with = weeutil.config.deep_copy(us_dict)
+        skin_with['windrose_bands'] = ['1', '2', '3']
+        self.assertEqual(L.report_windrose_bands(config_dict, 'SeasonsReport', skin_with, {}, None), [1.0, 2.0, 3.0])
+        # The deprecated [LoopData] windrose_bands bands target_report's
+        # rose and NO other: before 7.0 it banded the one rose in the flat
+        # file, which was rendered through target_report.  Every other
+        # report's rose is new in 7.0 and takes the defaults.
+        loop = {'windrose_bands': ['3', '6']}
+        self.assertEqual(L.legacy_windrose_bands(config_dict, 'SeasonsReport', us_dict, loop), [3.0, 6.0])
+        self.assertEqual(L.report_windrose_bands(config_dict, 'SeasonsReport', us_dict, loop, us_dict,
+                                                 None, 'SeasonsReport'), [3.0, 6.0])
+        self.assertEqual(L.report_windrose_bands(config_dict, 'MetricReport', km_dict, loop, us_dict,
+                                                 None, 'SeasonsReport'),
+                         L.parse_windrose_bands(None, weewx.units.Converter.fromSkinDict(km_dict)))
+        # ... and not even target_report, once it has its own.
+        self.assertEqual(L.report_windrose_bands(config_dict, 'SeasonsReport', skin_with, loop, us_dict,
+                                                 None, 'SeasonsReport'), [1.0, 2.0, 3.0])
+        # An invalid shared value: reported ONCE through the memo, and every
+        # report takes the defaults in its OWN unit -- never the source
+        # unit's defaults converted and rounded again.
+        config_dict['StdReport']['Defaults']['windrose_bands'] = ['1', 'foo']
+        shared = {}
+        with self.assertLogs('user.loopdata', level='ERROR') as logs:
+            self.assertEqual(L.report_windrose_bands(config_dict, 'SeasonsReport', us_dict, {}, None, shared), wrplot_mph)
+            self.assertEqual(L.report_windrose_bands(config_dict, 'MetricReport', km_dict, {}, None, shared),
+                             L.parse_windrose_bands(None, weewx.units.Converter.fromSkinDict(km_dict)))
+        self.assertEqual(len(logs.output), 1, logs.output)
+        del config_dict['StdReport']['Defaults']['windrose_bands']
+        bad_legacy = {'windrose_bands': ['5', '2']}
+        with self.assertLogs('user.loopdata', level='ERROR') as logs:
+            shared = {}
+            self.assertEqual(L.legacy_windrose_bands(config_dict, 'SeasonsReport', us_dict, bad_legacy, shared), wrplot_mph)
+        self.assertEqual(len(logs.output), 1, logs.output)
+        # windrose_bands inside the skin's [LoopData] section, beside
+        # [[fields]], counts as the skin's own (the natural first guess).
+        skin_section = weeutil.config.deep_copy(us_dict)
+        skin_section['LoopData'] = {'windrose_bands': ['2', '4', '6'], 'fields': {'a': 'day.windrose.calm'}}
+        self.assertEqual(L.report_windrose_bands(config_dict, 'SeasonsReport', skin_section, {}, None), [2.0, 4.0, 6.0])
+        # Conversion that would collapse two edges keeps the exact values.
+        us_conv = weewx.units.Converter.fromSkinDict(us_dict)
+        km_conv = weewx.units.Converter.fromSkinDict(km_dict)
+        self.assertEqual(L.convert_windrose_bands([1.0, 2.0], us_conv, us_conv), [1.0, 2.0])
+        self.assertEqual(L.convert_windrose_bands([1.0, 2.0], us_conv, km_conv), [1.6, 3.2])
+        tight = L.convert_windrose_bands([1.0, 1.02], km_conv, us_conv)
+        self.assertLess(tight[0], tight[1])
+
+    class FakeEngine:
+        """Just enough of a weewx engine for LoopData.__init__."""
+        def __init__(self, config_dict):
+            self.config_dict = config_dict
+            self.stn_info = weewx.station.StationInfo(
+                altitude=['700', 'foot'], latitude='37.4', longitude='-122.1',
+                location='Test', station_url='')
+            self.bound = []
+        def bind(self, event, callback):
+            self.bound.append(event)
+
+    @staticmethod
+    def _init_fixture(tmp: str, declare_sample: bool = True) -> Dict[str, Any]:
+        """A weewx.conf, skin tree and database under tmp for a real
+        LoopData.__init__: the sample skin (declaring), an uploader-style
+        report whose skin declares nothing, and SeasonsReport whose
+        skin.conf is absent (declares nothing either)."""
+        config_dict = configobj.ConfigObj('tests/weewx.conf.us', encoding='utf-8')
+        config_dict['WEEWX_ROOT'] = tmp
+        os.makedirs(os.path.join(tmp, 'archive'))
+        dbm = weewx.manager.DaySummaryManager.open_with_create(
+            {'database_name': os.path.join(tmp, 'archive', 'weewx.sdb'), 'driver': 'weedb.sqlite'},
+            table_name='archive', schema=wview_extended_schema)
+        dbm.close()
+        skin_dir = os.path.join(tmp, 'skins', 'LoopData')
+        os.makedirs(skin_dir)
+        if declare_sample:
+            shutil.copy(os.path.join(ProcessPacketTests.I18N_SKIN_DIR, 'skin.conf'), skin_dir)
+        else:
+            open(os.path.join(skin_dir, 'skin.conf'), 'w').write('[Generators]\n    generator_list = weewx.cheetahgenerator.CheetahGenerator\n')
+        ftp_dir = os.path.join(tmp, 'skins', 'Ftp')
+        os.makedirs(ftp_dir)
+        open(os.path.join(ftp_dir, 'skin.conf'), 'w').write('[Generators]\n    generator_list = weewx.reportengine.FtpGenerator\n')
+        config_dict['StdReport']['LoopDataReport'] = {'skin': 'LoopData', 'HTML_ROOT': 'public_html/loopdata'}
+        config_dict['StdReport']['FTP'] = {'skin': 'Ftp', 'enable': 'true'}
+        config_dict['LoopData'] = {'FileSpec': {'loop_data_dir': '.', 'filename': 'loop-data.txt'},
+                                   'RsyncSpec': {'enable': 'false', 'compress': 'false', 'log_success': 'false'}}
+        return config_dict
+
+    def test_init_wires_the_contexts(self):
+        """LoopData.__init__ end to end against a real config, skin tree and
+        database: the declaring report, the legacy line through
+        target_report, the anchor for a relative loop_data_dir, and the
+        two failure paths of the legacy line."""
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp)
+            # Two of the three legacy fields are declared by LoopDataReport,
+            # the target_report: they are rendered once, in its entry, and
+            # copied flat; only the third stays in the legacy context.
+            config_dict['LoopData']['Include'] = {'fields': ['current.outTemp', 'day.rain.sum', 'day.outTemp.min']}
+            config_dict['LoopData']['Formatting'] = {'target_report': 'LoopDataReport'}
+            with self.assertLogs('user.loopdata', level='INFO') as logs:
+                service = user.loopdata.LoopData(self.FakeEngine(config_dict), config_dict)
+            cfg = service.cfg
+            self.assertEqual(cfg.legacy_shared,
+                             {'current.outTemp': 'LoopDataReport', 'day.rain.sum': 'LoopDataReport'})
+            self.assertEqual(cfg.legacy.specified_fields, ['day.outTemp.min'])
+            self.assertTrue(any('2 of the 3 [[Include]] fields are declared by reports that render '
+                                'them identically (LoopDataReport: 2)' in m
+                                for m in logs.output), logs.output)
+            pkt_time = 1593630000
+            accums = ProcessPacketTests._get_accums(cfg, pkt_time)
+            out = user.loopdata.LoopProcessor.generate_output(
+                {'dateTime': pkt_time, 'usUnits': 1, 'outTemp': 77.0, 'rain': 0.0},
+                cfg, accums, user.loopdata.LoopProcessor(cfg).renderers)
+            self.assertEqual(out['current.outTemp'], out['LoopDataReport']['current.outTemp'])
+            self.assertEqual(out['day.rain.sum'], out['LoopDataReport']['day.rain.sum'])
+            self.assertIn('day.outTemp.min', out)
+            self.assertNotIn('day.outTemp.min', out['LoopDataReport'])
+            self.assertEqual(set(service.engine.bound), {weewx.NEW_LOOP_PACKET, weewx.PRE_LOOP})
+            # One declaring report: SeasonsReport has no skin.conf here and
+            # FTP's skin declares nothing, so neither counts.
+            self.assertEqual([ctx.report_name for ctx in cfg.reports], ['LoopDataReport'])
+            declared = set(cfg.reports[0].specified_fields)
+            self.assertIn('day.windrose.banded', declared)          # from skin.conf
+            self.assertGreaterEqual(len(declared), 50)
+            # The legacy line, rendered through target_report.
+            self.assertIsNotNone(cfg.legacy)
+            self.assertTrue(any('deprecated' in m for m in logs.output))
+            # The union: obstypes from both contexts, one trend key.
+            self.assertIn('rain', cfg.obstypes.day)
+            self.assertIn('barometer', cfg.obstypes.current)     # the sample skin's
+            self.assertEqual([k for k in cfg.obstypes.continuous if user.loopdata.LoopData.is_trend_key(k)], ['trend@10800'])
+            # A relative loop_data_dir anchors on target_report's directory.
+            self.assertEqual(os.path.normpath(cfg.loop_data_dir),
+                             os.path.join(tmp, 'public_html', 'loopdata'))
+            self.assertTrue(os.path.isdir(cfg.loop_data_dir))
+            os.unlink(cfg.tmpname)
+
+        # No fields line at all, but the deprecated [LoopData] windrose_bands
+        # still set: it bands target_report's rose only, so a declaring
+        # report that is not the target keeps the defaults.  And a
+        # non-default target_report kept without a fields line is warned
+        # about: it still anchors loop_data_dir and will be removed.
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp)
+            config_dict['LoopData']['windrose_bands'] = ['1', '4', '8']
+            config_dict['StdReport']['Other'] = {'skin': 'LoopData', 'HTML_ROOT': 'public_html/other', 'enable': 'false'}
+            config_dict['LoopData']['Formatting'] = {'target_report': 'Other'}
+            with self.assertLogs('user.loopdata', level='INFO') as logs:
+                service = user.loopdata.LoopData(self.FakeEngine(config_dict), config_dict)
+            cfg = service.cfg
+            self.assertIsNone(cfg.legacy)
+            self.assertEqual(cfg.reports[0].report_name, 'LoopDataReport')   # not the target
+            self.assertEqual(cfg.reports[0].windrose_bands,
+                             [1.1, 4.7, 8.1, 12.8, 19.7, 24.8])              # the defaults
+            self.assertTrue(any('windrose_bands is deprecated' in m for m in logs.output), logs.output)
+            self.assertTrue(any('target_report = Other is deprecated' in m for m in logs.output), logs.output)
+            self.assertEqual(os.path.normpath(cfg.loop_data_dir), os.path.join(tmp, 'public_html', 'other'))
+            os.unlink(cfg.tmpname)
+
+        # A target_report that exists but cannot be built (a broken
+        # skin.conf) is reported as such, exception included -- not as
+        # "not found".
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp)
+            broken = os.path.join(tmp, 'skins', 'Broken')
+            os.makedirs(broken)
+            open(os.path.join(broken, 'skin.conf'), 'w').write('[Extras\n    oops = 1\n')
+            config_dict['StdReport']['BrokenReport'] = {'skin': 'Broken', 'enable': 'false'}
+            config_dict['LoopData']['Include'] = {'fields': ['current.outTemp']}
+            config_dict['LoopData']['Formatting'] = {'target_report': 'BrokenReport'}
+            with self.assertLogs('user.loopdata', level='INFO') as logs:
+                service = user.loopdata.LoopData(self.FakeEngine(config_dict), config_dict)
+            cfg = service.cfg
+            self.assertIsNone(cfg.legacy)
+            self.assertTrue(any('Could not build target_report BrokenReport' in m and 'Exception:' in m
+                                for m in logs.output), logs.output)
+            self.assertFalse(any('Could not find target_report' in m for m in logs.output), logs.output)
+            os.unlink(cfg.tmpname)
+
+        # A target_report that does not exist: the legacy line is dropped
+        # with the honest message, the declaring report is still served, and
+        # a relative loop_data_dir falls back to [StdReport] HTML_ROOT with a
+        # WARNING saying so (the installer puts [[LoopDataReport]] back, so
+        # this is a hand-edited station between upgrades).
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp)
+            config_dict['LoopData']['Include'] = {'fields': ['current.outTemp']}
+            config_dict['LoopData']['Formatting'] = {'target_report': 'Nope'}
+            with self.assertLogs('user.loopdata', level='INFO') as logs:
+                service = user.loopdata.LoopData(self.FakeEngine(config_dict), config_dict)
+            cfg = service.cfg
+            self.assertIsNone(cfg.legacy)
+            self.assertEqual([ctx.report_name for ctx in cfg.reports], ['LoopDataReport'])
+            self.assertTrue(any('Could not find target_report: Nope' in m for m in logs.output), logs.output)
+            self.assertEqual(os.path.normpath(cfg.loop_data_dir), os.path.join(tmp, 'public_html'))
+            self.assertTrue(any('WARNING' in m and 'relative to [StdReport] HTML_ROOT' in m for m in logs.output), logs.output)
+            os.unlink(cfg.tmpname)
+
+        # A disabled LoopDataReport still anchors: enable = false is how the
+        # sample page is turned off, and the section stays.
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp)
+            config_dict['StdReport']['LoopDataReport']['enable'] = 'false'
+            config_dict['LoopData']['Include'] = {'fields': ['current.outTemp']}
+            with self.assertLogs('user.loopdata', level='INFO'):
+                service = user.loopdata.LoopData(self.FakeEngine(config_dict), config_dict)
+            cfg = service.cfg
+            self.assertEqual(cfg.reports, [])          # disabled: declares nothing
+            self.assertIsNotNone(cfg.legacy)          # but the line still renders through it
+            self.assertEqual(os.path.normpath(cfg.loop_data_dir), os.path.join(tmp, 'public_html', 'loopdata'))
+            os.unlink(cfg.tmpname)
+
+        # The same with nothing else declaring: LoopData exits, and says the
+        # line was there but could not be set up -- not that it is absent.
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp, declare_sample=False)
+            config_dict['LoopData']['Include'] = {'fields': ['current.outTemp']}
+            config_dict['LoopData']['Formatting'] = {'target_report': 'Nope'}
+            with self.assertLogs('user.loopdata', level='ERROR') as logs:
+                service = user.loopdata.LoopData(self.FakeEngine(config_dict), config_dict)
+            self.assertFalse(hasattr(service, 'cfg'))
+            self.assertEqual(service.engine.bound, [])
+            self.assertTrue(any('could not be set up (see above)' in m for m in logs.output), logs.output)
+            self.assertFalse(any('there is no [LoopData] [[Include]] fields line' in m for m in logs.output), logs.output)
+
+        # And with no fields line at all, the message says so.
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp, declare_sample=False)
+            with self.assertLogs('user.loopdata', level='ERROR') as logs:
+                service = user.loopdata.LoopData(self.FakeEngine(config_dict), config_dict)
+            self.assertFalse(hasattr(service, 'cfg'))
+            self.assertTrue(any('there is no [LoopData] [[Include]] fields line' in m for m in logs.output), logs.output)
 
 if __name__ == '__main__':
     unittest.main()

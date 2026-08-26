@@ -1,7 +1,7 @@
 ---
 title: Syncing to a remote server
 layout: default
-nav_order: 12
+nav_order: 13
 ---
 
 # Syncing to a remote server

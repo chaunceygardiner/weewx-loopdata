@@ -1,7 +1,7 @@
 ---
 title: Field reference
 layout: default
-nav_order: 6
+nav_order: 7
 ---
 
 # Field reference
@@ -10,9 +10,9 @@ nav_order: 6
 
 ---
 
-Every entry on the `fields` line of `[LoopData] [[Include]]` is a WeeWX
-report tag with the `$` removed, and becomes a key in loop-data.txt — the
-key is the field entry verbatim.  As a rule, a tag that works in a Cheetah
+Every field a report [declares](declaring-fields.html) is a WeeWX report
+tag with the `$` removed, and becomes a key in that report's entry in
+loop-data.txt — the key is the field entry verbatim.  As a rule, a tag that works in a Cheetah
 template works here too, minus the dollar sign; LoopData adds the
 rolling-window periods, which reports have no equivalent of, and spells
 `$alltime` as `alltime`.
@@ -72,7 +72,7 @@ period.obstype[.agg_type][.unit][.round(n)][.format_spec]
 | Period | Window |
 |---|---|
 | `current` | The latest loop packet.  No aggregate. |
-| `trend` | Change over the target report's trend window (`[Units][Trend] time_delta`, default 3 hours, capped at 3 days — see [Configuration](configuration.html#the-trend-window-time_delta)).  No aggregate. |
+| `trend` | Change over the report's trend window (`[Units][Trend] time_delta`, default 3 hours, capped at 3 days — see [Configuration](configuration.html#the-trend-window-time_delta)).  No aggregate. |
 | `1m` – `1440m` | Rolling window of that many minutes, e.g. `2m`, `10m`, `90m`. |
 | `1h` – `24h` | Rolling window of that many hours, e.g. `8h`, `24h`. |
 | `hour` | The current clock hour. |
@@ -150,7 +150,7 @@ All-time high outside temperature:
 
 Time-of-event fields (`maxtime`, `mintime`, `firsttime`, `lasttime`) are
 formatted exactly as WeeWX report tags format them: the field's period is
-the time context, so the target report's `[Units][TimeFormats]` entry for
+the time context, so the report's `[Units][TimeFormats]` entry for
 that period applies.  With the standard settings: `hour` is `%H:%M`, `day`
 is `%X`, `week` is `%X (%A)`, and `month`/`year`/`rainyear` are `%x %X`.
 `alltime` uses the `year` format, as WeeWX's `$alltime` tag does.  Rolling
@@ -164,7 +164,7 @@ format: `day.outTemp.maxtime.format("%H:%M")`.
 
 ## Overriding the unit of a field
 
-By default every field is converted to the unit the target report calls for.
+By default every field is converted to the unit the declaring report calls for.
 A field may instead name an explicit unit, exactly as WeeWX report tags allow
 (e.g. `$current.outTemp.degree_C`).  The unit goes right after the
 aggregation, before the optional `round(n)` and format spec.  Any unit WeeWX
@@ -223,9 +223,12 @@ usual: `day.outTemp.avg.degree_C.nolabel("%.2f")`,
 `day.barometer.max.mbar.round(1).raw`.
 
 {: .important }
-A call containing a comma must be quoted in weewx.conf, or ConfigObj will
-split the entry at the comma into two bogus fields:
-`fields = ..., 'day.rain.sum.format("%.2f", add_label=False)', ...`
+A call containing a comma must be quoted in the declaration, or ConfigObj
+will split the entry at the comma into two bogus fields:
+`rain = day.rain.sum, 'day.rain.sum.format("%.2f", add_label=False)'` —
+and close the quote: an unbalanced one makes ConfigObj backtrack for
+minutes rather than raise, which hangs weewxd at startup (see
+[Declaring fields](declaring-fields.html#the-declaration)).
 Calls without a comma (e.g. `day.outTemp.maxtime.format("%H:%M")`) need no
 quoting.  The json key is the field entry verbatim (without the outer
 quotes).
@@ -249,7 +252,7 @@ present from the start.
 
 ### `unit.label.<obs>`
 
-The target report's unit label for an observation, e.g. `unit.label.outTemp`
+The report's unit label for an observation, e.g. `unit.label.outTemp`
 might yield `°F`.  Useful for drawing dial scales and legends that follow
 the report's units automatically.  (`unit.label.windrose` yields the
 distance unit label used by `windrose.sum` — see
@@ -258,7 +261,7 @@ distance unit label used by `windrose.sum` — see
 ### `trend.barometer.desc` and `trend.barometer.code`
 
 `trend.barometer.desc` provides a text version of the barometer rate (e.g.,
-`Falling Slowly`); the texts translate through the target report's `[Texts]` —
+`Falling Slowly`); the texts translate through the report's `[Texts]` —
 see [Translating trend.barometer.desc](configuration.html#translating-trendbarometerdesc).
 `trend.barometer.code` provides an integer of value `-4`, `-3`, `-2`, `-1`,
 `0`, `1`, `2`, `3` or `4`, corresponding to `Falling Very Rapidly`,
@@ -269,8 +272,7 @@ see [Translating trend.barometer.desc](configuration.html#translating-trendbarom
 
 If an aggregate is implemented via xtypes, it will be ignored by loopdata.
 For example, the weewx-purple extension implements `pm2_5_aqi` via xtypes.
-If, say, `week.pm2_5_aqi.max` were specified on the fields line, it would be
-ignored — there is no database entry from which to look up the weekly high
+If, say, `week.pm2_5_aqi.max` were declared, it would be ignored — there is no database entry from which to look up the weekly high
 for `pm2_5_aqi`.
 
 The rule is: if an observation is not stored in the database, you can't

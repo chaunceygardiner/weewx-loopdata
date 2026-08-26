@@ -10,7 +10,7 @@ nav_order: 2
 
 ---
 
-**Requirements:** Python 3.7 or later and WeeWX 4 or 5.  No third-party
+**Requirements:** Python 3.7 or later and WeeWX 4.6 or later.  No third-party
 Python packages are needed.  (Versions 3.0 through 3.9 required
 `sortedcontainers`; as of 4.0 it is no longer used.)  Python 3.7 is the
 floor because LoopData's code carries type annotations, which do not work
@@ -76,18 +76,22 @@ the values accordingly.  In particular:
   getting right; see
   [`[[LoopFrequency]]`](configuration.html#loopfrequency) for
   what a wrong value costs.
-* Specify the `target_report` for the report you wish to use for formatting
-  and units.
 * Specify the `loop_data_dir` where the loop-data.txt file should be written.
   If `loop_data_dir` is a relative path, it is interpreted as relative to the
-  target report's directory.  The default works and is what most stations
+  sample report's directory (`LoopDataReport`, or the report named by
+  `target_report` if you set one).  The default works and is what most stations
   keep; see
   [Where the loop-data file should live](configuration.html#where-the-loop-data-file-should-live)
   if you would rather have the file on a memory filesystem outside the web
   root.
-* You will eventually need to update the `fields` line with the fields you
-  actually need for the report you are targeting.  Change this line later,
-  after you are sure LoopData is running correctly.
+* There is no list of fields to fill in: the sample report declares the
+  fields its panel reads in its own `skin.conf`, and a page of your own
+  declares its fields the same way — see
+  [Declaring fields](declaring-fields.html), later, after you are sure
+  LoopData is running correctly.  Another extension with a live page
+  declares its own when installed — weewx-celestial from the release after
+  8.4 (8.4's installer only adds to a fields line that already exists,
+  and a fresh 7.0 install writes none).
 * If you need the loop-data.txt file pushed to a remote webserver, you will
   also need to fill in the `RsyncSpec` fields; but one can fill that in
   later, after LoopData is up and running.  See

@@ -1,7 +1,7 @@
 ---
 title: The sample skin
 layout: default
-nav_order: 10
+nav_order: 11
 ---
 
 # The sample skin
@@ -13,7 +13,7 @@ nav_order: 10
 A sample skin (`skins/LoopData`, registered as the report `LoopDataReport`)
 is included with the extension.  After installing and restarting, and after
 waiting for a report cycle, it can be found at `<weewx-url>/loopdata/`.
-LoopData is initially configured with `target_report = LoopDataReport`, so
+The skin declares the fields the panel reads in its own `skin.conf`, so
 the panel works out of the box on a fresh install.
 
 ![The LoopData sample report: a live instrument panel](images/LoopDataReport.png)
@@ -40,15 +40,17 @@ readout redraws on every loop packet:
 
 The division of labor is the loopdata pattern in miniature: the `.raw`
 fields drive the geometry, report-formatted fields supply the readouts, and
-`unit.label` fields pick the dial scales — so the panel follows the target
+`unit.label` fields pick the dial scales — so the panel follows this
 report's units and formatting (metric or US) like any other loopdata page.
 The gauges scale with the window: the engine draws in a 240-unit coordinate
 system stretched to the css size, so geometry and fonts grow together on a
 wide display (faces cap at 480px).
 
-The fields line the panel reads is exactly the
-[sample configuration](configuration.html#sample-configuration)'s `fields`
-line — fresh installs get it by default.
+The fields the panel reads are declared in `skins/LoopData/skin.conf`,
+one group per gauge (see [Declaring fields](declaring-fields.html)), and
+the page reads its own report's entry in `loop-data.txt` — so it works
+whatever else the file carries, and a second copy of the skin under
+another report name gets its own entry.
 
 ## What each gauge reads
 
@@ -64,7 +66,7 @@ draws no needle, band or petal.
 | Dew Point | `current.dewpoint`, `current.dewpoint.raw`, `day.dewpoint.min.raw`, `day.dewpoint.max.raw`, `day.dewpoint.min.formatted`, `day.dewpoint.max.formatted` |
 | Humidity | `current.outHumidity`, `current.outHumidity.raw`, `day.outHumidity.min.raw`, `day.outHumidity.max.raw` |
 | Barometer | `current.barometer`, `current.barometer.raw`, `trend.barometer.raw`, `trend.barometer.desc` |
-| Rain | `day.rain.sum`, `day.rain.sum.raw`, `current.rainRate` |
+| Rain | `day.rain.sum`, `day.rain.sum.raw`, `current.rainRate`, `current.rainRate.raw` |
 | Rain Rate | `current.rainRate`, `current.rainRate.raw`, `day.rainRate.max`, `day.rainRate.max.raw` |
 | Feels Like | `current.appTemp`, `current.appTemp.raw`, `day.appTemp.min.raw`, `day.appTemp.max.raw`, `day.appTemp.min.formatted`, `day.appTemp.max.formatted` |
 | UV Index | `current.UV`, `current.UV.raw`, `day.UV.max` |
@@ -75,14 +77,17 @@ draws no needle, band or petal.
 `unit.label.outTemp`, `unit.label.barometer`, `unit.label.rain`,
 `unit.label.rainRate` and `unit.label.windSpeed` pick the dial scales.
 
-{: .important }
-**Upgrading from a pre-6.0 loopdata:** upgrading replaces the sample skin's
-page with the instrument panel but keeps your existing `[LoopData]` fields
-line, and the panel reads fields the old default never included (`.raw`
-geometry, `unit.label` scales, `day.windrose.*`).  With an old fields line
-the page serves half-dead: text readouts but no needles, min–max bands or
-windrose.  Replace the fields line with the sample configuration's (append
-any fields other pages of yours use) and restart weewxd.
+{: .note }
+To turn the sample page off, set `enable = false` on `[[LoopDataReport]]`
+rather than deleting or renaming the section: a relative `loop_data_dir`
+is measured from its directory, and the installer would put the section
+back on the next upgrade anyway.
+
+{: .note }
+The declaration in `skin.conf` is overwritten by every upgrade, as the
+rest of the skin is.  To add a field for a customization of your own,
+declare it under the report's stanza in `weewx.conf` instead — see
+[Adding to a declaration from weewx.conf](declaring-fields.html#adding-to-a-declaration-from-weewxconf).
 
 ## Translations
 
@@ -90,9 +95,9 @@ As of 6.4 the page is translatable through WeeWX lang files, and eight
 translations ship (a ninth lang file, `en.conf`, is the English reference
 dictionary).  `lang = de` on the report's stanza selects German; the full
 list is in [Translations](i18n.html).  Two languages meet on a
-loopdata page — the page's labels follow this report's `lang`, the live
-values follow the `[LoopData]` target report's — see
-[Translations](i18n.html) for the mechanism and the coupling.
+loopdata page — the page's labels follow this report's `lang` at
+generation time, the live values follow it on every packet — see
+[Translations](i18n.html).
 
 ## Skin options
 

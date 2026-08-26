@@ -1,6 +1,118 @@
 loopdata change history
 -----------------------
 
+7.0 2026/08/26
+--------------
+- ACTION REQUIRED, 1 of 3 -- WeeWX 4.6 or later: this release requires WeeWX
+  4.6 or later, where 6.x required 4.0.  Both the installer and the
+  service refuse to run on anything older.  4.6 is where WeeWX made its
+  skin-dictionary builder a module-level function, which is how loopdata
+  assembles each report's units, formats and language, and it is also
+  where $gettext arrived, which the sample skin has needed since 6.4.
+- ACTION REQUIRED, 2 of 3 -- FINISH THE MIGRATION by running user.loopdata
+  as a command (the manual's Declaring fields page gives the command line
+  for each way of installing WeeWX).  The fields line does
+  not remove itself, and an upgraded station should remove it once every
+  extension whose pages read the loop-data file declares its own fields.
+  The command reports which report now covers each entry on the line and
+  which are covered by nobody -- almost always cruft, entries a page asked
+  for years ago and no longer reads -- and changes nothing until every
+  entry is accounted for and it is run with --apply, which backs up
+  weewx.conf, deletes [[Include]] and [[Formatting]], and moves
+  [LoopData] windrose_bands onto the stanza of the report whose rose it
+  bands (see the windrose_bands bullet below).  A relative loop_data_dir
+  is pinned to the directory the file is in today first, since it was
+  measured from target_report and that is going -- no page finds its URL
+  gone.  It also runs with the fields line already deleted, to remove
+  what is left.  The startup warning names the command.
+- ACTION REQUIRED, 3 of 3 -- a live page of your own that reads
+  loop-data.txt: declare its fields under its report and have the page read
+  that report's entry, before the fields line goes.  Nothing is required
+  for the sample page, weewx-celestial or weewx-weatherboard: upgrade each
+  and it declares its own fields, and until then they keep working through
+  the fields line exactly as before.
+- Reports declare the fields they need.  A skin's skin.conf carries a
+  [LoopData] [[fields]] section of named groups (see
+  skins/LoopData/skin.conf), and every enabled report whose skin declares
+  fields is its own target: its fields are rendered with its own
+  formatter, converter, [Texts], [Almanac] names, $station and
+  [Units] [Trend] time_delta, and written into loop-data.txt under the
+  REPORT's name (the [StdReport] section name -- one skin can be listed
+  under two reports, in two unit systems, and each gets its own values).
+  A report can add to or override its skin's groups from weewx.conf
+  ([StdReport] [[MyReport]] [[[LoopData]]] [[[[fields]]]]), which is how
+  an extension declares fields that depend on your configuration.
+  Accumulation is shared: one set of accumulators feeds every report.  The
+  two report settings that reach the accumulators -- the trend window and
+  the windrose band edges -- select an accumulator by value, so reports
+  that agree share one and a report that differs gets its own.
+- A fields line entry that any report declares and renders identically is
+  rendered ONCE, in that report's entry, and copied flat, so a station
+  still carrying the line pays almost nothing for it.  Two reports count
+  as rendering identically when their units, formats, labels, texts,
+  almanac names, trend window and windrose bands all match, which on a
+  station whose reports inherit [StdReport] [[Defaults]] is every report.
+  Only fields nothing declares, or that no matching report declares, are
+  rendered for the line itself.
+- windrose_bands is a report option.  On a report's stanza in [StdReport]
+  it is in that report's windSpeed unit; under [StdReport] [[Defaults]] it
+  applies to every report, in the Defaults' unit, converted to each
+  report's and rounded to one decimal; a skin.conf may carry one too.
+  The pre-7.0 [LoopData] windrose_bands is deprecated.  It bands
+  target_report's rose and no other -- which is the one rose it banded
+  before 7.0, the one in the flat file -- so that report keeps its bands
+  and every other report takes the WRPLOT defaults until someone chooses
+  otherwise.  Finishing the migration moves the value to that report's
+  stanza, in the unit it is already written in, or simply drops it when
+  that report already gets its bands from somewhere nearer.
+- The [LoopData] [[Include]] fields line and [[Formatting]] target_report
+  are deprecated, together with the flat top-level keys they produce.
+  All three still work exactly as before on an upgraded station, so an
+  existing page keeps reading what it always read, and the per-report
+  entries appear in the same file beside them.  A fresh install writes
+  neither.  weewxd logs a warning at startup while the line is present;
+  do not edit it by hand -- an extension declares its own fields when
+  installed, and a later loopdata release removes the line once every
+  extension that used it declares its fields.  A live page of your own
+  should declare its fields under its report (see the manual's Declaring
+  fields page) before that happens.
+- target_report keeps one job while it exists: a relative loop_data_dir
+  is relative to its directory, LoopDataReport when target_report is not
+  set.  So keep the [[LoopDataReport]] section -- enable = false turns
+  the page off, and the installer puts a deleted section back.  A
+  target_report kept after the fields line is gone is warned about at
+  startup: set loop_data_dir to an absolute path before the release that
+  removes it, or the file moves.
+- A FRESH install writes no fields line, and weewx-celestial 8.4's
+  installer only adds to a line that already exists, so a fresh station
+  needs a weewx-celestial newer than 8.4 for the Celestial page to have
+  live values.  Upgraded stations keep their line and are unaffected.
+- One report's fields failing to render no longer stops the file.  Every
+  enabled report's declaration is rendered on every packet now, including
+  skins this station's operator never wrote; a failure drops that
+  report's entry, logs once and leaves every other report's values
+  written, where before it would have ended the loop-data thread and
+  frozen the file while weewxd carried on.
+- A report for consumers that are not reports.  A script, an SNMP
+  extension or a monitoring check has no skin to declare fields in, and
+  parking them on a page's report means an upgrade overwrites them.  The
+  installer now writes a disabled [StdReport] [[ScriptData]] stanza and
+  ships skins/ScriptData, a skin that generates nothing: enable the
+  report, declare your fields under its stanza in weewx.conf, and they
+  arrive in the loop-data file under "ScriptData".  The manual's
+  Declaring fields page has the details.
+- A field none of the parsers accept is now logged as a warning, naming
+  the report that declared it.  It was dropped silently.
+- A single-field fields value (no comma, which ConfigObj hands back as a
+  string) is read as one field.  It was iterated character by character.
+- The sample skin declares its fields in its skin.conf, grouped by gauge,
+  and its page reads its own report's entries.  The installer no longer
+  writes a fields line or a target_report.
+- Internal: Configuration is split into the shared half and a
+  ReportContext per report; generate_loopdata_dictionary is split into
+  accumulate_packet and render_report; the almanac and station
+  evaluators are per report (their caches hold rendered values).
+
 6.11.3 2026/08/24
 -----------------
 - The sample page no longer loads Google Analytics when no analytics id

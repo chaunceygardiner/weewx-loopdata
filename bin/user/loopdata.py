@@ -11,14 +11,13 @@ in the packet.
 """
 
 import ast
-import copy
-import configobj
 import inspect
 import itertools
 import json
 import logging
 import math
 import os
+import pathlib
 import queue
 import re
 import sys
@@ -29,6 +28,7 @@ import time
 from collections import deque, namedtuple
 from datetime import date, datetime, timedelta
 from heapq import heapify, heappop, heappush
+import dataclasses
 from dataclasses import dataclass, field as dataclass_field
 from typing import Any, Callable, Deque, Dict, FrozenSet, Generator, Generic, List, Optional, Set, Tuple, TypeVar, Union
 from enum import Enum
@@ -56,15 +56,24 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '6.11.3'
+LOOP_DATA_VERSION = '7.0'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
         "weewx-loopdata requires Python 3.7 or later, found %s.%s" % (sys.version_info[0], sys.version_info[1]))
 
-if weewx.__version__ < "4":
+def version_tuple(version: Any) -> Tuple[int, ...]:
+    """'4.10.2' -> (4, 10, 2), for comparing versions as numbers rather
+    than as strings.  install.py imports this so the installer's floor
+    check and the service's cannot drift apart."""
+    return tuple(int(part) for part in re.findall(r'\d+', str(version))[:3])
+
+# 4.6 is where the module-level skin-dict builder this extension calls
+# (weewx.reportengine._build_skin_dict, a method before that) and $gettext
+# arrived.
+if version_tuple(weewx.__version__) < (4, 6):
     raise weewx.UnsupportedFeature(
-        "weewx-loopdata requires WeeWX 4, found %s" % weewx.__version__)
+        "weewx-loopdata requires WeeWX 4.6 or later, found %s" % weewx.__version__)
 
 windrun_bucket_suffixes: List[str] = [ 'N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
                                        'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW' ]
@@ -167,10 +176,80 @@ class ObsTypes:
     week            : Set[str]
     day             : Set[str]
     hour            : Set[str]
-    continuous      : Dict[str, Set[str]] # e.g., continuous['24h'], or ['trend']
+    continuous      : Dict[str, Set[str]] # e.g., continuous['24h'], or ['trend'] as parsed; the union keys trends 'trend@<secs>'
+
+@dataclass
+class ReportContext:
+    """One report's share of the work: the fields it declared and the
+    formatter, converter, [Texts], [Almanac] names and $station it renders
+    them with.  Every report that declares fields ([LoopData] [[fields]] in
+    its skin.conf, or under its stanza in weewx.conf) is its own context,
+    rendered under its report name in the output; the legacy
+    [LoopData] [[Include]] fields line is one more context, rendered flat
+    at the top level exactly as it always was, through the target_report.
+
+    Accumulation is shared (see Configuration): every context renders off
+    the one set of accumulators.  Two report settings reach the
+    accumulators rather than the renderers -- the trend window
+    ([Units] [Trend] time_delta) and the windrose band edges -- so each
+    context resolves its own and selects a shared accumulator BY VALUE:
+    trend_key names the ContinuousAccum sized to this report's window,
+    windrose_key the WindRose accumulators banded with its edges.  Reports
+    that agree share; only a report that differs gets a second one."""
+    report_name       : Optional[str] # None for the legacy fields line
+    specified_fields  : List[str]
+    fields_to_include : Set[CheetahName]
+    almanac_fields    : List[AlmanacField]
+    station_fields    : List[StationField]
+    formatter         : weewx.units.Formatter
+    converter         : weewx.units.Converter
+    baro_trend_descs  : Any # Dict[BarometerTrend, str], in the report's language
+    almanac_texts     : Dict[str, Any] # the report's [Almanac] section (moon_phases, ...)
+    station           : Optional[Any] # weewx.station.Station (the report's $station); set when station_fields is non-empty
+    time_delta        : int # the trend window, seconds
+    windrose_bands    : List[float] # band edges, in the report's windSpeed unit
+    obstypes          : ObsTypes # this context's own observation types per period, from its fields
+    render_signature  : str # everything that decides how a value renders; equal signatures render identically (see render_signature())
+    source_report     : Optional[str] = None # the report whose configuration renders this context (target_report for the legacy line)
+
+    @property
+    def label(self) -> str:
+        """How log messages name this context."""
+        return ReportContext.label_for(self.report_name)
+
+    @staticmethod
+    def label_for(report_name: Optional[str]) -> str:
+        if report_name is None:
+            return '[LoopData] [[Include]] fields'
+        return 'report %s' % report_name
+
+    @property
+    def trend_key(self) -> str:
+        """accums.continuous key of the trend accumulator sized to this
+        report's window (see LoopData.trend_key)."""
+        return LoopData.trend_key(self.time_delta)
+
+    @property
+    def windrose_key(self) -> str:
+        """accums.windrose_* key of the accumulators banded with this
+        report's edges (see LoopData.windrose_bands_key)."""
+        return LoopData.windrose_bands_key(
+            self.converter.getTargetUnit('windSpeed')[0], self.windrose_bands)
+
+    @property
+    def windrose(self) -> bool:
+        """Does this report declare a windrose (a <period>.windrose.<agg>
+        field -- unit.label.windrose alone is a label, not a rose)?"""
+        return any(cname.obstype == 'windrose' and cname.period is not None
+                   for cname in self.fields_to_include)
 
 @dataclass
 class Configuration:
+    """Everything shared across reports: the accumulators' unit system, the
+    union of every context's observation types and periods, the file, the
+    rsync.  The per-report half lives in ReportContext: `legacy` for the
+    [[Include]] fields line (None when there is none) and `reports` for
+    the declaring reports."""
     queue                    : queue.SimpleQueue
     config_dict              : Dict[str, Any]
     unit_system              : int
@@ -178,12 +257,8 @@ class Configuration:
     archive_delay            : int
     loop_data_dir            : str
     filename                 : str
-    target_report            : str
+    target_report            : Optional[str] # the report the legacy fields line renders through; also anchors a relative loop_data_dir
     loop_frequency           : float
-    specified_fields         : Set[str]
-    fields_to_include        : Set[CheetahName]
-    formatter                : weewx.units.Formatter
-    converter                : weewx.units.Converter
     tmpname                  : str
     enable                   : bool
     remote_server            : str
@@ -195,21 +270,39 @@ class Configuration:
     ssh_options              : str
     skip_if_older_than       : int
     timeout                  : int
-    time_delta               : int # Used for trend.
     week_start               : int
     rainyear_start           : int
-    obstypes                 : ObsTypes
-    baro_trend_descs         : Any # Dict[BarometerTrend, str]
-    almanac_fields           : List[AlmanacField] = dataclass_field(default_factory=list)
-    windrose_bands           : List[float] = dataclass_field(default_factory=list) # band edges, target report windSpeed units
-    windrose_span_periods    : Set[str] = dataclass_field(default_factory=set)
-    windrose_continuous_periods : Set[str] = dataclass_field(default_factory=set)
+    legacy                   : Optional[ReportContext] = None
+    reports                  : List[ReportContext] = dataclass_field(default_factory=list)
+    legacy_shared            : Dict[str, str] = dataclass_field(default_factory=dict) # legacy key -> the report whose entry it is copied flat from, instead of rendered again
+    # The union over every context, computed by recompute(): observation
+    # types per period (continuous keyed by period, trends by trend_key),
+    # and the windrose accumulators per band edges.
+    obstypes                 : ObsTypes = dataclass_field(default_factory=lambda: ObsTypes(
+                                   current=set(), alltime=set(), rainyear=set(), year=set(),
+                                   month=set(), week=set(), day=set(), hour=set(), continuous={}))
+    windrose_bandings        : Dict[str, Tuple[str, List[float]]] = dataclass_field(default_factory=dict) # windrose_key -> (report windSpeed unit, edges in that unit)
+    windrose_span_periods    : Set[Tuple[str, str]] = dataclass_field(default_factory=set) # (windrose_key, period)
+    windrose_continuous_periods : Set[Tuple[str, str]] = dataclass_field(default_factory=set) # (windrose_key, period)
     latitude                 : float = 0.0 # station latitude in decimal degrees
     longitude                : float = 0.0 # station longitude in decimal degrees
     altitude_m               : float = 0.0 # station altitude in meters
-    almanac_texts            : Dict[str, Any] = dataclass_field(default_factory=dict) # target report's [Almanac] section (moon_phases, ...)
-    station_fields           : List[StationField] = dataclass_field(default_factory=list)
-    station                  : Optional[Any] = None # weewx.station.Station (the report's $station); set when station_fields is non-empty
+
+    @property
+    def contexts(self) -> List[ReportContext]:
+        """Every context, the legacy one first."""
+        return ([self.legacy] if self.legacy is not None else []) + list(self.reports)
+
+    def recompute(self) -> None:
+        """Derive the shared unions from the contexts.  Call after the
+        contexts change (construction, or a test adding a report)."""
+        contexts = self.contexts
+        self.obstypes = LoopData.union_obstypes(contexts)
+        self.windrose_bandings, self.windrose_span_periods, self.windrose_continuous_periods = \
+            LoopData.union_windrose(contexts)
+
+    def almanac_fields_all(self) -> List[AlmanacField]:
+        return [f for ctx in self.contexts for f in ctx.almanac_fields]
 
 # ===============================================================================
 #                        Aggregate dispatch tables
@@ -1270,9 +1363,9 @@ class Accumulators:
     week_accum           : Optional[weewx.accum.Accum]
     day_accum            : weewx.accum.Accum
     hour_accum           : Optional[weewx.accum.Accum]
-    continuous           : Dict[str, ContinuousAccum] # e.g., continuous_accums['24h'], or ['trend']
-    windrose_span        : Dict[str, WindRoseSpanAccum] = dataclass_field(default_factory=dict)
-    windrose_continuous  : Dict[str, WindRoseContinuousAccum] = dataclass_field(default_factory=dict)
+    continuous           : Dict[str, ContinuousAccum] # e.g., continuous['24h'], or ['trend@10800'] (see trend_key())
+    windrose_span        : Dict[Tuple[str, str], WindRoseSpanAccum] = dataclass_field(default_factory=dict) # (windrose_key, period)
+    windrose_continuous  : Dict[Tuple[str, str], WindRoseContinuousAccum] = dataclass_field(default_factory=dict) # (windrose_key, period)
 
 class BarometerTrend(Enum):
     RISING_VERY_RAPIDLY  =  4
@@ -1341,17 +1434,153 @@ class LoopData(StdService):
         if unit_system is None:
             unit_system = weewx.units.unit_constants[self.config_dict['StdConvert'].get('target_unit', 'US').upper()]
 
-        # Get a target report dictionary we can use for converting units and formatting.
-        target_report = formatting_spec_dict.get('target_report', 'LoopDataReport')
+        # The report skin dicts, one build per report name (the legacy
+        # target_report usually is a declaring report too).
+        report_dicts: Dict[str, Dict[str, Any]] = {}
+        def report_dict(report: str) -> Dict[str, Any]:
+            if report not in report_dicts:
+                report_dicts[report] = LoopData.get_target_report_dict(config_dict, report)
+            return report_dicts[report]
+
+        # The legacy context: the [[Include]] fields line, rendered flat
+        # through the target_report.  Deprecated as a unit with target_report
+        # and the flat output: reports declare their own fields now.
+        target_report: str = formatting_spec_dict.get('target_report', 'LoopDataReport')
+        # target_report's dict serves the legacy line, the deprecated
+        # [LoopData] windrose_bands fallback, and a relative loop_data_dir.
+        target_dict: Optional[Dict[str, Any]] = None
+        target_error: Optional[BaseException] = None
         try:
-            target_report_dict = LoopData.get_target_report_dict(
-                config_dict, target_report)
+            target_dict = report_dict(target_report)
         except Exception as e:
             reraise_if_terminate(e)
-            log.error('Could not find target_report: %s.  LoopData is exiting. Exception: %s' % (target_report, e))
+            target_error = e
+        legacy: Optional[ReportContext] = None
+        legacy_fields: List[str] = LoopData.normalize_fields(include_spec_dict.get('fields'))
+        windrose_shared: Dict[str, Any] = {}   # shared windrose_bands values, validated once
+        if len(legacy_fields) == 0 and 'target_report' in formatting_spec_dict \
+                and target_report != 'LoopDataReport':
+            log.warning('[[Formatting]] target_report = %s is deprecated with the [[Include]] '
+                'fields line, and with no fields line it does one thing only: a relative '
+                'loop_data_dir is relative to its directory.  Before a later release removes '
+                'it, set loop_data_dir to an absolute path.' % target_report)
+        if loop_config_dict.get('windrose_bands') is not None:
+            log.warning('[LoopData] windrose_bands is deprecated: it bands the rose of '
+                'target_report (%s) and no other, which is what it did before 7.0.  '
+                'windrose_bands is a report option now -- put it on that report\'s stanza in '
+                'weewx.conf, in its own windSpeed unit, which is where finishing the migration '
+                'moves it.' % target_report)
+        if len(legacy_fields) > 0:
+            log.warning('The [LoopData] [[Include]] fields line and [[Formatting]] target_report '
+                'are deprecated: a report declares the fields it needs in its own '
+                'skin.conf ([LoopData] [[fields]]), and an extension declares its own when '
+                'installed.  Once every extension whose pages read the loop-data file has '
+                'been upgraded, FINISH THE MIGRATION: run user.loopdata as a command (see '
+                'https://chaunceygardiner.github.io/weewx-loopdata/declaring-fields.html'
+                '#finishing-the-migration), which reports what the line still holds and, '
+                'when every entry is accounted for, removes it with --apply.  Until then '
+                'the line is honored as it always was.')
+            if target_dict is None:
+                if target_report not in config_dict.get('StdReport', {}):
+                    log.error('Could not find target_report: %s.  The [LoopData] [[Include]] '
+                        'fields line cannot be rendered and is ignored.' % target_report)
+                else:
+                    log.error('Could not build target_report %s.  The [LoopData] [[Include]] '
+                        'fields line cannot be rendered and is ignored.  Exception: %s' % (
+                        target_report, target_error))
+
+        # The declaring reports: every enabled report whose merged skin dict
+        # carries [LoopData] [[fields]].
+        reports: List[ReportContext] = []
+        for report in LoopData.enabled_reports(config_dict):
+            try:
+                skin_dict = report_dict(report)
+            except Exception as e:
+                reraise_if_terminate(e)
+                log.error('Could not build report %s, skipping it.  Exception: %s' % (report, e))
+                continue
+            declared = LoopData.declared_fields_from_skin_dict(skin_dict, report)
+            if len(declared) == 0:
+                continue
+            try:
+                ctx = LoopData.build_report_context(report, declared, skin_dict,
+                    LoopData.report_windrose_bands(config_dict, report, skin_dict,
+                        loop_config_dict, target_dict, windrose_shared, target_report),
+                    engine.stn_info)
+            except Exception as e:
+                reraise_if_terminate(e)
+                log.error('Could not set up report %s, skipping it.  Exception: %s' % (report, e))
+                continue
+            reports.append(ctx)
+            if report in legacy_fields:
+                # Contrived, but the flat key and the report key would collide.
+                log.error('Report %s is named like a field on the [[Include]] fields '
+                    'line; the report overwrites the field in the output.' % report)
+
+        # An upgraded station's [[Include]] line usually lists what its
+        # target_report's skin now declares (the sample panel's 56, or all
+        # of LiveSeasons').  Both render through the same report dict, so
+        # the values would be identical: render the shared fields once, in
+        # the declaring report's context, and copy them flat.  The legacy
+        # context keeps only what nothing else renders.
+        # The legacy context, built once, of what is left after the reports
+        # that declare an entry -- and render it identically -- have taken
+        # it over.  Parsing it before that and again afterwards would report
+        # a skin author's typo twice.
+        legacy_shared: Dict[str, str] = {}
+        if len(legacy_fields) > 0 and target_dict is not None:
+            legacy_bands = LoopData.legacy_windrose_bands(config_dict, target_report,
+                target_dict, loop_config_dict, windrose_shared)
+            legacy_signature = LoopData.render_signature(target_dict, legacy_bands)
+            legacy_shared = LoopData.share_legacy_fields_by_name(
+                legacy_fields, legacy_signature, reports, target_report)
+            residual = [f for f in legacy_fields if f not in legacy_shared]
+            if len(legacy_shared) > 0:
+                by_report: Dict[str, int] = {}
+                for field, report in legacy_shared.items():
+                    if field != 'windrose.bands':
+                        by_report[report] = by_report.get(report, 0) + 1
+                log.info('%d of the %d [[Include]] fields are declared by reports that render '
+                    'them identically (%s) and are rendered once, for both.' % (
+                    sum(by_report.values()), len(legacy_fields),
+                    ', '.join('%s: %d' % (r, n) for r, n in sorted(by_report.items()))))
+            try:
+                legacy = LoopData.build_report_context(None, residual, target_dict,
+                    legacy_bands, engine.stn_info, source_report=target_report)
+            except Exception as e:
+                reraise_if_terminate(e)
+                legacy_shared = {}
+                log.error('Could not set up target_report %s for the [LoopData] [[Include]] '
+                    'fields line, which is ignored.  Exception: %s' % (target_report, e))
+
+        if legacy is None and len(reports) == 0:
+            if len(legacy_fields) > 0:
+                log.error('No fields to write: no enabled report declares [LoopData] [[fields]] '
+                    'and the [LoopData] [[Include]] fields line could not be set up (see above).  '
+                    'LoopData is exiting.')
+            else:
+                log.error('No fields to write: no enabled report declares [LoopData] [[fields]] '
+                    'and there is no [LoopData] [[Include]] fields line.  LoopData is exiting.')
             return
 
-        loop_data_dir = LoopData.compose_loop_data_dir(config_dict, target_report_dict, file_spec_dict)
+        # A relative loop_data_dir is relative to the target_report's
+        # directory -- LoopDataReport when none is named -- so the default
+        # writes the file beside the sample page.  The installer puts the
+        # [[LoopDataReport]] section back if it is missing, and enable =
+        # false is enough to turn the page off, so the section is there on
+        # any installed station; should it be gone anyway, [StdReport]
+        # HTML_ROOT, said out loud, because a page polling beside itself
+        # will not find the file there.
+        anchor_dict: Dict[str, Any]
+        if target_dict is not None:
+            anchor_dict = target_dict
+        else:
+            anchor_dict = {'HTML_ROOT': config_dict['StdReport'].get('HTML_ROOT', 'public_html')}
+            log.warning('No report %s; a relative loop_data_dir is relative to [StdReport] '
+                'HTML_ROOT (%s).  A page expecting the file beside itself will not find it '
+                'there: set loop_data_dir, or the page\'s loop_data_file, accordingly.' % (
+                target_report, anchor_dict['HTML_ROOT']))
+        loop_data_dir = LoopData.compose_loop_data_dir(config_dict, anchor_dict, file_spec_dict)
         os.makedirs(loop_data_dir, exist_ok=True)
 
         # Get a temporay file in which to write data before renaming.
@@ -1361,45 +1590,7 @@ class LoopData(StdService):
         # Get the loop frequency seconds to be passed as the weight to accumulators.
         loop_frequency = to_float(loop_frequency_spec_dict.get('seconds', '2.0'))
 
-        # Get [possibly localized] strings for trend.barometer.desc: the
-        # English descriptions are gettext-style keys into the target
-        # report's [Texts] (its lang file already merged in).
-        baro_trend_descs = LoopData.construct_baro_trend_descs(
-            dict(target_report_dict.get('Texts', {})))
-
-        formatter = weewx.units.Formatter.fromSkinDict(target_report_dict)
-        converter = weewx.units.Converter.fromSkinDict(target_report_dict)
-
-        # Process fields line of LoopData section.
-        specified_fields = include_spec_dict.get('fields', [])
-        (fields_to_include, obstypes) = LoopData.get_fields_to_include(specified_fields)
-
-        # windrose: the band edges ([LoopData] windrose_bands, in the target
-        # report's windSpeed unit; default WRPLOT classic) and the periods that
-        # carry a windrose accumulator.
-        windrose_bands = LoopData.parse_windrose_bands(
-            loop_config_dict.get('windrose_bands'), converter)
-        windrose_span_periods, windrose_continuous_periods = \
-            LoopData.get_windrose_periods(fields_to_include)
-
-        # Almanac fields (almanac.sunrise, almanac(horizon=-6).sun(use_center=1).rise, ...)
-        # are evaluated against weewx.almanac rather than the loop packet.
-        almanac_fields = LoopData.get_almanac_fields(specified_fields)
         altitude_m = weewx.units.convert(engine.stn_info.altitude_vt, 'meter')[0]
-
-        # Station fields (station.uptime.raw, station.version, ...) are
-        # evaluated against weewx.station.Station -- the exact object behind
-        # the report's $station tag -- rather than the loop packet.
-        station_fields = LoopData.get_station_fields(specified_fields)
-
-        # Get the time_delta (number of seconds) to use for trend_accum.
-        try:
-            time_delta: int = to_int(target_report_dict['Units']['Trend']['time_delta'])
-            if time_delta > 259200:
-                log.info('time_delta of %d specified, LoopData will use max value of 259200.' % time_delta)
-                time_delta = 259200
-        except KeyError:
-            time_delta = 10800
 
         # Get week_start
         try:
@@ -1427,10 +1618,6 @@ class LoopData(StdService):
             filename                 = file_spec_dict.get('filename', 'loop-data.txt'),
             target_report            = target_report,
             loop_frequency           = loop_frequency,
-            specified_fields         = specified_fields,
-            fields_to_include        = fields_to_include,
-            formatter                = formatter,
-            converter                = converter,
             tmpname                  = tmp.name,
             enable                   = to_bool(rsync_spec_dict.get('enable')),
             remote_server            = rsync_spec_dict.get('remote_server'),
@@ -1444,25 +1631,22 @@ class LoopData(StdService):
                                        rsync_spec_dict.get('ssh_options', ''), rsync_timeout),
             timeout                  = rsync_timeout,
             skip_if_older_than       = to_int(rsync_spec_dict.get('skip_if_older_than', 3)),
-            time_delta               = time_delta,
             week_start               = week_start,
             rainyear_start           = rainyear_start,
-            obstypes                 = obstypes,
-            baro_trend_descs         = baro_trend_descs,
-            almanac_fields           = almanac_fields,
-            windrose_bands           = windrose_bands,
-            windrose_span_periods    = windrose_span_periods,
-            windrose_continuous_periods = windrose_continuous_periods,
+            legacy                   = legacy,
+            reports                  = reports,
+            legacy_shared            = legacy_shared,
             latitude                 = engine.stn_info.latitude_f,
             longitude                = engine.stn_info.longitude_f,
-            altitude_m               = altitude_m if altitude_m is not None else 0.0,
-            almanac_texts            = dict(target_report_dict.get('Almanac', {})),
-            station_fields           = station_fields,
-            station                  = weewx.station.Station(engine.stn_info,
-                                       formatter, converter, target_report_dict)
-                                       if len(station_fields) > 0 else None)
+            altitude_m               = altitude_m if altitude_m is not None else 0.0)
+
+        self.cfg.recompute()
 
         log.info('LoopData file is: %s' % os.path.join(self.cfg.loop_data_dir, self.cfg.filename))
+        for ctx in self.cfg.contexts:
+            log.info('%s: %d fields (%d almanac, %d station), trend window %ds, windrose bands %s' % (
+                ctx.label, len(ctx.specified_fields), len(ctx.almanac_fields),
+                len(ctx.station_fields), ctx.time_delta, ctx.windrose_bands))
 
         self.bind(weewx.PRE_LOOP, self.pre_loop)
         self.bind(weewx.NEW_LOOP_PACKET, self.new_loop)
@@ -1577,6 +1761,270 @@ class LoopData(StdService):
                 for trend, english in BARO_TREND_DESCS.items()}
 
     @staticmethod
+    def normalize_fields(value: Any) -> List[str]:
+        """A fields value as a list of field strings.  ConfigObj hands back a
+        list for a comma-separated value but a bare str for a single value
+        -- which iterated by character before 7.0.  The str is ONE field,
+        never split: a quoted entry with a comma inside (a format() call
+        with two arguments, an almanac tag with two keywords) is exactly
+        the single value ConfigObj returns as a str, and splitting it is
+        the mangling the quoting was for.  None (no such option) is no
+        fields.  Whitespace is stripped and empties dropped."""
+        if value is None:
+            return []
+        if isinstance(value, str):
+            value = [value]
+        fields: List[str] = []
+        for entry in value:
+            field = str(entry).strip()
+            if field != '':
+                fields.append(field)
+        return fields
+
+    @staticmethod
+    def declared_fields_from_skin_dict(skin_dict: Dict[str, Any], report: str) -> List[str]:
+        """The fields a report declares: [LoopData] [[fields]] in its merged
+        skin dict (skin.conf, [StdReport] [[Defaults]] and the report's own
+        stanza in weewx.conf, in that order), a section of named groups
+        whose values are unioned in order.  A field in two groups counts
+        once.  [] when the report declares nothing.  The groups are the
+        author's own: they exist because ConfigObj has no line continuation
+        for lists, so one fields = line would be one unreadable line."""
+        loopdata_section = skin_dict.get('LoopData')
+        if not isinstance(loopdata_section, dict):
+            return []
+        groups = loopdata_section.get('fields')
+        if groups is None:
+            return []
+        if not isinstance(groups, dict):
+            log.warning('Ignoring [LoopData] fields in report %s: declare fields as named '
+                'groups in a [[fields]] section, not as a single fields = line.' % report)
+            return []
+        fields: List[str] = []
+        seen: Set[str] = set()
+        for group, value in groups.items():
+            if isinstance(value, dict):
+                log.warning('Ignoring [LoopData] [[fields]] [[[%s]]] in report %s: a group '
+                    'is a line of fields, not a section.' % (group, report))
+                continue
+            for field in LoopData.normalize_fields(value):
+                if field not in seen:
+                    seen.add(field)
+                    fields.append(field)
+        return fields
+
+    @staticmethod
+    def enabled_reports(config_dict: Dict[str, Any]) -> List[str]:
+        """The enabled reports, in [StdReport] order, exactly as
+        StdReportEngine.run picks them: every sub-section but Defaults whose
+        enable is not false.  Only sub-sections count -- SKIN_ROOT,
+        HTML_ROOT and data_binding are scalars, not reports."""
+        std_report = config_dict.get('StdReport')
+        if std_report is None:
+            return []
+        sections = getattr(std_report, 'sections', None)
+        if sections is None:
+            sections = [key for key, value in std_report.items() if isinstance(value, dict)]
+        reports: List[str] = []
+        for report in sections:
+            if report == 'Defaults':
+                continue
+            try:
+                enabled = to_bool(std_report[report].get('enable', True))
+            except ValueError as e:
+                # Another report's malformed enable is not loopdata's to
+                # fail weewxd over; WeeWX's own report thread will complain.
+                log.warning('Report %s has an unreadable enable (%s); treating it as enabled.' % (report, e))
+                enabled = True
+            if not enabled:
+                continue
+            reports.append(report)
+        return reports
+
+    @staticmethod
+    def trend_key(time_delta: int) -> str:
+        """The accums.continuous key of the trend accumulator sized to
+        time_delta seconds: reports with the same window share one."""
+        return 'trend@%d' % time_delta
+
+    @staticmethod
+    def is_trend_key(period: str) -> bool:
+        return period.startswith('trend@')
+
+    @staticmethod
+    def trend_key_seconds(key: str) -> int:
+        assert LoopData.is_trend_key(key), key
+        return int(key[len('trend@'):])
+
+    @staticmethod
+    def windrose_bands_key(unit: str, edges: List[float]) -> str:
+        """The accums.windrose_* key of the accumulators banded with these
+        edges (in this report windSpeed unit): reports with the same edges
+        in the same unit share one set."""
+        return '%s:%s' % (unit, ','.join(repr(float(edge)) for edge in edges))
+
+    @staticmethod
+    def build_report_context(report_name: Optional[str], specified_fields: List[str],
+            skin_dict: Dict[str, Any], windrose_bands: Optional[List[float]], stn_info: Any,
+            source_report: Optional[str] = None) -> ReportContext:
+        """Parse a context's fields with the three parsers and resolve
+        everything it renders with from its skin dict.  windrose_bands are
+        the band edges already resolved into the report's windSpeed unit
+        (see report_windrose_bands); None means the WRPLOT defaults.  A
+        field none of the parsers accepts is reported, attributed to the
+        context -- a skin author's typo must not vanish without trace."""
+        (fields_to_include, obstypes) = LoopData.get_fields_to_include(set(specified_fields))
+        # Almanac fields (almanac.sunrise, almanac(horizon=-6).sun(use_center=1).rise, ...)
+        # are evaluated against weewx.almanac rather than the loop packet.
+        almanac_fields = LoopData.get_almanac_fields(specified_fields)
+        # Station fields (station.uptime.raw, station.version, ...) are
+        # evaluated against weewx.station.Station -- the exact object behind
+        # the report's $station tag -- rather than the loop packet.
+        station_fields = LoopData.get_station_fields(specified_fields)
+        label = ReportContext.label_for(report_name)
+        accepted: Set[str] = {cname.field for cname in fields_to_include}
+        accepted |= {f.field for f in almanac_fields}
+        accepted |= {f.field for f in station_fields}
+        for field in specified_fields:
+            if field in accepted:
+                continue
+            if LoopData.is_almanac_field(field) or LoopData.is_station_field(field):
+                continue    # already logged, with the reason, by its parser
+            log.warning('Ignoring unrecognized field %s (%s)' % (field, label))
+
+        formatter = weewx.units.Formatter.fromSkinDict(skin_dict)
+        converter = weewx.units.Converter.fromSkinDict(skin_dict)
+
+        # [possibly localized] strings for trend.barometer.desc: the English
+        # descriptions are gettext-style keys into the report's [Texts] (its
+        # lang file already merged in).
+        baro_trend_descs = LoopData.construct_baro_trend_descs(
+            dict(skin_dict.get('Texts', {})))
+
+        # The trend window: the report's own [Units] [Trend] time_delta.
+        try:
+            time_delta: int = to_int(skin_dict['Units']['Trend']['time_delta'])
+            if time_delta > 259200:
+                log.info('time_delta of %d specified, LoopData will use max value of 259200.' % time_delta)
+                time_delta = 259200
+        except KeyError:
+            time_delta = 10800
+
+        if windrose_bands is None:
+            windrose_bands = LoopData.parse_windrose_bands(None, converter)
+
+        return ReportContext(
+            report_name       = report_name,
+            specified_fields  = list(specified_fields),
+            fields_to_include = fields_to_include,
+            almanac_fields    = almanac_fields,
+            station_fields    = station_fields,
+            formatter         = formatter,
+            converter         = converter,
+            baro_trend_descs  = baro_trend_descs,
+            almanac_texts     = dict(skin_dict.get('Almanac', {})),
+            station           = weewx.station.Station(stn_info, formatter, converter, skin_dict)
+                                if len(station_fields) > 0 and stn_info is not None else None,
+            time_delta        = time_delta,
+            windrose_bands    = windrose_bands,
+            obstypes          = obstypes,
+            render_signature  = LoopData.render_signature(skin_dict, windrose_bands),
+            source_report     = source_report if source_report is not None else report_name)
+
+    @staticmethod
+    def render_signature(skin_dict: Dict[str, Any], windrose_bands: List[float]) -> str:
+        """Everything about a report that decides how a value comes out:
+        its unit groups, string formats, labels, time formats, ordinates
+        and trend window ([Units]), its hemispheres and observation labels
+        ([Labels]), its translations ([Texts]), its almanac names
+        ([Almanac]), and its windrose band edges.  Two contexts with the
+        same signature render every field identically, which is what lets
+        one stand in for the other -- so a field the deprecated fields
+        line shares with ANY report that renders it the same way is
+        computed once rather than twice per packet."""
+        def normalize(value: Any) -> Any:
+            if isinstance(value, dict):
+                return {str(k): normalize(v) for k, v in value.items()}
+            if isinstance(value, (list, tuple)):
+                return [str(v) for v in value]
+            return str(value)
+        sections = {section: normalize(skin_dict.get(section, {}))
+                    for section in ('Units', 'Labels', 'Texts', 'Almanac')}
+        return json.dumps({'sections': sections,
+                           'windrose_bands': [float(edge) for edge in windrose_bands]},
+                          sort_keys=True)
+
+    @staticmethod
+    def share_legacy_fields_by_name(legacy_fields: List[str], legacy_signature: str,
+            reports: List[ReportContext], target_report: str) -> Dict[str, str]:
+        """field -> the report that renders it for the legacy fields line.
+
+        The line is rendered through target_report, but any report whose
+        render_signature matches produces byte-identical values, so a
+        field declared by such a report is computed once, in that report's
+        entry, and copied flat.  Without this, a station whose fields line
+        carries another extension's entries -- what every celestial or
+        weatherboard installer wrote for years -- evaluates each of them
+        twice on every packet, which for a page's worth of satellite
+        almanac fields is most of a loop interval on a Pi.
+
+        target_report's own declaration is preferred, so the flat value
+        comes from the report the line names; then the rest, in
+        [StdReport] order."""
+        wanted = set(legacy_fields)
+        twins = [ctx for ctx in reports if ctx.render_signature == legacy_signature]
+        twins.sort(key=lambda ctx: ctx.report_name != target_report)
+        shared: Dict[str, str] = {}
+        for ctx in twins:
+            if ctx.report_name is None:
+                continue
+            for field in ctx.specified_fields:
+                if field in wanted and field not in shared:
+                    shared[field] = ctx.report_name
+            # The legend key rides along with the rose it describes.
+            if ctx.windrose and 'windrose.bands' not in shared and any(
+                    shared.get(f) == ctx.report_name and '.windrose.' in f for f in shared):
+                shared['windrose.bands'] = ctx.report_name
+        return shared
+
+    @staticmethod
+    def union_obstypes(contexts: List[ReportContext]) -> ObsTypes:
+        """The observation types the shared accumulators must track: the
+        union over every context, per period.  A context's trend obstypes
+        land under its trend_key rather than under 'trend', so two reports
+        with different windows feed two accumulators and two with the same
+        window feed one."""
+        union = ObsTypes(current=set(), alltime=set(), rainyear=set(), year=set(),
+            month=set(), week=set(), day=set(), hour=set(), continuous={})
+        for ctx in contexts:
+            for field in dataclasses.fields(ObsTypes):
+                if field.name != 'continuous':
+                    getattr(union, field.name).update(getattr(ctx.obstypes, field.name))
+            for per, per_obstypes in ctx.obstypes.continuous.items():
+                key = ctx.trend_key if per == 'trend' else per
+                union.continuous.setdefault(key, set()).update(per_obstypes)
+        return union
+
+    @staticmethod
+    def union_windrose(contexts: List[ReportContext]
+            ) -> Tuple[Dict[str, Tuple[str, List[float]]], Set[Tuple[str, str]], Set[Tuple[str, str]]]:
+        """The windrose accumulators the contexts need: the distinct band
+        edges (windrose_key -> (report windSpeed unit, edges)), and the
+        (windrose_key, period) pairs for span and continuous periods."""
+        bandings: Dict[str, Tuple[str, List[float]]] = {}
+        span_periods: Set[Tuple[str, str]] = set()
+        continuous_periods: Set[Tuple[str, str]] = set()
+        for ctx in contexts:
+            if not ctx.windrose:
+                continue
+            bandings[ctx.windrose_key] = (
+                ctx.converter.getTargetUnit('windSpeed')[0], ctx.windrose_bands)
+            ctx_span, ctx_continuous = LoopData.get_windrose_periods(ctx.fields_to_include)
+            span_periods |= {(ctx.windrose_key, per) for per in ctx_span}
+            continuous_periods |= {(ctx.windrose_key, per) for per in ctx_continuous}
+        return bandings, span_periods, continuous_periods
+
+    @staticmethod
     def get_fields_to_include(specified_fields: Set[str]) -> Tuple[Set[CheetahName], ObsTypes]:
         """
         Return ObsTypes (fields_to_include and obstypes)
@@ -1665,63 +2113,18 @@ class LoopData(StdService):
 
     @staticmethod
     def get_target_report_dict(config_dict, report) -> Dict[str, Any]:
-        # WeeWX's own skin-dict builder: build_skin_dict since WeeWX 4.6
-        # (checking the older _build_skin_dict name too), else assemble the
-        # report dict the old fashioned way below.
+        """A report's merged configuration, built by WeeWX's own skin-dict
+        builder: WeeWX's defaults, the skin's skin.conf and lang file,
+        [StdReport] [[Defaults]], the [StdReport] scalars, then the report's
+        own stanza, unit_system applied where WeeWX applies it.  The
+        builder is module-level since 4.6 (this extension's floor), named
+        _build_skin_dict through 4.x and build_skin_dict since 5.0."""
         build_skin_dict = getattr(weewx.reportengine, 'build_skin_dict',
             getattr(weewx.reportengine, '_build_skin_dict', None))
-        if build_skin_dict is not None:
-            return build_skin_dict(config_dict, report)
-        try:
-            skin_dict = weeutil.config.deep_copy(weewx.defaults.defaults)
-        except Exception as e:
-            reraise_if_terminate(e)
-            # Fall back to copy.deepcopy for earlier than weewx 4.1.2 installs.
-            skin_dict = copy.deepcopy(weewx.defaults.defaults)
-        # Turn off interpolation, exactly as WeeWX's build_skin_dict does: it
-        # interferes with the %(hour)d-style delta-time format strings.
-        skin_dict.interpolation = False
-        skin_dict['REPORT_NAME'] = report
-        skin_config_path = os.path.join(
-            config_dict['WEEWX_ROOT'],
-            config_dict['StdReport']['SKIN_ROOT'],
-            config_dict['StdReport'][report].get('skin', ''),
-            'skin.conf')
-        try:
-            merge_dict = configobj.ConfigObj(skin_config_path, file_error=True, encoding='utf-8')
-            log.debug("Found configuration file %s for report '%s'", skin_config_path, report)
-            # Merge the skin config file in:
-            weeutil.config.merge_config(skin_dict, merge_dict)
-        except IOError as e:
-            log.debug("Cannot read skin configuration file %s for report '%s': %s",
-                      skin_config_path, report, e)
-        except SyntaxError as e:
-            log.error("Failed to read skin configuration file %s for report '%s': %s",
-                      skin_config_path, report, e)
-            raise
-
-        # Now add on the [StdReport][[Defaults]] section, if present:
-        if 'Defaults' in config_dict['StdReport']:
-            # Because we will be modifying the results, make a deep copy of the [[Defaults]]
-            # section.
-            try:
-                merge_dict = weeutil.config.deep_copy(config_dict['StdReport']['Defaults'])
-            except Exception as e:
-                reraise_if_terminate(e)
-                # Fall back to copy.deepcopy for earlier weewx 4 installs.
-                merge_dict = copy.deepcopy(config_dict['StdReport']['Defaults'])
-            weeutil.config.merge_config(skin_dict, merge_dict)
-
-        # Inject any scalar overrides. This is for backwards compatibility. These options should now go
-        # under [StdReport][[Defaults]].
-        for scalar in config_dict['StdReport'].scalars:
-            skin_dict[scalar] = config_dict['StdReport'][scalar]
-
-        # Finally, inject any overrides for this specific report. Because this is the last merge, it will have the
-        # final say.
-        weeutil.config.merge_config(skin_dict, config_dict['StdReport'][report])
-
-        return skin_dict
+        if build_skin_dict is None:
+            raise weewx.UnsupportedFeature('weewx.reportengine has no skin-dict builder; '
+                'weewx-loopdata requires WeeWX 4.6 or later')
+        return build_skin_dict(config_dict, report)
 
     def pre_loop(self, event):
         if self.loop_processor_started:
@@ -1821,12 +2224,18 @@ class LoopData(StdService):
             # Create continuous accums
             continuous_accums: Dict[str, ContinuousAccum] = {}
             for per, obstypes in self.cfg.obstypes.continuous.items():
-                if per == 'trend':
-                    timelength = self.cfg.time_delta
+                if LoopData.is_trend_key(per):
+                    timelength = LoopData.trend_key_seconds(per)
                 elif LoopData.is_hour_period(per):
                     timelength = int(per[:-1])*3600
                 elif LoopData.is_minute_period(per):
                     timelength = int(per[:-1])*60
+                else:
+                    # Unreachable: is_continuous_period admits only the three
+                    # forms above, and union_obstypes re-keys 'trend'.  Skip
+                    # rather than carry the previous iteration's window.
+                    log.debug('No window for continuous period %s, skipping it.' % per)
+                    continue
 
                 cont_accum, obstypes = LoopData.create_continuous_accum(
                     per, self.cfg.unit_system, self.cfg.archive_interval, obstypes, timelength, day_accum, dbm,
@@ -2054,19 +2463,237 @@ class LoopData(StdService):
         default: the classic WRPLOT/NOAA bands (WINDROSE_DEFAULT_BANDS_MPS)
         converted to the report unit and rounded to one decimal -- banding
         applies exactly the edges the page's legend will show."""
+        edges = LoopData.windrose_edges(spec, 'windrose_bands')
+        if edges is not None:
+            return edges
         tgt_unit, _ = converter.getTargetUnit('windSpeed')
-        if spec is not None:
-            try:
-                edges = [float(s) for s in ([spec] if isinstance(spec, str) else spec)]
-                if len(edges) > 0 and edges[0] >= 0.0 and \
-                        all(a < b for a, b in zip(edges, edges[1:])):
-                    return edges
-                log.error('Ignoring windrose_bands (need ascending, non-negative edges): %s' % (spec,))
-            except (TypeError, ValueError):
-                log.error('Ignoring non-numeric windrose_bands: %s' % (spec,))
         return [round(weewx.units.convert(
                 (edge, 'meter_per_second', 'group_speed'), tgt_unit)[0], 1)
             for edge in WINDROSE_DEFAULT_BANDS_MPS]
+
+    @staticmethod
+    def windrose_edges(spec: Any, where: str) -> Optional[List[float]]:
+        """A windrose_bands value validated: ascending, non-negative floats;
+        None when absent, or invalid (logged, naming where it was written).
+        Validation is separate from the default so a shared invalid value
+        is reported once and every report then takes the defaults in its
+        OWN unit -- never the defaults in the source unit converted and
+        rounded a second time."""
+        if spec is None:
+            return None
+        try:
+            edges = [float(s) for s in ([spec] if isinstance(spec, str) else spec)]
+        except (TypeError, ValueError):
+            log.error('Ignoring non-numeric windrose_bands: %s (%s)' % (spec, where))
+            return None
+        if len(edges) > 0 and edges[0] >= 0.0 and all(a < b for a, b in zip(edges, edges[1:])):
+            return edges
+        log.error('Ignoring windrose_bands (need ascending, non-negative edges): %s (%s)' % (spec, where))
+        return None
+
+    @staticmethod
+    def defaults_converter(config_dict: Dict[str, Any]) -> weewx.units.Converter:
+        """The units a [StdReport]-level setting is written in.
+
+        WeeWX lets [[Defaults]] say what those are in three ways, and all
+        three count: an explicit [[[Units]]] [[[[Groups]]]], a
+        unit_system, or a lang whose language file carries a unit_system
+        (WeeWX's own de.conf says metricwx).  build_skin_dict resolves the
+        first two for the pseudo-report 'Defaults' but not the third --
+        language files live in a skin's lang directory and [[Defaults]]
+        has no skin -- so the lang is resolved here, against the skin of a
+        report that inherits it, exactly as that report would: the
+        language's unit system FIRST, then [[Defaults]]' own explicit
+        groups over it, which is the order build_skin_dict uses.
+        """
+        std_report = config_dict.get('StdReport', {})
+        if 'Defaults' not in std_report:
+            return weewx.units.Converter.fromSkinDict(weewx.defaults.defaults)
+        defaults = std_report['Defaults']
+        lang = defaults.get('lang')
+        unit_system: Optional[str] = None
+        if lang is not None and 'unit_system' not in defaults:
+            unit_system = LoopData.lang_unit_system(config_dict, str(lang))
+        skin_dict = LoopData.get_target_report_dict(config_dict, 'Defaults')
+        if unit_system is not None:
+            groups = dict(weewx.units.std_groups[weewx.units.unit_constants[unit_system.upper()]])
+            # The language's unit system underneath, [[Defaults]]' own
+            # explicit groups on top -- WeeWX's order, not the reverse.
+            explicit = defaults.get('Units', {})
+            explicit = explicit.get('Groups', {}) if isinstance(explicit, dict) else {}
+            groups.update({str(k): str(v) for k, v in explicit.items()})
+            skin_dict['Units']['Groups'].update(groups)
+        return weewx.units.Converter.fromSkinDict(skin_dict)
+
+    @staticmethod
+    def lang_unit_system(config_dict: Dict[str, Any], lang: str) -> Optional[str]:
+        """The unit system a language file declares, read from the skin of
+        a report that inherits the language.  Every skin ships its own
+        language files and they agree about the unit system, so the first
+        one that answers is the answer; None when no skin has that
+        language or none of them names a unit system.  A report that sets
+        its own lang counts too: the file asked for is this language's,
+        whichever report happens to point at the skin holding it.
+
+        get_lang_dict's second parameter is the language DIRECTORY only
+        from WeeWX 5.3; from 4.6 to 5.2 it is the whole config_dict, and
+        the function works the directory out itself.  Ask the signature
+        rather than the version -- the question is precisely which
+        parameters exist, the same reasoning as the almanac's texts=."""
+        get_lang_dict = getattr(weewx.reportengine, 'get_lang_dict', None)
+        if get_lang_dict is None:
+            return None
+        try:
+            takes_dir = 'lang_spec_dir' in inspect.signature(get_lang_dict).parameters
+        except (TypeError, ValueError):
+            return None
+        std_report = config_dict.get('StdReport', {})
+        for report in LoopData.enabled_reports(config_dict):
+            stanza = std_report.get(report, {})
+            if not isinstance(stanza, dict) or 'skin' not in stanza:
+                continue        # nothing to look in
+            try:
+                if takes_dir:
+                    # 5.3+: it calls .is_dir(), so this must be a Path.
+                    lang_dict = get_lang_dict(lang, pathlib.Path(
+                        str(config_dict.get('WEEWX_ROOT', '')),
+                        str(std_report.get('SKIN_ROOT', 'skins')),
+                        str(stanza['skin']), 'lang'), report)
+                else:
+                    lang_dict = get_lang_dict(lang, config_dict, report)
+            except Exception as e:
+                reraise_if_terminate(e)
+                log.debug('Could not read the %s language file for report %s: %s'
+                    % (lang, report, e))
+                continue
+            unit_system = lang_dict.get('unit_system')
+            if unit_system is not None and str(unit_system).upper() in weewx.units.unit_constants:
+                return str(unit_system)
+        return None
+
+    @staticmethod
+    def convert_windrose_bands(edges: List[float], src_converter: weewx.units.Converter,
+            dst_converter: weewx.units.Converter) -> List[float]:
+        """Band edges written in one report's windSpeed unit, in another's:
+        converted and rounded to one decimal, like the defaults, so the
+        legend the report publishes is exactly what banded its samples.
+        Same unit: the edges as written."""
+        src_unit = src_converter.getTargetUnit('windSpeed')[0]
+        dst_unit = dst_converter.getTargetUnit('windSpeed')[0]
+        if src_unit == dst_unit:
+            return list(edges)
+        converted = [round(weewx.units.convert((edge, src_unit, 'group_speed'), dst_unit)[0], 1)
+                     for edge in edges]
+        if not all(a < b for a, b in zip(converted, converted[1:])):
+            # Edges closer than a tenth of the target unit collapsed; keep
+            # the exact conversion rather than a non-ascending legend.
+            converted = [weewx.units.convert((edge, src_unit, 'group_speed'), dst_unit)[0]
+                         for edge in edges]
+        return converted
+
+    @staticmethod
+    def stdreport_windrose_bands(config_dict: Dict[str, Any]) -> Any:
+        """The [StdReport]-level windrose_bands, if any: [[Defaults]]
+        windrose_bands, or the same option as a bare scalar under
+        [StdReport] (WeeWX's older spelling of a default, which its skin-dict
+        build applies after [[Defaults]] -- so it wins here too)."""
+        std_report = config_dict.get('StdReport', {})
+        spec = std_report.get('windrose_bands')
+        if spec is None or isinstance(spec, dict):
+            defaults = std_report.get('Defaults')
+            spec = defaults.get('windrose_bands') if isinstance(defaults, dict) else None
+        return spec
+
+    @staticmethod
+    def legacy_windrose_bands(config_dict: Dict[str, Any], target_report: str,
+            target_report_dict: Dict[str, Any], loop_config_dict: Dict[str, Any],
+            shared: Optional[Dict[str, Any]] = None) -> List[float]:
+        """The band edges of the legacy [[Include]] fields line.  The line
+        is rendered THROUGH target_report, so it bands the way that report
+        bands -- resolved by report_windrose_bands, whose last fallback is
+        the deprecated [LoopData] windrose_bands.  A station that has not
+        moved that value therefore gets exactly what it got before 7.0,
+        and one that has moved it to the report's stanza or to
+        [StdReport] [[Defaults]] (which the manual tells it to do while
+        still on the fields line) gets the value it moved -- rather than
+        silently reverting to the WRPLOT defaults and, because the two no
+        longer agree, losing the shared rendering as well."""
+        return LoopData.report_windrose_bands(config_dict, target_report,
+            target_report_dict, loop_config_dict, target_report_dict, shared, target_report)
+
+    @staticmethod
+    def shared_windrose_edges(shared: Optional[Dict[str, Any]], key: str, spec: Any,
+            where: str, converter_fn: Callable[[], weewx.units.Converter]
+            ) -> Tuple[Optional[List[float]], weewx.units.Converter]:
+        """(validated edges or None, the converter of the unit they are in)
+        for a value shared by every report, validated once per startup
+        through the memo.  The converter arrives as a thunk because
+        building it can mean a whole skin dict ([[Defaults]]'), which a
+        memo hit must not pay for."""
+        if shared is None:
+            shared = {}
+        if key not in shared:
+            shared[key] = (LoopData.windrose_edges(spec, where), converter_fn())
+        return shared[key]
+
+    @staticmethod
+    def report_windrose_bands(config_dict: Dict[str, Any], report: str,
+            skin_dict: Dict[str, Any], loop_config_dict: Dict[str, Any],
+            target_report_dict: Optional[Dict[str, Any]],
+            shared: Optional[Dict[str, Any]] = None,
+            target_report: Optional[str] = None) -> List[float]:
+        """A declaring report's band edges, in its own windSpeed unit.
+        windrose_bands is an ordinary report option, and where it is written
+        says what unit it is in: on the report's own stanza in weewx.conf,
+        or at the top of its skin.conf, it is in that report's unit; under
+        [StdReport] [[Defaults]] (or as a bare [StdReport] scalar) it
+        applies to every report and is in the Defaults' unit, converted to
+        each report's.  Precedence is WeeWX's own for a report option: the
+        stanza, then [StdReport], then skin.conf.  A report with none of
+        those, and being target_report itself, falls back to the deprecated
+        [LoopData] windrose_bands (already in its unit), so an upgraded
+        station's rose does not change bands; then the WRPLOT defaults.  An invalid value
+        at any level is reported (once, through the shared memo for the
+        shared levels) and the report takes the defaults in its own unit."""
+        converter = weewx.units.Converter.fromSkinDict(skin_dict)
+        defaults = lambda: LoopData.parse_windrose_bands(None, converter)
+        stanza = config_dict.get('StdReport', {}).get(report, {})
+        if isinstance(stanza, dict) and stanza.get('windrose_bands') is not None:
+            edges = LoopData.windrose_edges(stanza['windrose_bands'], 'report %s' % report)
+            return edges if edges is not None else defaults()
+        std_spec = LoopData.stdreport_windrose_bands(config_dict)
+        if std_spec is not None:
+            shared_edges, defaults_converter = LoopData.shared_windrose_edges(shared, 'std',
+                std_spec, '[StdReport] [[Defaults]]',
+                lambda: LoopData.defaults_converter(config_dict))
+            if shared_edges is None:
+                return defaults()
+            return LoopData.convert_windrose_bands(shared_edges, defaults_converter, converter)
+        # The skin's own: at the top of skin.conf, or -- the natural guess,
+        # the deprecated key being [LoopData] windrose_bands -- inside its
+        # [LoopData] section beside [[fields]].
+        skin_spec = skin_dict.get('windrose_bands')
+        if skin_spec is None:
+            loopdata_section = skin_dict.get('LoopData')
+            if isinstance(loopdata_section, dict):
+                skin_spec = loopdata_section.get('windrose_bands')
+        if skin_spec is not None:
+            edges = LoopData.windrose_edges(skin_spec, 'skin of report %s' % report)
+            return edges if edges is not None else defaults()
+        # The deprecated [LoopData] windrose_bands, for target_report only.
+        # Before 7.0 it banded exactly one rose -- the one in the flat file,
+        # rendered through target_report -- so it belongs to that report and
+        # to no other; every other report's rose is new in 7.0 and takes the
+        # defaults until someone chooses otherwise.
+        if report == target_report and loop_config_dict.get('windrose_bands') is not None \
+                and target_report_dict is not None:
+            legacy_edges, target_converter = LoopData.shared_windrose_edges(shared, 'legacy',
+                loop_config_dict.get('windrose_bands'), '[LoopData]',
+                lambda: weewx.units.Converter.fromSkinDict(target_report_dict))
+            if legacy_edges is None:
+                return defaults()
+            return LoopData.convert_windrose_bands(legacy_edges, target_converter, converter)
+        return defaults()
 
     @staticmethod
     def get_windrose_periods(fields_to_include: Set[CheetahName]
@@ -2103,50 +2730,59 @@ class LoopData(StdService):
         return lambda ts: weeutil.weeutil.archiveRainYearSpan(ts, rainyear_start)
 
     @staticmethod
-    def create_windrose_banding(cfg: 'Configuration') -> WindRoseBanding:
-        """cfg.windrose_bands is in the target report's windSpeed unit;
+    def create_windrose_banding(unit_system: int, tgt_unit: str,
+            windrose_bands: List[float]) -> WindRoseBanding:
+        """windrose_bands is in the report's windSpeed unit (tgt_unit);
         banding runs in the accumulators' unit system."""
-        tgt_unit, _ = cfg.converter.getTargetUnit('windSpeed')
-        accum_speed_unit = weewx.units.getStandardUnitType(cfg.unit_system, 'windSpeed')[0]
+        accum_speed_unit = weewx.units.getStandardUnitType(unit_system, 'windSpeed')[0]
         return WindRoseBanding(
-            unit_system          = cfg.unit_system,
+            unit_system          = unit_system,
             edges                = [weewx.units.convert(
                 (edge, tgt_unit, 'group_speed'), accum_speed_unit)[0]
-                for edge in cfg.windrose_bands],
-            seconds_per_distance = 1000.0 if cfg.unit_system == weewx.METRICWX else 3600.0)
+                for edge in windrose_bands],
+            seconds_per_distance = 1000.0 if unit_system == weewx.METRICWX else 3600.0)
 
     @staticmethod
     def create_windrose_accums(cfg: 'Configuration', dbm, pkt_time: int
-            ) -> Tuple[Dict[str, WindRoseSpanAccum], Dict[str, WindRoseContinuousAccum]]:
+            ) -> Tuple[Dict[Tuple[str, str], WindRoseSpanAccum], Dict[Tuple[str, str], WindRoseContinuousAccum]]:
         """Create and seed the windrose accumulators for the configured
-        periods.  Called from new_loop, after cfg.unit_system is final (the
-        day accumulator may have overridden it)."""
+        periods, one set per distinct band edges (cfg.windrose_bandings).
+        Called from new_loop, after cfg.unit_system is final (the day
+        accumulator may have overridden it)."""
         if len(cfg.windrose_span_periods) == 0 and len(cfg.windrose_continuous_periods) == 0:
             return {}, {}
 
-        banding = LoopData.create_windrose_banding(cfg)
         now = time.time()
-        span_accums: Dict[str, WindRoseSpanAccum] = {}
-        for period in cfg.windrose_span_periods:
-            accum = WindRoseSpanAccum(banding,
-                LoopData.windrose_span_fn(period, cfg.week_start, cfg.rainyear_start),
-                pkt_time)
-            earliest = accum.timespan.start if accum.timespan is not None else 0
-            # Reject future-dated records, as the other accum seeding does.
-            latest = int(now) + cfg.archive_delay
-            if accum.timespan is not None:
-                latest = min(latest, accum.timespan.stop)
-            start = time.time()
-            LoopData.seed_windrose_span_accum(accum, dbm, earliest, latest)
-            log.debug('Seeded windrose(%s) accum in %f seconds.' % (period, time.time() - start))
-            span_accums[period] = accum
+        span_accums: Dict[Tuple[str, str], WindRoseSpanAccum] = {}
+        continuous_accums: Dict[Tuple[str, str], WindRoseContinuousAccum] = {}
+        for windrose_key, (tgt_unit, windrose_bands) in cfg.windrose_bandings.items():
+            banding = LoopData.create_windrose_banding(cfg.unit_system, tgt_unit, windrose_bands)
+            for key, period in sorted(cfg.windrose_span_periods):
+                if key != windrose_key:
+                    continue
+                accum = WindRoseSpanAccum(banding,
+                    LoopData.windrose_span_fn(period, cfg.week_start, cfg.rainyear_start),
+                    pkt_time)
+                earliest = accum.timespan.start if accum.timespan is not None else 0
+                # Reject future-dated records, as the other accum seeding does.
+                latest = int(now) + cfg.archive_delay
+                if accum.timespan is not None:
+                    latest = min(latest, accum.timespan.stop)
+                start = time.time()
+                LoopData.seed_windrose_span_accum(accum, dbm, earliest, latest)
+                log.debug('Seeded windrose(%s, %s) accum in %f seconds.' % (period, windrose_key, time.time() - start))
+                span_accums[(windrose_key, period)] = accum
 
-        continuous_accums: Dict[str, WindRoseContinuousAccum] = {}
-        for period in cfg.windrose_continuous_periods:
-            timelength = int(period[:-1]) * (3600 if period.endswith('h') else 60)
-            continuous_accums[period] = WindRoseContinuousAccum(banding, timelength)
-        LoopData.seed_windrose_continuous_accums(
-            continuous_accums, dbm, cfg.unit_system, now, cfg.archive_delay)
+            banded_continuous: Dict[str, WindRoseContinuousAccum] = {}
+            for key, period in sorted(cfg.windrose_continuous_periods):
+                if key != windrose_key:
+                    continue
+                timelength = int(period[:-1]) * (3600 if period.endswith('h') else 60)
+                banded_continuous[period] = WindRoseContinuousAccum(banding, timelength)
+            LoopData.seed_windrose_continuous_accums(
+                banded_continuous, dbm, cfg.unit_system, now, cfg.archive_delay)
+            for period, continuous_accum in banded_continuous.items():
+                continuous_accums[(windrose_key, period)] = continuous_accum
 
         return span_accums, continuous_accums
 
@@ -2779,14 +3415,17 @@ class AlmanacFieldEvaluator:
     # don't retry every packet.
     SKIP = object()
 
-    def __init__(self, cfg: Configuration) -> None:
-        self.fields    = cfg.almanac_fields
+    def __init__(self, ctx: ReportContext, cfg: Configuration) -> None:
+        # One evaluator per report, never shared: the cache below holds
+        # RENDERED values, produced with this report's formatter, converter
+        # and [Almanac] texts.
+        self.fields    = ctx.almanac_fields
         self.latitude  = cfg.latitude
         self.longitude = cfg.longitude
         self.altitude_m = cfg.altitude_m
-        self.texts     = cfg.almanac_texts
-        self.formatter = cfg.formatter
-        self.converter = cfg.converter
+        self.texts     = ctx.almanac_texts
+        self.formatter = ctx.formatter
+        self.converter = ctx.converter
         self.values: Dict[str, Any] = {}          # field -> json value or SKIP
         self.event_ts: Dict[str, Optional[float]] = {} # previous_* field -> cached event's epoch time
         self.groups: Dict[str, List[AlmanacField]] = {} # group key -> its next_* fields
@@ -3078,15 +3717,36 @@ class StationFieldEvaluator:
             if value is not None and value is not StationFieldEvaluator.SKIP:
                 loopdata_pkt[station_field.field] = value
 
+@dataclass
+class ReportRenderer:
+    """A context with its evaluators.  The evaluators are per report, not
+    merely per process: both cache rendered values (the almanac evaluator's
+    by field string, the station evaluator's static tier), produced with
+    the report's own formatter, converter and texts -- one shared evaluator
+    would hand report B report A's rendering."""
+    ctx          : ReportContext
+    almanac_eval : Optional[AlmanacFieldEvaluator]
+    station_eval : Optional[StationFieldEvaluator]
+
+    @staticmethod
+    def for_context(ctx: ReportContext, cfg: Configuration) -> 'ReportRenderer':
+        return ReportRenderer(
+            ctx          = ctx,
+            almanac_eval = AlmanacFieldEvaluator(ctx, cfg) if len(ctx.almanac_fields) > 0 else None,
+            station_eval = StationFieldEvaluator(ctx.station_fields, ctx.station)
+                           if len(ctx.station_fields) > 0 and ctx.station is not None else None)
+
 class LoopProcessor:
     def __init__(self, cfg: Configuration):
         self.cfg = cfg
+        # Contexts whose rendering has failed, so the error is logged once
+        # rather than on every packet.  Per instance: class state would
+        # leak between services in one interpreter, silently swallowing
+        # the report of a later failure.
+        self.render_failures: Set[str] = set()
         self.archive_start: float = time.time()
-        self.almanac_eval: Optional[AlmanacFieldEvaluator] = \
-            AlmanacFieldEvaluator(cfg) if len(cfg.almanac_fields) > 0 else None
-        self.station_eval: Optional[StationFieldEvaluator] = \
-            StationFieldEvaluator(cfg.station_fields, cfg.station) \
-            if len(cfg.station_fields) > 0 and cfg.station is not None else None
+        self.renderers: List[ReportRenderer] = [
+            ReportRenderer.for_context(ctx, cfg) for ctx in cfg.contexts]
 
     def process_queue(self) -> None:
         try:
@@ -3123,9 +3783,8 @@ class LoopProcessor:
                     pass
 
                 # Process new packet.
-                loopdata_pkt = LoopProcessor.generate_loopdata_dictionary(
-                    pkt, self.cfg, self.accumulators, self.almanac_eval,
-                    self.station_eval)
+                loopdata_pkt = LoopProcessor.generate_output(
+                    pkt, self.cfg, self.accumulators, self.renderers, self.render_failures)
                 # Write the loop-data.txt file.
                 LoopProcessor.write_packet_to_file(loopdata_pkt,
                     self.cfg.tmpname, self.cfg.loop_data_dir, self.cfg.filename)
@@ -3145,9 +3804,99 @@ class LoopProcessor:
             os.unlink(self.cfg.tmpname)
 
     @staticmethod
+    def generate_output(in_pkt: Dict[str, Any], cfg: Configuration, accums: Accumulators,
+            renderers: List[ReportRenderer],
+            render_failures: Optional[Set[str]] = None) -> Dict[str, Any]:
+        """The file's contents for one packet: accumulate the packet exactly
+        once, then render every context off the shared accumulators -- the
+        legacy fields line flat at the top level, each declaring report
+        under its report name (the [StdReport] section name, never the skin
+        name: one skin can be listed under two reports)."""
+        if render_failures is None:
+            render_failures = set()
+        pkt = LoopProcessor.accumulate_packet(in_pkt, cfg, accums)
+        output: Dict[str, Any] = {}
+        for renderer in renderers:
+            try:
+                rendered = LoopProcessor.render_report(pkt, in_pkt, renderer.ctx, cfg, accums,
+                    renderer.almanac_eval, renderer.station_eval)
+            except Exception as e:
+                # Every enabled report's declaration is rendered here,
+                # including skins this station's operator never wrote.  One
+                # of them failing must cost that report its entry, not stop
+                # the file for all of them: process_queue re-raises, which
+                # ends the LoopProcessor thread for good and freezes
+                # loop-data.txt while weewxd carries on none the wiser.
+                reraise_if_terminate(e)
+                if renderer.ctx.label not in render_failures:
+                    render_failures.add(renderer.ctx.label)
+                    log.error('Could not render %s; its values are omitted.  Exception: %s'
+                        % (renderer.ctx.label, e))
+                    weeutil.logger.log_traceback(log.error, "    ****  ")
+                continue
+            if renderer.ctx.report_name is None:
+                output.update(rendered)
+            else:
+                output[renderer.ctx.report_name] = rendered
+        # Legacy fields that a report renders identically were computed
+        # once, in that report's entry; copy them flat (see __init__).  A
+        # report whose rendering failed above simply has no entry, and its
+        # flat keys are absent for this packet like any other missing one.
+        for key, report in cfg.legacy_shared.items():
+            entry = output.get(report)
+            if entry is not None and key in entry:
+                output[key] = entry[key]
+        return output
+
+    @staticmethod
     def generate_loopdata_dictionary(in_pkt: Dict[str, Any], cfg: Configuration, accums: Accumulators,
             almanac_eval: Optional[AlmanacFieldEvaluator] = None,
+            station_eval: Optional[StationFieldEvaluator] = None,
+            ctx: Optional[ReportContext] = None) -> Dict[str, Any]:
+        """Accumulate one packet and render ONE context flat: ctx, else the
+        legacy context.  The shape every test asserts on; process_queue
+        renders every context through generate_output."""
+        if ctx is None:
+            ctx = cfg.legacy
+        assert ctx is not None, 'no context to render'
+        if almanac_eval is None or station_eval is None:
+            # Each independently: a caller supplying one must still get the
+            # other, or its fields vanish from the result with no signal.
+            renderer = ReportRenderer.for_context(ctx, cfg)
+            if almanac_eval is None:
+                almanac_eval = renderer.almanac_eval
+            if station_eval is None:
+                station_eval = renderer.station_eval
+        pkt = LoopProcessor.accumulate_packet(in_pkt, cfg, accums)
+        return LoopProcessor.render_report(pkt, in_pkt, ctx, cfg, accums, almanac_eval, station_eval)
+
+    @staticmethod
+    def render_report(pkt: Dict[str, Any], in_pkt: Dict[str, Any], ctx: ReportContext,
+            cfg: Configuration, accums: Accumulators,
+            almanac_eval: Optional[AlmanacFieldEvaluator] = None,
             station_eval: Optional[StationFieldEvaluator] = None) -> Dict[str, Any]:
+        """One context's fields, rendered off the shared accumulators with
+        its own formatter, converter and texts.  pkt is the accumulated
+        (converted, pruned) packet; in_pkt the packet as it arrived."""
+        loopdata_pkt = LoopProcessor.create_loopdata_packet(pkt, ctx, accums, cfg.loop_frequency)
+
+        # Almanac fields are computed from the (unpruned) incoming packet's
+        # time, temperature and pressure, not from accumulators.
+        if almanac_eval is not None:
+            almanac_eval.insert_fields(loopdata_pkt, in_pkt)
+
+        # Station fields depend on nothing in the packet.
+        if station_eval is not None:
+            station_eval.insert_fields(loopdata_pkt)
+
+        return loopdata_pkt
+
+    @staticmethod
+    def accumulate_packet(in_pkt: Dict[str, Any], cfg: Configuration, accums: Accumulators
+            ) -> Dict[str, Any]:
+        """Add one packet to every accumulator -- once per packet, whatever
+        the number of reports -- and return it converted to the
+        accumulators' unit system and pruned to the observations in use."""
 
         # pkt needs to be in the units that the accumulators are expecting.
         pruned_pkt = LoopProcessor.prune_period_packet(in_pkt, cfg.obstypes.current)
@@ -3244,19 +3993,7 @@ class LoopProcessor:
                         accums.windrose_continuous.values()):
                     wr_accum.add(pkt['dateTime'], wr_speed, wr_dir, cfg.loop_frequency)
 
-        # Create the loopdata dictionary.
-        loopdata_pkt = LoopProcessor.create_loopdata_packet(pkt, cfg, accums)
-
-        # Almanac fields are computed from the (unpruned) incoming packet's
-        # time, temperature and pressure, not from accumulators.
-        if almanac_eval is not None:
-            almanac_eval.insert_fields(loopdata_pkt, in_pkt)
-
-        # Station fields depend on nothing in the packet.
-        if station_eval is not None:
-            station_eval.insert_fields(loopdata_pkt)
-
-        return loopdata_pkt
+        return pkt
 
     @staticmethod
     def add_unit_obstype(cname: CheetahName, loopdata_pkt: Dict[str, Any],
@@ -3433,7 +4170,7 @@ class LoopProcessor:
     @staticmethod
     def add_windrose_obstype(cname: CheetahName, accums: Accumulators,
             loopdata_pkt: Dict[str, Any], converter: weewx.units.Converter,
-            formatter: weewx.units.Formatter) -> None:
+            formatter: weewx.units.Formatter, windrose_key: str) -> None:
         """Render a windrose field: a projection of the period's
         WindRoseAccum.  .calm is a scalar (seconds); .time a 16-array of
         seconds; .banded the 16xN seconds matrix; .sum a 16-array of distances
@@ -3445,10 +4182,10 @@ class LoopProcessor:
         # add_unit_obstype before this is reached).
         assert cname.period is not None
         accum: Optional[WindRoseAccum] = \
-            accums.windrose_span.get(cname.period) \
-            or accums.windrose_continuous.get(cname.period)
+            accums.windrose_span.get((windrose_key, cname.period)) \
+            or accums.windrose_continuous.get((windrose_key, cname.period))
         if accum is None:
-            log.debug('No windrose accumulator for %s, skipping %s' % (cname.period, cname.field))
+            log.debug('No windrose accumulator for %s (%s), skipping %s' % (cname.period, windrose_key, cname.field))
             return
 
         def rnd(value: float) -> Any:
@@ -3548,65 +4285,70 @@ class LoopProcessor:
         return value, unit_type, group_type
 
     @staticmethod
-    def create_loopdata_packet(pkt: Dict[str, Any], cfg: Configuration, accums: Accumulators) -> Dict[str, Any]:
+    def create_loopdata_packet(pkt: Dict[str, Any], ctx: ReportContext, accums: Accumulators,
+            loop_frequency: float) -> Dict[str, Any]:
+        """One context's fields, rendered off the shared accumulators with
+        its own formatter, converter, trend window and band edges."""
 
         loopdata_pkt: Dict[str, Any] = {}
 
         # Iterate through fields.
-        for cname in cfg.fields_to_include:
+        for cname in ctx.fields_to_include:
             if cname is None:
                 continue
             if cname.prefix == 'unit':
-                LoopProcessor.add_unit_obstype(cname, loopdata_pkt, cfg.converter, cfg.formatter)
+                LoopProcessor.add_unit_obstype(cname, loopdata_pkt, ctx.converter, ctx.formatter)
                 continue
 
             if cname.obstype == 'windrose':
                 LoopProcessor.add_windrose_obstype(cname, accums, loopdata_pkt,
-                    cfg.converter, cfg.formatter)
+                    ctx.converter, ctx.formatter, ctx.windrose_key)
                 continue
 
             if cname.period == 'current':
-                LoopProcessor.add_current_obstype(cname, pkt, loopdata_pkt, cfg.converter, cfg.formatter)
+                LoopProcessor.add_current_obstype(cname, pkt, loopdata_pkt, ctx.converter, ctx.formatter)
                 continue
 
             # fixed periods
             if cname.period == 'alltime' and accums.alltime_accum is not None:
-                LoopProcessor.add_period_obstype(cname, accums.alltime_accum, loopdata_pkt, cfg.converter, cfg.formatter)
+                LoopProcessor.add_period_obstype(cname, accums.alltime_accum, loopdata_pkt, ctx.converter, ctx.formatter)
                 continue
             if cname.period == 'rainyear' and accums.rainyear_accum is not None:
-                LoopProcessor.add_period_obstype(cname, accums.rainyear_accum, loopdata_pkt, cfg.converter, cfg.formatter)
+                LoopProcessor.add_period_obstype(cname, accums.rainyear_accum, loopdata_pkt, ctx.converter, ctx.formatter)
                 continue
             if cname.period == 'year' and accums.year_accum is not None:
-                LoopProcessor.add_period_obstype(cname, accums.year_accum, loopdata_pkt, cfg.converter, cfg.formatter)
+                LoopProcessor.add_period_obstype(cname, accums.year_accum, loopdata_pkt, ctx.converter, ctx.formatter)
                 continue
             if cname.period == 'month' and accums.month_accum is not None:
-                LoopProcessor.add_period_obstype(cname, accums.month_accum, loopdata_pkt, cfg.converter, cfg.formatter)
+                LoopProcessor.add_period_obstype(cname, accums.month_accum, loopdata_pkt, ctx.converter, ctx.formatter)
                 continue
             if cname.period == 'week' and accums.week_accum is not None:
-                LoopProcessor.add_period_obstype(cname, accums.week_accum, loopdata_pkt, cfg.converter, cfg.formatter)
+                LoopProcessor.add_period_obstype(cname, accums.week_accum, loopdata_pkt, ctx.converter, ctx.formatter)
                 continue
             if cname.period == 'day':
-                LoopProcessor.add_period_obstype(cname, accums.day_accum, loopdata_pkt, cfg.converter, cfg.formatter)
+                LoopProcessor.add_period_obstype(cname, accums.day_accum, loopdata_pkt, ctx.converter, ctx.formatter)
                 continue
             if cname.period == 'hour' and accums.hour_accum is not None:
-                LoopProcessor.add_period_obstype(cname, accums.hour_accum, loopdata_pkt, cfg.converter, cfg.formatter)
+                LoopProcessor.add_period_obstype(cname, accums.hour_accum, loopdata_pkt, ctx.converter, ctx.formatter)
                 continue
 
-            # continuous periods
-            for per, accum in accums.continuous.items():
-                if cname.period == per:
-                    if per == 'trend':
-                        LoopProcessor.add_trend_obstype(cname, accum, pkt,
-                            loopdata_pkt, cfg.time_delta, cfg.loop_frequency, cfg.baro_trend_descs, cfg.converter, cfg.formatter)
-                    else:
-                        LoopProcessor.add_period_obstype(cname,  accum, loopdata_pkt, cfg.converter, cfg.formatter)
+            # continuous periods; the trend is the accumulator sized to THIS
+            # report's window.
+            if cname.period == 'trend':
+                trend_accum = accums.continuous.get(ctx.trend_key)
+                if trend_accum is not None:
+                    LoopProcessor.add_trend_obstype(cname, trend_accum, pkt,
+                        loopdata_pkt, ctx.time_delta, loop_frequency, ctx.baro_trend_descs, ctx.converter, ctx.formatter)
                 continue
+            continuous_accum = accums.continuous.get(cname.period) if cname.period is not None else None
+            if continuous_accum is not None:
+                LoopProcessor.add_period_obstype(cname, continuous_accum, loopdata_pkt, ctx.converter, ctx.formatter)
 
-        if len(accums.windrose_span) > 0 or len(accums.windrose_continuous) > 0:
-            # Legend helper: the band edges, in the target report's windSpeed
+        if ctx.windrose:
+            # Legend helper: the band edges, in this report's windSpeed
             # unit -- exactly the values banding applies, so a page never
             # hardcodes them.
-            loopdata_pkt['windrose.bands'] = cfg.windrose_bands
+            loopdata_pkt['windrose.bands'] = ctx.windrose_bands
 
         return loopdata_pkt
 
@@ -3633,10 +4375,6 @@ class LoopProcessor:
         log.info('filename                : %s' % cfg.filename)
         log.info('target_report           : %s' % cfg.target_report)
         log.info('loop_frequency          : %s' % cfg.loop_frequency)
-        log.info('specified_fields        : %s' % cfg.specified_fields)
-        # fields_to_include
-        # formatter
-        # converter
         log.info('tmpname                 : %s' % cfg.tmpname)
         log.info('enable                  : %d' % cfg.enable)
         log.info('remote_server           : %s' % cfg.remote_server)
@@ -3648,7 +4386,6 @@ class LoopProcessor:
         log.info('ssh_options             : %s' % cfg.ssh_options)
         log.info('timeout                 : %d' % cfg.timeout)
         log.info('skip_if_older_than      : %d' % cfg.skip_if_older_than)
-        log.info('time_delta              : %d' % cfg.time_delta)
         log.info('week_start              : %d' % cfg.week_start)
         log.info('rainyear_start          : %d' % cfg.rainyear_start)
         log.info('obstypes.current        : %s' % cfg.obstypes.current)
@@ -3661,14 +4398,29 @@ class LoopProcessor:
         log.info('obstypes.hour           : %s' % cfg.obstypes.hour)
         for per, obstypes in cfg.obstypes.continuous.items():
             log.info('obstypes.%s: %s' % (per, obstypes))
-        log.info('baro_trend_descs        : %s' % cfg.baro_trend_descs)
-        if len(cfg.almanac_fields) > 0:
-            log.info('almanac_fields          : %s' % [ f.field for f in cfg.almanac_fields ])
+        # The accumulators the two report-scoped settings resolved to: one
+        # trend accumulator per distinct window, one windrose set per
+        # distinct band edges.  A second one here is a report that differs.
+        log.info('trend accumulators      : %s' % sorted(
+            per for per in cfg.obstypes.continuous if LoopData.is_trend_key(per)))
+        for windrose_key, (unit, bands) in cfg.windrose_bandings.items():
+            log.info('windrose bands %s: %s %s, periods %s' % (windrose_key, bands, unit, sorted(
+                per for key, per in cfg.windrose_span_periods | cfg.windrose_continuous_periods
+                if key == windrose_key)))
+        if len(cfg.almanac_fields_all()) > 0:
             log.info('latitude                : %f' % cfg.latitude)
             log.info('longitude               : %f' % cfg.longitude)
             log.info('altitude_m              : %f' % cfg.altitude_m)
-        if len(cfg.station_fields) > 0:
-            log.info('station_fields          : %s' % [ f.field for f in cfg.station_fields ])
+        for ctx in cfg.contexts:
+            log.info('--- %s' % ctx.label)
+            log.info('specified_fields        : %s' % ctx.specified_fields)
+            log.info('time_delta              : %d' % ctx.time_delta)
+            log.info('windrose_bands          : %s' % ctx.windrose_bands)
+            log.info('baro_trend_descs        : %s' % ctx.baro_trend_descs)
+            if len(ctx.almanac_fields) > 0:
+                log.info('almanac_fields          : %s' % [ f.field for f in ctx.almanac_fields ])
+            if len(ctx.station_fields) > 0:
+                log.info('station_fields          : %s' % [ f.field for f in ctx.station_fields ])
 
     @staticmethod
     def rsync_data(pktTime: int, skip_if_older_than: int, loop_data_dir: str,
@@ -3804,3 +4556,266 @@ class LoopProcessor:
             bucket = 0
         log.debug('get_windrun_bucket: wind_dir: %d, bucket: %d' % (wind_dir, bucket))
         return bucket
+
+
+# ==============================================================================
+#     Finishing the migration: python3 -m user.loopdata [--apply]
+# ==============================================================================
+#
+# The [LoopData] [[Include]] fields line is deprecated, and the reports that
+# used to depend on it now declare their own fields.  What is left on it,
+# once every extension has been upgraded, is a mixture: entries a report now
+# declares (safe to lose from the flat namespace) and entries nothing
+# declares at all -- stale ones from pages that changed years ago, and the
+# occasional live one that some script reads.  Nothing can tell those two
+# apart automatically, which is why this reports first and changes nothing
+# unless it can account for every entry.
+
+def declaring_reports(config_dict: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """report -> {'fields': [...], 'signature': str} for every enabled
+    report that declares fields, in [StdReport] order."""
+    loop_config_dict = config_dict.get('LoopData', {})
+    target_report = loop_config_dict.get('Formatting', {}).get('target_report', 'LoopDataReport')
+    try:
+        target_dict: Optional[Dict[str, Any]] = LoopData.get_target_report_dict(config_dict, target_report)
+    except Exception:
+        target_dict = None
+    shared: Dict[str, Any] = {}
+    found: Dict[str, Dict[str, Any]] = {}
+    for report in LoopData.enabled_reports(config_dict):
+        try:
+            skin_dict = LoopData.get_target_report_dict(config_dict, report)
+        except Exception:
+            continue
+        declared = LoopData.declared_fields_from_skin_dict(skin_dict, report)
+        if len(declared) == 0:
+            continue
+        bands = LoopData.report_windrose_bands(config_dict, report, skin_dict,
+            loop_config_dict, target_dict, shared, target_report)
+        found[report] = {'fields': declared,
+                         'signature': LoopData.render_signature(skin_dict, bands)}
+    return found
+
+def migration_report(config_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """What the fields line still holds, and who claims each entry."""
+    loop_config_dict = config_dict.get('LoopData', {})
+    line = LoopData.normalize_fields(loop_config_dict.get('Include', {}).get('fields'))
+    target_report = loop_config_dict.get('Formatting', {}).get('target_report', 'LoopDataReport')
+    reports = declaring_reports(config_dict)
+    try:
+        target_dict = LoopData.get_target_report_dict(config_dict, target_report)
+        legacy_signature: Optional[str] = LoopData.render_signature(target_dict,
+            LoopData.legacy_windrose_bands(config_dict, target_report, target_dict, loop_config_dict))
+    except Exception:
+        legacy_signature = None
+    # The line is rendered through target_report, so credit it first: it
+    # renders identically by definition, and anything credited elsewhere is
+    # then genuinely a different report's.
+    order = ([target_report] if target_report in reports else []) + \
+            [r for r in reports if r != target_report]
+    owner: Dict[str, str] = {}
+    differs: Set[str] = set()
+    for field in line:
+        for report in order:
+            info = reports[report]
+            if field in info['fields']:
+                owner[field] = report
+                if legacy_signature is not None and info['signature'] != legacy_signature:
+                    differs.add(field)
+                break
+    return {'line': line, 'reports': reports, 'owner': owner, 'differs': differs,
+            'unclaimed': [f for f in line if f not in owner],
+            'target_report': target_report,
+            'windrose_bands': loop_config_dict.get('windrose_bands')}
+
+def print_migration_report(config_path: str, report: Dict[str, Any]) -> None:
+    print('weewx-loopdata migration report for %s\n' % config_path)
+    if len(report['reports']) == 0:
+        print('No enabled report declares [LoopData] [[fields]].  Upgrade the extensions')
+        print('whose pages read the loop-data file before finishing the migration.')
+    else:
+        print('Reports declaring their own fields:')
+        for name, info in report['reports'].items():
+            print('    %-24s %4d fields' % (name, len(info['fields'])))
+    print()
+    if len(report['line']) == 0:
+        print('There is no [LoopData] [[Include]] fields line.')
+        return
+    counts: Dict[str, int] = {}
+    for field, name in report['owner'].items():
+        counts[name] = counts.get(name, 0) + 1
+    print('[LoopData] [[Include]] fields: %d entries' % len(report['line']))
+    for name, count in sorted(counts.items(), key=lambda kv: -kv[1]):
+        note = ''
+        if any(report['owner'].get(f) == name and f in report['differs'] for f in report['line']):
+            note = ('   (renders these differently from %s -- check the units and formats on\n'
+                    '%s a page still reading the flat keys)' % (report['target_report'], ' ' * 37))
+        print('    declared by %-24s %4d%s' % (name, count, note))
+    print('    claimed by nobody             %4d' % len(report['unclaimed']))
+
+def print_unclaimed_advice(report: Dict[str, Any]) -> None:
+    print()
+    print('Nothing has been changed: %d entries are claimed by nobody.' % len(report['unclaimed']))
+    for field in report['unclaimed']:
+        print('    %s' % field)
+    print()
+    print('Almost always these are simply cruft -- entries a page asked for years ago and')
+    print('no longer reads, or that an extension appended for a version since changed.  If')
+    print('nothing outside WeeWX reads your loop-data file, that is the whole story: delete')
+    print('them from the fields line and run this again.')
+    print()
+    print('Only two other things can be true of an entry, and both are unusual:')
+    print('  * a page of your own reads it -- declare it under that page\'s report, and')
+    print('    have the page read that report\'s own entry rather than the flat key;')
+    print('  * a script, an SNMP check or something else outside WeeWX reads it -- declare')
+    print('    it under the ScriptData report (enable it first) and have that reader take')
+    print('    d["ScriptData"].')
+    print()
+    print('https://chaunceygardiner.github.io/weewx-loopdata/declaring-fields.html')
+
+def anchored_loop_data_dir(config_dict: Dict[str, Any], target_report: str) -> Optional[str]:
+    """Where a relative loop_data_dir resolves to right now, or None when
+    it is already absolute.  A relative one is measured from
+    target_report's directory, so removing target_report can move the
+    file out from under every page that polls it."""
+    file_spec = config_dict.get('LoopData', {}).get('FileSpec', {})
+    if os.path.isabs(str(file_spec.get('loop_data_dir', '.'))):
+        return None
+    try:
+        anchor = LoopData.get_target_report_dict(config_dict, target_report)
+    except Exception:
+        anchor = {'HTML_ROOT': config_dict.get('StdReport', {}).get('HTML_ROOT', 'public_html')}
+    return os.path.normpath(LoopData.compose_loop_data_dir(config_dict, anchor, file_spec))
+
+def windrose_bands_source(config_dict: Dict[str, Any], report: str) -> Optional[str]:
+    """Where a report's windrose bands come from, if from anywhere nearer
+    than the deprecated [LoopData] value: its own stanza, a station-wide
+    [StdReport] setting, or its skin.  None when the [LoopData] value is
+    what it is actually using."""
+    std_report = config_dict.get('StdReport', {})
+    stanza = std_report.get(report, {})
+    if isinstance(stanza, dict) and stanza.get('windrose_bands') is not None:
+        return '[StdReport] [[%s]] windrose_bands' % report
+    if LoopData.stdreport_windrose_bands(config_dict) is not None:
+        return 'a station-wide [StdReport] windrose_bands'
+    try:
+        skin_dict = LoopData.get_target_report_dict(config_dict, report)
+    except Exception:
+        return None
+    if skin_dict.get('windrose_bands') is not None:
+        return "%s's skin" % report
+    loopdata_section = skin_dict.get('LoopData')
+    if isinstance(loopdata_section, dict) and loopdata_section.get('windrose_bands') is not None:
+        return "%s's skin" % report
+    return None
+
+def apply_migration(config_dict: Dict[str, Any], report: Dict[str, Any]) -> List[str]:
+    """Delete the deprecated trio, moving windrose_bands somewhere it still
+    applies and pinning loop_data_dir if removing target_report would move
+    the file.  Returns a description of every change made."""
+    changes: List[str] = []
+    loopdata = config_dict['LoopData']
+    target_report = report['target_report']
+
+    # A relative loop_data_dir is measured from target_report's directory.
+    # Once target_report is gone that becomes LoopDataReport's, so pin the
+    # path first: a page polling the old URL must not start 404ing because
+    # the file quietly moved.
+    if 'Formatting' in loopdata:
+        here = anchored_loop_data_dir(config_dict, target_report)
+        there = anchored_loop_data_dir(config_dict, 'LoopDataReport')
+        if here is not None and here != there:
+            loopdata.setdefault('FileSpec', {})['loop_data_dir'] = here
+            changes.append('pinned [LoopData] [[FileSpec]] loop_data_dir = %s (it was relative to '
+                '%s, which is going)' % (here, target_report))
+
+    # windrose_bands belongs to the rose it bands.  Before 7.0 that was the
+    # one rose in the flat file, rendered through target_report, and the
+    # value is already in that report's windSpeed unit -- so it moves to
+    # that report's stanza, as it is, and nothing station-wide is invented.
+    bands = report['windrose_bands']
+    if bands is not None:
+        stanza = config_dict.get('StdReport', {}).get(target_report)
+        printable = ', '.join(str(b) for b in (bands if isinstance(bands, list) else [bands]))
+        covered = windrose_bands_source(config_dict, target_report)
+        if not isinstance(stanza, dict):
+            changes.append('LEFT [LoopData] windrose_bands alone: there is no [StdReport] [[%s]] '
+                'to move it to -- put it on the report whose rose it bands' % target_report)
+        elif covered is not None:
+            # It is already shadowed: something nearer the report answers
+            # first, so the value has not banded anything for a while.
+            del loopdata['windrose_bands']
+            changes.append('removed [LoopData] windrose_bands (%s): %s already sets the bands '
+                'for %s, so it was doing nothing' % (printable, covered, target_report))
+        else:
+            stanza['windrose_bands'] = bands
+            del loopdata['windrose_bands']
+            changes.append('moved [LoopData] windrose_bands to [StdReport] [[%s]]: %s (its own '
+                'unit, unchanged)' % (target_report, printable))
+
+    if 'Include' in loopdata:
+        del loopdata['Include']
+        changes.append('removed [LoopData] [[Include]] fields (%d entries)' % len(report['line']))
+    if 'Formatting' in loopdata:
+        del loopdata['Formatting']
+        changes.append('removed [LoopData] [[Formatting]] target_report = %s' % report['target_report'])
+    return changes
+
+def main() -> int:
+    import argparse
+    parser = argparse.ArgumentParser(
+        description='Finish the weewx-loopdata 7.0 migration: report on what the deprecated '
+                    '[LoopData] [[Include]] fields line still holds and, once every entry is '
+                    'accounted for, remove it along with [[Formatting]] target_report.')
+    parser.add_argument('--config', metavar='PATH', help='path to weewx.conf')
+    parser.add_argument('--apply', action='store_true',
+        help='make the change, rather than only reporting it')
+    args = parser.parse_args()
+
+    import weecfg
+    try:
+        config_path, config_dict = weecfg.read_config(args.config, [])
+    except Exception as e:
+        print('Could not read weewx.conf: %s' % e, file=sys.stderr)
+        return 1
+    if 'LoopData' not in config_dict:
+        print('No [LoopData] section in %s.' % config_path, file=sys.stderr)
+        return 1
+
+    report = migration_report(config_dict)
+    print_migration_report(config_path, report)
+    if len(report['line']) > 0 and len(report['unclaimed']) > 0:
+        print_unclaimed_advice(report)
+        return 1
+    loopdata = config_dict['LoopData']
+    leftovers = [name for name, present in (
+        ('the [[Include]] fields line', len(report['line']) > 0),
+        ('[[Formatting]] target_report', 'Formatting' in loopdata),
+        ('[LoopData] windrose_bands', loopdata.get('windrose_bands') is not None)) if present]
+    print()
+    if len(leftovers) == 0:
+        print('Nothing deprecated is left in [LoopData]: this station is migrated.')
+        return 0
+    if len(report['line']) > 0:
+        print('Every entry is declared by a report, so the fields line and target_report')
+        print('can go.')
+    else:
+        print('Still to remove: %s.' % ', '.join(leftovers))
+    if not args.apply:
+        print('Nothing has been changed.  Run again with --apply to make the change.')
+        return 0
+    backup = '%s.%s' % (config_path, time.strftime('%Y%m%d%H%M%S'))
+    with open(config_path, 'rb') as src, open(backup, 'wb') as dst:
+        dst.write(src.read())
+    changes = apply_migration(config_dict, report)
+    config_dict.write()
+    print()
+    for change in changes:
+        print('    %s' % change)
+    print('    backup written to %s' % backup)
+    print()
+    print('Restart weewxd for this to take effect.')
+    return 0
+
+if __name__ == '__main__':
+    sys.exit(main())

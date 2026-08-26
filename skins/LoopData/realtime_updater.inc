@@ -810,10 +810,22 @@
     }
     var result;
     try {
-      result = await response.json();
+      // Since loopdata 7.0 the file carries each declaring report's fields
+      // under the report's name (the [StdReport] section, not the skin: one
+      // skin can be listed twice).  This page reads its own.  A file
+      // without the key is an older loopdata, or this report not declaring
+      // its fields; BAD DATA covers it -- the file is there, this page's
+      // data is not.  The name goes through json.dumps like every other
+      // string Cheetah hands this script: a report name is any [StdReport]
+      // section name, quotes and non-ASCII included.
+      result = (await response.json())[$json.dumps($REPORT_NAME)];
+      if (result === undefined) {
+        throw new Error('no ' + $json.dumps($REPORT_NAME) + ' in loop_data_file');
+      }
     } catch (e) {
-      // A 200 with a non-json body: loop_data_file points at something,
-      // but not at loopdata's output.
+      // A 200 with a non-json body, or json without this report's key:
+      // loop_data_file points at something, but not at loopdata's output
+      // for this page.
       document.getElementById("live-label").innerHTML =
           fmt('BAD DATA \u2014 check loop_data_file');
       console.log(e);

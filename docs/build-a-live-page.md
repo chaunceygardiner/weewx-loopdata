@@ -1,7 +1,7 @@
 ---
 title: Building a live page
 layout: default
-nav_order: 5
+nav_order: 6
 ---
 
 # Building a live page
@@ -13,21 +13,32 @@ nav_order: 5
 The recipe for using LoopData in your own skin, demonstrated in full by the
 included [sample skin](sample-skin.html) (`skins/LoopData`):
 
-## 1. List the fields your page needs
+## 1. Declare the fields your page needs
 
-Put every field your page needs on the `fields` line of
-`[LoopData] [[Include]]` in weewx.conf.  The
-[field reference](field-reference.html) documents everything available.
+In your skin's `skin.conf`, declare every field the page needs, in named
+groups:
 
-## 2. Point LoopData at your report
+```
+[LoopData]
+    [[fields]]
+        temperature = current.outTemp, day.outTemp.max
+        almanac     = almanac.sunset
+```
 
-Set `target_report` to your report, so values arrive already in that
-report's units and formatting, and set `loop_data_dir`/`filename` so the
-json file lands somewhere your web server serves.  By default,
-`loop_data_dir` is relative to the target report's HTML directory, so the
-page can fetch the file with a relative URL.  It can live outside your
-reports tree instead — on a memory filesystem, say — in which case the
-page needs the absolute URL your web server serves it at; see
+The [field reference](field-reference.html) documents everything
+available; [Declaring fields](declaring-fields.html) is the declaration in
+full.  Your report is its own target: the values arrive already in its
+units, formatting and language, under its name in the file.
+
+## 2. Put the file where the page can fetch it
+
+Set `loop_data_dir`/`filename` so the json file lands somewhere your web
+server serves.  By default `loop_data_dir` is relative to the sample
+report's HTML directory, so a page in that directory can fetch the file
+with a relative URL, and a page anywhere else in the reports tree with a
+relative path to it.  The file can live outside your reports tree instead
+— on a memory filesystem, say — in which case the page needs the absolute
+URL your web server serves it at; see
 [Where the loop-data file should live](configuration.html#where-the-loop-data-file-should-live).
 
 ## 3. Give elements ids matching the json keys
@@ -47,14 +58,18 @@ correct even before the first poll — the javascript then keeps it fresh.
 ## 4. Poll loop-data.txt and fill the elements
 
 Add javascript that fetches loop-data.txt on an interval matching your loop
-frequency and fills in the elements.  A minimal version:
+frequency, takes your report's entry, and fills in the elements.  A
+minimal version (`$REPORT_NAME` is the report's name, which Cheetah
+substitutes — WeeWX 4.6 or later; `json.dumps` quotes it as a javascript
+string, whatever characters the name has):
 
 ```html
+#import json
 <script>
   async function updateLoopData() {
     try {
       const response = await fetch('loop-data.txt', {cache: 'no-store'});
-      const data = await response.json();
+      const data = (await response.json())[$json.dumps($REPORT_NAME)];
       for (const key in data) {
         const element = document.getElementById(key);
         if (element) element.innerHTML = data[key];
@@ -79,12 +94,25 @@ choose what suits your page.  (Or force a field to always be present with
 That is the whole recipe.  The rest of this page is the contract those five
 steps rely on, and the touches that make a page you can leave running.
 
+{: .note }
+**If your consumer isn't a page** — a shell script, an SNMP extension, a
+monitoring check reading `loop-data.txt` — it has no skin to declare
+fields in, and it should not borrow another report's.  Use the
+`ScriptData` report LoopData installs for exactly that; see
+[Fields for scripts and other non-report consumers](declaring-fields.html#fields-for-scripts-and-other-non-report-consumers).
+
 ## What loop-data.txt guarantees
 
 The contract your javascript can rely on, in one place:
 
-* **The key is the field entry verbatim.**  Whatever you wrote on the
-  `fields` line is the json key — `day.outTemp.max`, `almanac.sunrise.raw`,
+* **Your report's fields are under your report's name.**  The top level
+  of the file is keyed by report — the `[StdReport]` section name, not the
+  skin name — and each report's entry holds exactly the fields it declared.
+  (A station upgraded from before 7.0 may also carry flat keys at the top
+  level, from the old `[[Include]]` fields line; see
+  [Declaring fields](declaring-fields.html#the-include-fields-line).)
+* **The key is the field entry verbatim.**  Whatever you declared is the
+  json key — `day.outTemp.max`, `almanac.sunrise.raw`,
   `station.uptime.raw` — which is what makes "give the element the same id as
   the key" work.  A quoted entry loses only its outer quotes.
 * **A field with no value is absent, not null.**  Expect missing keys and
@@ -101,10 +129,11 @@ The contract your javascript can rely on, in one place:
   [almanac](almanac-fields.html) or [station](station-fields.html) field whose
   endpoint is a tuple of scalars — `station.latitude`'s degrees/minutes/
   hemisphere, for instance — emits as an array.
-* **`windrose.bands` appears on its own** whenever any windrose field is
-  configured, holding the band edges in the target report's windSpeed unit so
-  a legend never hardcodes them.  It is the one key you get without asking.
-* **Every value is already converted and formatted for the target report**,
+* **`windrose.bands` appears on its own** in a report's entry whenever
+  that report declares any windrose field, holding the band edges in the
+  report's windSpeed unit so a legend never hardcodes them.  It is the one
+  key you get without asking.
+* **Every value is already converted and formatted for your report**,
   so nothing needs converting in javascript.  If a page needs a fixed unit
   regardless of the report's settings, pin it on the field
   ([unit override](field-reference.html#overriding-the-unit-of-a-field)) —

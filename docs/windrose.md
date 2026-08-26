@@ -1,7 +1,7 @@
 ---
 title: The live windrose
 layout: default
-nav_order: 7
+nav_order: 8
 ---
 
 # The live windrose
@@ -27,7 +27,7 @@ after a restart.
 Four aggregates project the matrix into json:
 
 * `day.windrose.sum` — sixteen distances (the classic windrun rose),
-  unit-converted to the target report's distance unit; supports a unit
+  unit-converted to the report's distance unit; supports a unit
   override (`day.windrose.sum.km`) and `.formatted` (an array of
   report-formatted strings).  Note: wind below the calm threshold counts as
   calm *time*, not distance — there is no reliable direction to attribute it
@@ -48,22 +48,27 @@ strings); `.round(n)` applies per element (e.g. `day.windrose.sum.round(2)`).
 Two helper keys come along:
 
 * Whenever any windrose field is configured, loopdata also emits a
-  `windrose.bands` key holding the band edges in the target report's
+  `windrose.bands` key holding the band edges in the report's
   windSpeed unit, so a page's legend never hardcodes them.
 * `unit.label.windrose` yields the distance unit label for `.sum`.
 
 ## The speed bands
 
 The speed bands default to the classic WRPLOT/NOAA bands — 0.5, 2.1, 3.6,
-5.7, 8.8 and 11.1 m/s, converted to the target report's windSpeed unit and
+5.7, 8.8 and 11.1 m/s, converted to the report's windSpeed unit and
 rounded to one decimal.  The first edge doubles as the calm threshold.  To
-override, list ascending edges (in the target report's windSpeed unit) in
-the `[LoopData]` section of weewx.conf:
+override, list ascending edges as `windrose_bands` on the report's stanza
+in weewx.conf (in that report's windSpeed unit), or under
+`[StdReport] [[Defaults]]` for every report (in the Defaults' unit):
 
 ```
-[LoopData]
-    windrose_bands = 1, 4, 8, 13, 19, 25
+[StdReport]
+    [[LoopDataReport]]
+        windrose_bands = 1, 4, 8, 13, 19, 25
 ```
+
+See [`windrose_bands` per report](declaring-fields.html#windrose_bands-per-report)
+for the precedence and the pre-7.0 `[LoopData]` spelling.
 
 ## Choosing your bands
 

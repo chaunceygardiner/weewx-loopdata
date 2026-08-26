@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
 layout: default
-nav_order: 14
+nav_order: 15
 ---
 
 # Troubleshooting
@@ -40,39 +40,36 @@ A later successful poll rewrites the indicator to LIVE.
 If the traceback ends in a
 `TypeError` about an `unexpected keyword argument 'texts'`, you are
 running a WeeWX earlier than 5.3 with a loopdata earlier than 6.10 and at
-least one [almanac field](almanac-fields.html) in your fields line.  WeeWX
+least one [almanac field](almanac-fields.html) among your declared fields.  WeeWX
 5.3 renamed the argument LoopData passes the almanac, and older versions
 reject it — the LoopData thread stops at the first loop packet, though
 weewxd itself keeps running, so a page just freezes at its last values.
 Upgrade to loopdata 6.10 or later, which passes whichever argument the
-running WeeWX takes; dropping the almanac fields from your fields line
+running WeeWX takes; dropping the almanac fields from your declaration
 also clears it.
 
 ## The panel shows readouts but no needles, bands or windrose
 
-You upgraded to 6.0+ and kept a pre-6.0 fields line.  Upgrades keep your
-existing `[LoopData]` fields line, and the instrument panel reads fields the
-old default never included (`.raw` geometry, `unit.label` scales,
-`day.windrose.*`).  Replace the fields line with the
-[sample configuration](configuration.html#sample-configuration)'s, appending
-any fields other pages of yours use, and restart weewxd.  The same cause can
-cost you a single needle rather than all of them — see below.
+Since 7.0 the panel reads its own report's entry in `loop-data.txt`, which
+its `skin.conf` declares in full, so an old station-wide fields line can no
+longer starve it.  If a panel is half-dead anyway — text readouts, but no
+needles, min–max bands or windrose — look at the `LoopDataReport` entry in
+the file: a `[[[LoopData]]] [[[[fields]]]]` section under the report's
+stanza in `weewx.conf` replaces the skin's group of the same name, so a
+group named there that lists fewer fields than the skin's costs the panel
+whatever it left out.
 
 ## One gauge has no needle, and the others are fine
 
 The panel draws no needle for a value it doesn't have, so that gauge's
-`.raw` field isn't in `loop-data.txt`.
+`.raw` field isn't in the report's entry in `loop-data.txt`.
 [What each gauge reads](sample-skin.html#what-each-gauge-reads) lists the
 fields gauge by gauge; look up the missing one and check the file for it.
 
-Two things put it there.  Most often the field isn't in your `fields` line
-at all — the case above, but a hand-tuned fields line can be missing one
-`.raw` field rather than all of them, which costs you one needle instead of
-every needle.  Replace the fields line with the
-[sample configuration](configuration.html#sample-configuration)'s (appending
-any fields other pages of yours use) and restart weewxd.
+Two things put it there.  One is a group override under the report's
+stanza in `weewx.conf` that dropped the field — the case above.
 
-Otherwise the field is listed but had no value, and a field with no value is
+Otherwise the field is declared but had no value, and a field with no value is
 omitted from `loop-data.txt` entirely (see
 [Missing data](field-reference.html#missing-data)) — the same reason the
 wind compass loses its amber needle while `windDir` is null in a calm.  If
@@ -80,10 +77,25 @@ it never appears, your station isn't reporting that observation in loop
 packets, which is a station or driver matter rather than a LoopData one; the
 `obstypes.current` line LoopData logs at startup says what it does report.
 
-## A field I listed never appears in loop-data.txt
+## A field I declared never appears in loop-data.txt
 
 In roughly descending order of likelihood:
 
+* **You looked at the top level of the file.**  Since 7.0 a declared
+  field is under its report's name; the top level carries only the report
+  entries — and, on a station upgraded from before 7.0, the flat keys of
+  the old `[[Include]]` fields line.  See
+  [Declaring fields](declaring-fields.html).
+* **The report is disabled.**  A report with `enable = false` declares
+  nothing, so its entry is absent.  This catches out the
+  [`ScriptData` report](declaring-fields.html#fields-for-scripts-and-other-non-report-consumers)
+  in particular: LoopData ships it **disabled**, so declaring fields under
+  it without also setting `enable = true` writes nothing at all.  The startup log lists every report LoopData is serving — if yours
+  isn't there, that is why.
+* **The declaration is not being read.**  `[LoopData]` in a `skin.conf`
+  must hold a `[[fields]]` section of named groups; a bare `fields =` line
+  there is refused with a warning (see below).  The startup log names every
+  declaring report and its field count.
 * **The data is missing.**  A field with no value is omitted — a trend
   before enough packets have arrived, or an observation your station doesn't
   report.  This is by design; see
@@ -96,8 +108,8 @@ In roughly descending order of likelihood:
   ignored; only current values work for such observations.  See
   [the field reference](field-reference.html#aggregates-via-xtypes-are-not-supported).
 * **The entry was split at a comma.**  A formatting call or almanac tag
-  containing a comma must be quoted in weewx.conf, or ConfigObj splits it
-  into two bogus fields.  See
+  containing a comma must be quoted in the declaration — in `skin.conf` or
+  in weewx.conf — or ConfigObj splits it into two bogus fields.  See
   [the quoting note](field-reference.html#formatting-a-field-with-arguments-call-syntax).
 * **An incompatible unit override.**  A unit that doesn't belong to the
   observation's unit group (e.g. `day.outTemp.avg.beaufort`) causes the
@@ -107,32 +119,30 @@ In roughly descending order of likelihood:
   removed in 6.0; fields naming them are ignored.  See
   [the migration mapping](windrose.html#upgrading-from-windrun_direction-fields).
 
-Also check the WeeWX log around startup: loopdata logs parse problems with
-field entries, and lists the observations it is tracking — see
+Also check the WeeWX log around startup: loopdata logs every field it
+does not recognize, naming the report that declared it, and lists the
+observations it is tracking — see
 [What LoopData writes to the log](#what-loopdata-writes-to-the-log).
 
 ## Values stay English on a translated page
 
 The page's labels and the live values translate independently — labels
-follow the sample report's `lang`, values follow the `[LoopData]`
-`target_report`'s (see [Translations](i18n.html)).  So if
-`trend.barometer.desc` is stuck at `Rising Slowly` — or moon phases,
-compass ordinates or almanac names stay English — on an otherwise
-translated page, check the value side:
+follow the report's `lang` at generation time, values follow the language
+of the report that declared them, on every packet (see
+[Translations](i18n.html)).  So if `trend.barometer.desc` is stuck at
+`Rising Slowly` — or moon phases, compass ordinates or almanac names stay
+English — on an otherwise translated page, check the value side:
 
-* **`target_report` must point at a report whose skin carries a lang
-  file with the needed strings.**  The sample report (`LoopDataReport`,
-  the default) ships them for every language loopdata ships.  Pointing
-  `target_report` at another extension's report — say, weewx-celestial's
-  `CelestialReport` — leaves the barometer descriptions English in every
-  language, because that skin's dictionary has no barometer phrases.
-  There is nothing to lose by retargeting: the Celestial page takes only
-  numbers from `loop-data.txt`; all of its text is translated at page
-  generation from its own lang file.
-* **The target report's stanza must set `lang`** (or inherit it from
+* **The declaring report's skin must carry a lang file with the needed
+  strings.**  The sample report ships them for every language loopdata
+  ships.  A page still reading the old flat keys takes its values from
+  `target_report`, and pointing that at another extension's report — say,
+  weewx-celestial's `CelestialReport` — leaves the barometer descriptions
+  English in every language, because that skin's dictionary has no
+  barometer phrases.
+* **The report's stanza must set `lang`** (or inherit it from
   `[StdReport] [[Defaults]]`).
-* **Restart weewxd** — the target report's texts are read once at
-  startup.
+* **Restart weewxd** — a report's texts are read once at startup.
 * **This needs loopdata 6.4 or later.**
 
 ## Aggregate values look slightly off
@@ -170,7 +180,15 @@ write; the errors all mean something you can act on.
 
 | Message | What it means |
 |---|---|
-| `Could not find target_report: <name>.  LoopData is exiting.` | `target_report` names a report that isn't in `[StdReport]`.  Check the spelling and that the report is defined (it does not need `enable = true`).  LoopData does not start. |
+| `No fields to write: no enabled report declares [LoopData] [[fields]] and there is no [LoopData] [[Include]] fields line.  LoopData is exiting.` | Nothing asked for anything.  Every report's `skin.conf` lacks a `[[fields]]` declaration (or the declaring reports are disabled) and the old fields line is absent.  LoopData does not start.  See [Declaring fields](declaring-fields.html). |
+| `Could not find target_report: <name>.  The [LoopData] [[Include]] fields line cannot be rendered and is ignored.` | `target_report` names a report that isn't in `[StdReport]`.  Check the spelling and that the report is defined (it does not need `enable = true`).  Any declaring reports are still served; the old fields line is not. |
+| `Could not build target_report <name>.  The [LoopData] [[Include]] fields line cannot be rendered and is ignored.` | The report is defined but its configuration could not be assembled — its `skin.conf` or lang file has a syntax error; the exception on the same line says which.  Any declaring reports are still served; the old fields line is not. |
+| `Could not set up target_report <name> for the [LoopData] [[Include]] fields line, which is ignored.` | The report exists but something in it broke the fields line's setup — a `time_delta` that is not a number, say; the exception on the same line says what.  Any declaring reports are still served. |
+| `No fields to write: no enabled report declares [LoopData] [[fields]] and the [LoopData] [[Include]] fields line could not be set up (see above).  LoopData is exiting.` | The fields line is present but one of the two errors above dropped it, and nothing else declares.  Fix the error above.  LoopData does not start. |
+| `Could not render <name>; its values are omitted.` | A report's fields could not be rendered for a packet — most often a skin asking for something this station cannot supply in the form asked for; the exception and a traceback follow.  That report's entry is dropped and every other report keeps being written, so the file stays live.  Logged once, not on every packet. |
+| `Could not build report <name>, skipping it.` | The report's configuration could not be assembled — most often a `skin.conf` or lang file with a syntax error; the exception follows on the same line.  That report is not served; the others are. |
+| `Could not set up report <name>, skipping it.` | The report's configuration was read but its declaration could not be prepared; the exception follows on the same line.  That report is not served; the others are. |
+| `Report <name> is named like a field on the [[Include]] fields line; the report overwrites the field in the output.` | A report whose name equals a field string on the old fields line — its entry and that flat key would share a name.  Rename one of them. |
 | `Error in LoopData setup.  LoopData is exiting.` | Something else in `[LoopData]` could not be parsed; the exception follows on the same line.  LoopData does not start — nothing is written. |
 | `Ignoring malformed almanac field: <field>` | An [almanac field](almanac-fields.html) didn't parse — usually an unquoted entry that ConfigObj split at a comma, or a non-numeric keyword.  That one field is dropped; the rest still work. |
 | `Ignoring malformed station field: <field>` | Same, for a [station field](station-fields.html). |
@@ -178,22 +196,42 @@ write; the errors all mean something you can act on.
 | `Ignoring windrose_bands (need ascending, non-negative edges): <spec>` | The edges are out of order or negative.  The default bands are used. |
 | `round requires a WeeWX with weeutil.weeutil.rounder` | A field used `round(n)` on a WeeWX too old to support it.  Drop the `round(n)`, or upgrade WeeWX. |
 
+**Warnings — something to fix, but LoopData carries on**
+
+| Message | What it means |
+|---|---|
+| `The [LoopData] [[Include]] fields line and [[Formatting]] target_report are deprecated ... FINISH THE MIGRATION ...` | Written at startup while the old station-wide fields line is present.  Nothing is broken and the line is honored as it always was — but it is the last thing standing between you and the 7.0 model, and it costs a little on every packet.  Once every extension whose pages read the file is upgraded, finish the migration; see [Finishing the migration](declaring-fields.html#finishing-the-migration), which gives the command line for each way of installing WeeWX. |
+| `No report <name>; a relative loop_data_dir is relative to [StdReport] HTML_ROOT (<dir>).  A page expecting the file beside itself will not find it there ...` | The `[[LoopDataReport]]` section (or the report named by `target_report`) is missing, so a relative `loop_data_dir` has nothing to be relative to and the file lands at the top of the reports tree.  Put the section back — the next upgrade would — using `enable = false` if you do not want the page; or set `loop_data_dir` explicitly. |
+| `Report <name> has an unreadable enable (...); treating it as enabled.` | Some report's `enable` is not a boolean.  LoopData carries on; WeeWX's own report engine will complain about the same line every cycle. |
+| `[[Formatting]] target_report = <name> is deprecated with the [[Include]] fields line, and with no fields line it does one thing only ...` | The fields line is gone but a `target_report` other than `LoopDataReport` remains, and it is what a relative `loop_data_dir` is relative to.  Set `loop_data_dir` to an absolute path before the release that removes `target_report`, or the file moves. |
+| `[LoopData] windrose_bands is deprecated: it bands the rose of target_report (<name>) and no other ...` | Written at startup while `windrose_bands` sits under `[LoopData]`.  It still bands that one report's rose, as it did before 7.0; every other report's takes the defaults.  Put it on that report's stanza instead — [finishing the migration](declaring-fields.html#finishing-the-migration) does exactly that. |
+| `Ignoring unrecognized field <field> (report <name>)` | A declared field is in none of loopdata's grammars — a typo, most often.  That one field is dropped; the rest of the report's fields still work. |
+| `Ignoring [LoopData] fields in report <name>: declare fields as named groups in a [[fields]] section, not as a single fields = line.` | The skin's `skin.conf` wrote `fields =` directly under `[LoopData]`.  The declaration is a `[[fields]]` sub-section of named groups; that report declares nothing until it is fixed. |
+| `Ignoring [LoopData] [[fields]] [[[<group>]]] in report <name>: a group is a line of fields, not a section.` | A group was written as a sub-section.  Each group is one `name = field, field, ...` line. |
+
 **Informational — usually normal, occasionally a clue**
 
 | Message | What it means |
 |---|---|
 | `LoopData file is: <path>` | Written at startup.  The quickest way to confirm where loop-data.txt is actually landing — check this first when the page reports `NO DATA (HTTP 404)`. |
-| `obstypes.current : [...]`, `obstypes.day : [...]`, … | Written at startup, one line per period: exactly which observations LoopData is tracking.  **This is also the answer to "what can I put on the fields line?"** — anything in `obstypes.current` is in your station's loop packets. |
+| `<n> of the <m> [[Include]] fields are declared by report <name> (its target_report) and are rendered once, for both.` | Written at startup on an upgraded station: the fields line lists what its target report's skin now declares itself, so those are computed once and copied flat rather than rendered twice.  Normal; the line goes in a later release. |
+| `report <name>: <n> fields (<n> almanac, <n> station), trend window <n>s, windrose bands [...]` | Written at startup, one line per declaring report (and one for the old fields line, if present): what each report asked for and the two settings of its own that reach the accumulators. |
+| `trend accumulators : [...]` / `windrose bands <key>: ...` | Written at startup: the accumulators the reports' trend windows and band edges resolved to.  More than one trend accumulator means a report whose `time_delta` differs from the others'; likewise for the bands. |
+| `obstypes.current : [...]`, `obstypes.day : [...]`, … | Written at startup, one line per period: exactly which observations LoopData is tracking.  **This is also the answer to "what can I declare?"** — anything in `obstypes.current` is in your station's loop packets. |
 | `Cannot evaluate almanac field <field>: <error>` | The field parsed but the almanac could not answer it — commonly a body or attribute the installed almanac doesn't provide.  See [Almanac fields](almanac-fields.html). |
 | `Cannot evaluate station field <field>: <error>` | As above, for `$station` attributes. |
 | `Ignoring <field> for <period> time period as this observation has no day accumulator.` | An aggregate was requested for an observation WeeWX doesn't keep daily summaries for — see [aggregates via xtypes](field-reference.html#aggregates-via-xtypes-are-not-supported). |
 | `Cannot calculate windrun.` / `Cannot calculate beaufort.` | A packet lacked the wind data needed for that derivation.  Occasional lines are normal; constant ones mean your station isn't reporting wind. |
 | `skipping packet (<time>) with age: <seconds>` | An rsync was skipped because the data was older than `skip_if_older_than`.  Normal in moderation — see [Syncing to a remote server](rsync.html#about-those-rsync-errors-in-the-log). |
 | `Ignoring future-dated archive record: <record>` | An archive record timestamped in the future was skipped while seeding accumulators — usually a clock that has since been corrected. |
-| `time_delta of <n> specified, LoopData will use max value of 259200.` | The target report's trend window exceeds three days; LoopData capped it.  See [the trend window](configuration.html#the-trend-window-time_delta). |
+| `time_delta of <n> specified, LoopData will use max value of 259200.` | A report's trend window exceeds three days; LoopData capped it.  See [the trend window](configuration.html#the-trend-window-time_delta). |
 
 ## Still stuck?
 
 Open an issue at
 [github.com/chaunceygardiner/weewx-loopdata/issues](https://github.com/chaunceygardiner/weewx-loopdata/issues)
-with your `[LoopData]` section and the relevant WeeWX log lines.
+with your `[LoopData]` section, the report's declaration (its
+`skin.conf` `[LoopData]` section, or the `[[[LoopData]]]` section under
+its stanza in weewx.conf) and the relevant WeeWX log lines — including the
+`report <name>: <n> fields ...` lines LoopData writes at startup, which
+say what it actually read.

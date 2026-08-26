@@ -115,12 +115,38 @@ SPEC_TESTS = [
     'test_troubleshooting_documents_every_logged_error',
     'test_troubleshooting_invents_no_log_messages',
     'test_version_is_in_lockstep',
+    'test_normalize_fields',
+    'test_declared_fields_from_skin_dict',
+    'test_declaration_merges_like_a_report',
+    'test_enabled_reports',
+    'test_unrecognized_field_is_reported',
+    'test_trend_accumulators_keyed_by_window',
+    'test_per_report_rendering_off_shared_accumulators',
+    'test_legacy_flat_beside_report_keys',
+    'test_windrose_accumulators_keyed_by_bands',
+    'test_almanac_evaluators_are_per_report',
+    'test_sample_skin_declares_what_the_manual_says',
+    'test_windrose_bands_resolution',
+    'test_defaults_unit_follows_stdreport_however_it_is_written',
+    'test_unit_label_windrose_is_not_a_rose',
+    'test_shared_windrose_edges_builds_the_converter_only_on_a_miss',
+    'test_shim_builds_each_evaluator_independently',
+    'test_init_wires_the_contexts',
     # The installer's own stanza: that it arrives commented, that the
     # comments survive weecfg's conditional_merge, and the values it
     # writes on a fresh install.
     'test_installer_stanza_is_commented',
     'test_installer_comments_survive_the_merge',
     'test_installer_defaults',
+    'test_shipped_skins_exist_and_scriptdata_generates_nothing',
+    'test_finish_migration_reports_then_applies',
+    'test_finish_migration_leaves_the_reports_own_bands_alone',
+    'test_finish_migration_does_not_move_the_file',
+    'test_finish_migration_still_has_work_when_the_line_is_gone',
+    'test_legacy_bands_follow_the_target_report',
+    'test_a_failing_report_does_not_stop_the_file',
+    'test_legacy_fields_are_shared_with_any_matching_report',
+    'test_version_tuple_is_shared_with_the_installer',
 ]
 
 suite = unittest.TestSuite([T.ProcessPacketTests(name) for name in SPEC_TESTS])

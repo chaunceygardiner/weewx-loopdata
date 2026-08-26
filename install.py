@@ -14,6 +14,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
+import re
 import sys
 import weewx
 from setup import ExtensionInstaller
@@ -27,10 +28,13 @@ from setup import ExtensionInstaller
 # Only absent keys are merged, so nothing here rewrites a weewx.conf that
 # already has the option.
 #
-# The one option missing below is [[Include]] fields, which is assigned
-# after this string is parsed: ConfigObj has no line continuation for
-# lists, so a fields line here would have to be a single 1200-character
-# line.  See FIELDS.
+# No fields line and no target_report: since 7.0 a report declares the
+# fields it needs in its own skin.conf ([LoopData] [[fields]] -- see
+# skins/LoopData/skin.conf), and every declaring report is its own target.
+# The old [[Include]] fields / [[Formatting]] target_report pair is still
+# honored on an upgraded station (rendered flat, as before) but no longer
+# written; a later release removes it once every extension that used it
+# declares its fields.
 #
 # HTML_ROOT below must be a BARE subdirectory name.  weecfg prepends the
 # installation's own StdReport HTML_ROOT at install time
@@ -44,25 +48,15 @@ CONFIG = """
     # Where to write the loop-data file.
     [[FileSpec]]
         # The directory to write it into.  A relative path is relative to
-        # the target_report's directory, so the default writes the file
-        # beside the sample report's page, which is where that page looks
-        # for it.
+        # the sample report's directory (LoopDataReport below), so the
+        # default writes the file beside the sample report's page, which is
+        # where that page looks for it.
         loop_data_dir = .
 
         # The name of the file.  It is written atomically (a temp file in
         # the same directory, then a rename), so a reader can never see a
         # partial write.
         filename = loop-data.txt
-
-    # Which report's units, formats and language the values follow.
-    [[Formatting]]
-        # Conversions are decided by the report, not by the units stored in
-        # the database, so each value lands in the file exactly as that
-        # report would have rendered it -- page javascript can drop it
-        # straight into HTML.  This is the sample report that ships with the
-        # extension; point it at your own report once you write your own
-        # live page.
-        target_report = LoopDataReport
 
     # Your station's loop cadence.  Worth getting right -- see below.
     [[LoopFrequency]]
@@ -114,10 +108,31 @@ CONFIG = """
         # data late.
         skip_if_older_than = 3
 
-    # What to put in the file.  Nothing not listed here is written.
-    [[Include]]
-
 [StdReport]
+    # A report that generates nothing, for fields read by something that is
+    # not a report at all -- a shell script, an SNMP extension, a monitoring
+    # check.  Enable it and declare those fields here, and they arrive in
+    # the loop-data file under "ScriptData", rather than being parked on a
+    # page's report where an upgrade would overwrite them.  See
+    # https://chaunceygardiner.github.io/weewx-loopdata/declaring-fields.html
+    [[ScriptData]]
+        # false because most stations have no such script.  Nothing is
+        # generated for this report either way -- its skin defines no
+        # generators -- but LoopData reads a report's fields only while it
+        # is enabled.
+        enable = false
+
+        # The skin exists only because WeeWX requires every report to name
+        # one; it contains no templates.
+        skin = ScriptData
+
+        # Your fields go here, in named groups, exactly as a skin declares
+        # them.  For example:
+        #     [[[LoopData]]]
+        #         [[[[fields]]]]
+        #             my_script = current.extraTemp2.raw
+        #
+
     # The sample report that ships with the extension: a live instrument
     # panel that polls the loop-data file.  It is a working example to crib
     # from -- see
@@ -129,7 +144,7 @@ CONFIG = """
         HTML_ROOT = loopdata
 
         # false here turns the sample page off without uninstalling
-        # anything.  It does not stop LoopData from writing the file.
+        # anything.
         enable = true
 
         # The skin the extension installs.
@@ -162,9 +177,9 @@ CONFIG = """
             # this hostname.  Empty means report from wherever it is served.
             analytics_host = ""
 
-        # Formatting overrides for this report -- which, since it is the
-        # target_report above, is also how LoopData formats the values it
-        # writes into the file.
+        # Formatting overrides for this report -- which is also how
+        # LoopData formats the values it writes into the file for this
+        # report's page.
         [[[Units]]]
             # How a number of each unit is rendered.
             [[[[StringFormats]]]]
@@ -180,119 +195,8 @@ CONFIG = """
                 degree_F = %.1f
 """
 
-# Exactly the fields the sample report's instrument panel reads: .raw for
-# needle/petal geometry, report-formatted for every readout, unit.label to
-# pick the dial scales.
-#
-# This stays a Python list rather than a line in CONFIG above because
-# ConfigObj has no line continuation for lists -- one line there would put
-# every field in a single unreadable run, losing the gauge-by-gauge
-# grouping that keeps this list in step with the manual's "What each gauge
-# reads".  ConfigObj writes it out comma-separated either way, so the
-# weewx.conf a user gets is the same.
-FIELDS = [
-    'current.dateTime.raw',
-
-    'current.outTemp',
-    'current.outTemp.raw',
-    'day.outTemp.min.raw',
-    'day.outTemp.max.raw',
-    'day.outTemp.min.formatted',
-    'day.outTemp.max.formatted',
-
-    'current.outHumidity',
-    'current.outHumidity.raw',
-    'day.outHumidity.min.raw',
-    'day.outHumidity.max.raw',
-
-    'current.windSpeed',
-    'current.windSpeed.raw',
-    'current.windDir.raw',
-    'current.windDir.ordinal_compass',
-    '10m.windGust.max',
-    '10m.wind.gustdir.raw',
-    '10m.wind.gustdir.ordinal_compass',
-
-    'current.barometer',
-    'current.barometer.raw',
-    'trend.barometer.raw',
-    'trend.barometer.desc',
-
-    'current.rainRate',
-    'current.rainRate.raw',
-    'day.rain.sum',
-    'day.rain.sum.raw',
-    'day.rainRate.max',
-    'day.rainRate.max.raw',
-
-    'current.dewpoint',
-    'current.dewpoint.raw',
-    'day.dewpoint.min.raw',
-    'day.dewpoint.max.raw',
-    'day.dewpoint.min.formatted',
-    'day.dewpoint.max.formatted',
-
-    # The gauges below hide themselves on stations that do not report the
-    # observation.
-    'current.appTemp',
-    'current.appTemp.raw',
-    'day.appTemp.min.raw',
-    'day.appTemp.max.raw',
-    'day.appTemp.min.formatted',
-    'day.appTemp.max.formatted',
-
-    'current.UV',
-    'current.UV.raw',
-    'day.UV.max',
-
-    'current.radiation',
-    'current.radiation.raw',
-    'day.radiation.max',
-
-    'current.pm2_5',
-    'current.pm2_5_aqi.raw',
-    'current.pm2_5_aqi.formatted',
-
-    'day.windrose.banded',
-    'day.windrose.calm',
-
-    'unit.label.outTemp',
-    'unit.label.barometer',
-    'unit.label.rain',
-    'unit.label.rainRate',
-    'unit.label.windSpeed',
-    ]
-
-# The comment fields carries into weewx.conf.  It is attached here rather
-# than written in CONFIG because the value is assigned here; comments live
-# on the section, keyed by the option name, and conditional_merge copies
-# them across with the value.
-FIELDS_COMMENT = [
-    '# The fields to write into the json file -- a bare comma-separated',
-    '# list.  Each entry is a WeeWX report tag with the $ removed, and',
-    '# becomes a key in the file.  The full grammar (rolling periods,',
-    '# trends, spans, windrose, almanac and station tags, format specs)',
-    '# is at',
-    '# https://chaunceygardiner.github.io/weewx-loopdata/field-reference.html',
-    '#',
-    '# These are exactly the fields the sample report reads, and this is',
-    '# the only fields line there is -- one [LoopData] section, one',
-    '# loop-data file.  A live page of your own adds whatever it needs to',
-    '# this same list; a field not named here is not written, and a page',
-    '# polling for it gets nothing.',
-    '#',
-    '# An extension may add to the line for you: installing weewx-celestial',
-    '# appends the entries its own page reads and leaves everything already',
-    '# here untouched.  Restart weewxd afterwards so LoopData reloads the',
-    '# line.',
-    '#',
-    '# A field entry containing a comma -- a formatting call with two',
-    '# arguments, or an almanac tag with two keywords -- must be quoted, or',
-    '# ConfigObj will split it at the comma into two bogus fields.',
-]
-
 def build_config():
-    """CONFIG plus the fields line, as a ConfigObj.
+    """CONFIG as a ConfigObj.
 
     weeutil.config is imported HERE rather than at module scope so that
     loader()'s version guards below can still be reached.  A module-level
@@ -304,8 +208,6 @@ def build_config():
     import weeutil.config
 
     config = weeutil.config.config_from_str(CONFIG)
-    config['LoopData']['Include']['fields'] = FIELDS
-    config['LoopData']['Include'].comments['fields'] = FIELDS_COMMENT
 
     # A comment ahead of a top-level section header has to be attached to
     # the key: ConfigObj files everything above the first section header
@@ -321,20 +223,37 @@ def build_config():
     ]
     return config
 
+def version_tuple(version):
+    """'4.10.2' -> (4, 10, 2); compares as numbers, not as strings.
+
+    The service's copy (user.loopdata.version_tuple) is the original and
+    is preferred when importable.  On an upgrade that will usually be the
+    PREVIOUSLY installed loopdata rather than this one -- and before 7.0
+    it had no version_tuple at all -- so the local fallback below is the
+    normal path at install time.  The two are the same rule, written
+    twice only because the installer runs before its own files are in
+    place.
+    """
+    try:
+        import user.loopdata
+        return user.loopdata.version_tuple(version)
+    except Exception:
+        return tuple(int(part) for part in re.findall(r'\d+', str(version))[:3])
+
 def loader():
     if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
         sys.exit("weewx-loopdata requires Python 3.7 or later, found %s.%s" % (
             sys.version_info[0], sys.version_info[1]))
 
-    if weewx.__version__ < "4":
-        sys.exit("weewx-loopdata requires WeeWX 4, found %s" % weewx.__version__)
+    if version_tuple(weewx.__version__) < (4, 6):
+        sys.exit("weewx-loopdata requires WeeWX 4.6 or later, found %s" % weewx.__version__)
 
     return LoopDataInstaller()
 
 class LoopDataInstaller(ExtensionInstaller):
     def __init__(self):
         super(LoopDataInstaller, self).__init__(
-            version = "6.11.3",
+            version = "7.0",
             name = 'loopdata',
             description = 'Loop statistics for real time reporting.',
             author = "John A Kline",
@@ -344,6 +263,9 @@ class LoopDataInstaller(ExtensionInstaller):
             files = [
                 ('bin/user', [
                     'bin/user/loopdata.py',
+                    ]),
+                ('skins/ScriptData', [
+                    'skins/ScriptData/skin.conf',
                     ]),
                 ('skins/LoopData', [
                     'skins/LoopData/analytics.inc',

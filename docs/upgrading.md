@@ -24,25 +24,88 @@ Restart weewxd afterwards.  Full steps are on the
 Because your existing configuration is preserved, an upgrade can leave you
 running new code against an old `weewx.conf`.  Everything below is a case
 where that matters.  Read the entries newer than the version you are coming
-from; if you are already on 6.4 or later, there is nothing to do.
+from; if you are already on 7.0, there is nothing to do.
 
 {: .note }
 `weectl extension install` overwrites `skins/LoopData/` on every upgrade,
 including its `lang` files.  Customizations belong in the report's stanza in
-weewx.conf (`[[[Texts]]]` entries and skin `[Extras]` overrides survive
-upgrades); edits made directly to the shipped skin files do not.
+weewx.conf (`[[[Texts]]]` entries, skin `[Extras]` overrides and
+`[[[LoopData]]] [[[[fields]]]]` groups — see
+[Adding to a declaration from weewx.conf](declaring-fields.html#adding-to-a-declaration-from-weewxconf)
+— survive upgrades); edits made directly to the shipped skin files do not.
 
 ## Action required
+
+### 7.0 — reports declare their own fields
+
+Affects you only if you wrote a live page of your own that reads
+`loop-data.txt`.  The sample page needs nothing.  weewx-celestial and
+weewx-weatherboard keep working as they are, through the fields line,
+until each ships a release that declares its fields; upgrade to those when
+they come, and their installers take care of it.
+
+Each report now declares the fields it needs in its own `skin.conf`, and
+LoopData writes them under the report's name, in that report's units and
+language — see [Declaring fields](declaring-fields.html).  The
+station-wide `[LoopData] [[Include]]` fields line and `[[Formatting]]`
+target_report are deprecated together with the flat top-level keys they
+produce.  All three still work exactly as before, so your page keeps
+reading what it always read, and the per-report entries appear in the
+same file beside the flat keys.  A fresh install writes neither.
+
+Before a later release removes the line, move your page over: declare its
+fields under its report — in its skin's `skin.conf`, or under the report's
+stanza in `weewx.conf` — and change its fetch to take the report's entry:
+
+```js
+const data = (await response.json())[$json.dumps($REPORT_NAME)];
+```
+
+(`#import json` at the top of the template.)  From then on the page is
+independent of the fields line.
+
+**Then finish the migration.**  The fields line does not remove itself.
+Once every extension whose pages read the loop-data file has been upgraded
+to a version that declares its fields, run
+
+```
+PYTHONPATH=<WEEWX_ROOT>/bin <the python that runs weewx> -m user.loopdata
+```
+
+which reports what the line still holds and, once every entry on it is
+accounted for, removes it with `--apply` — along with `target_report`,
+moving `[LoopData] windrose_bands` somewhere it still applies.  The exact
+command line depends on how WeeWX was installed;
+[Running it](declaring-fields.html#running-it) gives it for each.  Until you
+do, LoopData keeps honoring the line, which costs a little on every packet
+and keeps the flat keys in the file.  See
+[Finishing the migration](declaring-fields.html#finishing-the-migration).
+
+`windrose_bands` moved with it.  It is a report option now — on the
+report's stanza in `weewx.conf` in that report's windSpeed unit, or under
+`[StdReport] [[Defaults]]` for every report.  A `windrose_bands` still
+under `[LoopData]` bands `target_report`'s rose and no other's, which is
+the one rose it banded before 7.0; every other report takes the WRPLOT
+defaults.  Finishing the migration moves it onto that report's stanza; see
+[`windrose_bands` per report](declaring-fields.html#windrose_bands-per-report).
+
+{: .note }
+A **fresh** install of 7.0 writes no fields line, and weewx-celestial 8.4's
+installer adds its fields only to a line that already exists.  A fresh
+station therefore needs a weewx-celestial newer than 8.4 — one that
+declares its own fields — for the Celestial page to have live values.
+Upgraded stations keep their line and are unaffected.
 
 ### 6.4 — `[[BarometerTrendDescriptions]]` was removed
 
 Affects you only if you customized that section.
 
-The nine `trend.barometer.desc` descriptions are now gettext-style keys in
-the **target report's** `[Texts]`, so they translate through the same lang
-files as everything else.  The old `[LoopData]`
+The nine `trend.barometer.desc` descriptions are gettext-style keys in
+the **report's** `[Texts]` — the report that declares the field, or
+`target_report` for the old fields line — so they translate through the
+same lang files as everything else.  The old `[LoopData]`
 `[[BarometerTrendDescriptions]]` section is gone and is now ignored — delete
-it from weewx.conf.  A custom wording moves to the target report:
+it from weewx.conf.  A custom wording moves to the report:
 
 ```
 [StdReport]
@@ -53,21 +116,13 @@ it from weewx.conf.  A custom wording moves to the target report:
 
 See [Translating `trend.barometer.desc`](configuration.html#translating-trendbarometerdesc).
 
-### 6.0 — the sample panel needs a new `fields` line
+### 6.0 — the sample panel reads fields the old default never listed
 
-Affects you only if you publish the sample report.
-
-Upgrading replaces the sample skin's page with the
-[instrument panel](sample-skin.html) but keeps your existing `fields` line,
-and the panel reads fields the old default never included (`.raw` geometry,
-`unit.label` scales, `day.windrose.*`).  With an old fields line the page
-serves half-dead: text readouts, but no needles, no min–max bands and no
-windrose.
-
-Replace the `fields` line under `[LoopData] [[Include]]` with the
-[sample configuration](configuration.html#sample-configuration)'s, appending
-any fields your own pages use, and restart weewxd.  Fresh installs get it by
-default.
+Nothing to do on 7.0 or later: the sample skin declares its own fields
+and reads its own entry, whatever the fields line says.  Between 6.0 and
+6.11 the panel read the station-wide fields line, and an old line served
+it half-dead — text readouts, but no needles, min–max bands or windrose —
+until the line was replaced with the sample configuration's.
 
 ### 6.0 — `windrun_<direction>` was removed
 
@@ -87,6 +142,12 @@ a restart.  Details, and the aggregates the new type adds, are under
 
 ## Worth knowing, but nothing to do
 
+* **7.0** — a field none of the parsers accept is logged
+  (`Ignoring unrecognized field`), naming the report that declared it;
+  it was dropped silently.  A trend window or windrose bands that differ
+  between reports each get their own accumulator; reports that agree
+  share one, so a station whose reports inherit `[[Defaults]]` runs
+  exactly the accumulators it ran before.
 * **6.11.2** — the sample skin ships `loop_data_file = loop-data.txt`
   where it shipped `../loop-data.txt` before.  Nothing about your
   installation changes: `weewx.conf` carries its own copy of the option

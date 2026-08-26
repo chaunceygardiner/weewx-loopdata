@@ -26,7 +26,7 @@ radiation, air quality) hide themselves automatically:
 
 ![The LoopData sample report: a live instrument panel](images/LoopDataReport.png)
 
-**Requirements:** Python 3.7 or later and WeeWX 4 or 5.  No third-party
+**Requirements:** Python 3.7 or later and WeeWX 4.6 or later.  No third-party
 Python packages.
 
 ## The whole idea in one example
@@ -40,21 +40,22 @@ High today: $day.outTemp.max
 Sunset: $almanac.sunset
 ```
 
-List those same tags — with the `$` removed — on the `fields` line of the
-`[LoopData]` section of weewx.conf:
+Declare those same tags — with the `$` removed — in your skin's
+`skin.conf`:
 
 ```
 [LoopData]
-    [[Include]]
-        fields = current.outTemp, day.outTemp.max, almanac.sunset
+    [[fields]]
+        readings = current.outTemp, day.outTemp.max, almanac.sunset
 ```
 
 Now, on every loop packet, LoopData writes a json file, `loop-data.txt`, with
-those tags as its keys — and every value already unit-converted and formatted
-exactly as your report would render it:
+an entry for your report holding those tags as its keys — and every value
+already unit-converted and formatted exactly as your report would render
+it:
 
 ```json
-{"current.outTemp": "79.2°F", "day.outTemp.max": "85.1°F", "almanac.sunset": "20:32"}
+{"MyReport": {"current.outTemp": "79.2°F", "day.outTemp.max": "85.1°F", "almanac.sunset": "20:32"}}
 ```
 
 Finally, in the template, wrap each tag in an element whose id is the tag, and
@@ -65,10 +66,11 @@ Temperature: <span id="current.outTemp">$current.outTemp</span><br/>
 High today: <span id="day.outTemp.max">$day.outTemp.max</span><br/>
 Sunset: <span id="almanac.sunset">$almanac.sunset</span>
 
+#import json
 <script>
   async function updateLoopData() {
     const response = await fetch('loop-data.txt', {cache: 'no-store'});
-    const data = await response.json();
+    const data = (await response.json())[$json.dumps($REPORT_NAME)];
     for (const key in data) {
       const element = document.getElementById(key);
       if (element) element.innerHTML = data[key];
@@ -90,6 +92,11 @@ all there is to it.
   version.
 * [Configuration](configuration.html) — every `[LoopData]` option in
   weewx.conf.
+* [Declaring fields](declaring-fields.html) — how a report declares the
+  fields it needs, and is served in its own units and language; and how a
+  consumer that is *not* a report — a shell script, an SNMP extension, a
+  monitoring check — gets its fields, through the
+  [`ScriptData` report](declaring-fields.html#fields-for-scripts-and-other-non-report-consumers).
 * [Building a live page](build-a-live-page.html) — the recipe for using
   LoopData in your own skin, with production-grade javascript, and what
   loop-data.txt guarantees.
@@ -146,7 +153,7 @@ extension (its GitHub repository is no longer available).
 
 ## About this manual
 
-This manual describes loopdata 6.3 and later.  What changed in each version
+This manual describes loopdata 7.0 and later.  What changed in each version
 is on the
 [releases page](https://github.com/chaunceygardiner/weewx-loopdata/releases);
 what an existing install must change is on

@@ -1,7 +1,7 @@
 ---
 title: Almanac fields
 layout: default
-nav_order: 8
+nav_order: 9
 ---
 
 # Almanac fields
@@ -16,7 +16,7 @@ computed with whatever almanac WeeWX has registered —
 [weewx-skyfield](https://github.com/chaunceygardiner/weewx-skyfield) for the
 full Skyfield experience, PyEphem if installed, or WeeWX's built-in fallback
 (sunrise, sunset and moon phase only) — and are converted and formatted per
-the target report, exactly as the report tag would render.
+the report that declared the field, exactly as the report tag would render.
 
 Examples:
 
@@ -66,10 +66,10 @@ DST-correct where ±86400 is not.)
 
 ## Pinning units
 
-By default almanac values are converted per the target report, exactly as the
+By default almanac values are converted per the declaring report, exactly as the
 report tag would render — including any `[Units]` `[[Groups]]` overrides the
 report carries.  That is right for formatted values, but it means a `.raw`
-field can change meaning with the report's settings: a target report that sets
+field can change meaning with the report's settings: a report that sets
 `group_deltatime = hour` makes `almanac.sun.visible.raw` emit hours instead of
 seconds.
 
@@ -102,8 +102,8 @@ Pin the unit on any `.raw` field your javascript consumes numerically.
 * The json key is the field entry verbatim, so element ids can match keys
   as usual.
 * A call with more than one keyword contains a comma, so the entry must be
-  quoted in weewx.conf:
-  `fields = ..., "almanac(pressure=0, horizon=-8).sun.rise.raw", ...`.
+  quoted in the declaration:
+  `sun = almanac.sunrise, "almanac(pressure=0, horizon=-8).sun.rise.raw"`.
   None of the standard entries above need quoting.
 * A field whose endpoint is a tuple of scalars is emitted as a json array —
   e.g. a field ending in `moon_phases`.
@@ -170,7 +170,7 @@ loopdata 5.0 (and celestial 6.0) those are almanac fields instead.  Every
 | `current.tomorrowSunrise.raw` | `almanac(days=1).sunrise.unix_epoch.raw` |
 
 The pinned unit segments keep the old fields' fixed meanings (epoch seconds,
-seconds of daylight) no matter how the target report's units are set —
+seconds of daylight) no matter how the report's units are set —
 celestial's own loop fields never followed report units, so a faithful
 migration pins.
 
