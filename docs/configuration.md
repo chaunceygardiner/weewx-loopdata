@@ -13,8 +13,9 @@ nav_order: 4
 Most configuration lives in the `[LoopData]` section of weewx.conf, which the
 installer creates, and this page documents every option in it — the
 [sample configuration](#sample-configuration) at the bottom is exactly what a
-fresh install writes (which since 6.11.3 arrives commented; the block below
-prints the values alone).
+fresh install writes (which since 6.11.3 arrives with a comment on every
+option, and now writes the options that only pick a default commented
+out).
 
 The fields themselves are not in `[LoopData]`: each report declares the
 fields it needs in its own `skin.conf`, and is served in its own units,
@@ -351,8 +352,12 @@ greater than 259200 (3 days), LoopData caps it at 259200.
 
 Fresh installs add the following `[LoopData]` section to weewx.conf.  Since
 6.11.3 each section and option in it arrives with a comment saying what it is
-for; the block below strips those, so it is the values a fresh install writes,
-not the shape of the text.  There is no fields line: the
+for; the block below strips those prose comments, so it is the values a fresh
+install writes, not the shape of the text.  The `#` marks are not prose,
+though, and are shown: an option that only selects a default now arrives
+commented out, so that the value LoopData itself supplies — including a better
+one a later release may bring — is the one that applies.  There is
+no fields line: the
 [sample report's instrument panel](sample-skin.html) declares the fields it
 reads in its own `skin.conf`, as every live page does — see
 [Declaring fields](declaring-fields.html).  Upgrading installs keep whatever
@@ -368,11 +373,18 @@ weewx.conf, and those keep working as before.
         seconds = 2.0
     [[RsyncSpec]]
         enable = false
+        #compress = false
+        #log_success = false
+        #timeout = 1
+        #skip_if_older_than = 3
         remote_server = www.foobar.com
         remote_user = root
         remote_dir = /home/weewx/loop-data
-        compress = False
-        log_success = False
-        timeout = 1
-        skip_if_older_than = 3
 ```
+
+A station installed before that change has all eight of those
+`[[RsyncSpec]]` options as ordinary live settings, with the same values;
+nothing about it changes, and there is no reason to comment anything out by
+hand.  Go by what your own weewx.conf shows: where it reads `#timeout = 1`,
+uncomment the line and change it; where it reads `timeout = 1`, edit the
+value.

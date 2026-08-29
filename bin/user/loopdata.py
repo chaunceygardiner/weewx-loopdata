@@ -1619,14 +1619,20 @@ class LoopData(StdService):
             target_report            = target_report,
             loop_frequency           = loop_frequency,
             tmpname                  = tmp.name,
-            enable                   = to_bool(rsync_spec_dict.get('enable')),
+            # The rsync switches default to False rather than being read
+            # bare: to_bool(None) raises, so a station that deletes one of
+            # these keys -- or the whole [[RsyncSpec]] section -- used to
+            # stop LoopData at startup.  False is what the installer has
+            # always written, and it now writes compress and log_success
+            # commented out, leaving these fallbacks to answer.
+            enable                   = to_bool(rsync_spec_dict.get('enable', False)),
             remote_server            = rsync_spec_dict.get('remote_server'),
             remote_port              = to_int(rsync_spec_dict.get('remote_port')) if rsync_spec_dict.get(
                                       'remote_port') is not None else None,
             remote_user              = rsync_spec_dict.get('remote_user'),
             remote_dir               = rsync_spec_dict.get('remote_dir'),
-            compress                 = to_bool(rsync_spec_dict.get('compress')),
-            log_success              = to_bool(rsync_spec_dict.get('log_success')),
+            compress                 = to_bool(rsync_spec_dict.get('compress', False)),
+            log_success              = to_bool(rsync_spec_dict.get('log_success', False)),
             ssh_options              = LoopData.compose_ssh_options(
                                        rsync_spec_dict.get('ssh_options', ''), rsync_timeout),
             timeout                  = rsync_timeout,

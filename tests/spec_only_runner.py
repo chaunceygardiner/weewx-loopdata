@@ -136,6 +136,10 @@ SPEC_TESTS = [
     # comments survive weecfg's conditional_merge, and the values it
     # writes on a fresh install.
     'test_installer_stanza_is_commented',
+    'test_installer_commented_defaults',
+    'test_installer_commented_defaults_match_the_value_that_governs',
+    'test_installer_comment_blocks_land_where_they_are_written',
+    'test_installer_merged_comments_stay_in_their_section',
     'test_installer_comments_survive_the_merge',
     'test_installer_defaults',
     'test_shipped_skins_exist_and_scriptdata_generates_nothing',

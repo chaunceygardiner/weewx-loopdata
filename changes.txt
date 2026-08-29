@@ -1,6 +1,42 @@
 loopdata change history
 -----------------------
 
+7.x (in progress)
+-----------------
+- Existing installs are untouched: nothing below changes a weewx.conf that
+  already exists, and there is nothing to do by hand.
+- A fresh install writes eight options into weewx.conf commented out,
+  each showing the value that will apply: compress, log_success, timeout
+  and skip_if_older_than in [[RsyncSpec]], and loop_data_file,
+  expiration_time, googleAnalyticsId and analytics_host in the sample
+  report's [Extras] (the last two as examples -- their default is to be
+  absent).  weectl fills in absent keys and never rewrites one, so an
+  option written live freezes that station on today's default for ever,
+  while a commented one leaves loopdata's own value to answer, including
+  a better one a later release brings.  What stays live is what loopdata
+  cannot supply for itself: the switches (enable), the placeholders a
+  user must replace (remote_server, remote_user, remote_dir,
+  page_update_pwd), what weectl needs (HTML_ROOT, skin), the station's
+  loop cadence, the file's directory and name, and the sample report's
+  string formats -- which are on the report's stanza so that a
+  station-wide [[Defaults]] cannot put a decimal on a wind dial that has
+  no room for one.
+- Fixed: deleting enable, compress or log_success from [[RsyncSpec]] --
+  or deleting the whole section -- stopped LoopData at startup with
+  "Unknown boolean specifier: 'None'".  Each now falls back to false,
+  which is what the installer has always written.
+- The installer's [[ScriptData]] example of how to declare fields no
+  longer lands in weewx.conf indented as though it belonged to
+  [StdReport].  ConfigObj attaches a comment block to the next key and
+  writes it at that key's indent, and the block sat after the section's
+  last option.
+- Internal: three guard tests on the installer stanza -- the commented
+  options pinned as a complete set with their values, each value checked
+  against the fallback that governs when the key is absent, and comment
+  placement checked through weecfg's own merge, counted so that a block
+  dropped outright (which happens silently when it attaches to a section
+  weewx.conf already has) fails.
+
 7.0 2026/08/26
 --------------
 - ACTION REQUIRED, 1 of 3 -- WeeWX 4.6 or later: this release requires WeeWX

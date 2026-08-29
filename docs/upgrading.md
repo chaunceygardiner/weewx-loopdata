@@ -142,6 +142,21 @@ a restart.  Details, and the aggregates the new type adds, are under
 
 ## Worth knowing, but nothing to do
 
+* **7.x (in progress)** — a *fresh* install now writes eight of the options it puts in
+  `weewx.conf` commented out, showing the value that applies: four in
+  `[[RsyncSpec]]` (`compress`, `log_success`, `timeout`,
+  `skip_if_older_than`) and four in the sample report's `[Extras]`
+  (`loop_data_file`, `expiration_time`, and examples for
+  `googleAnalyticsId` and `analytics_host`).  Left commented, LoopData's
+  own value answers, so a later release's better default reaches that
+  station; written live, it would be frozen for ever, since the installer
+  fills in absent keys and never rewrites one.  **Your `weewx.conf` is not
+  touched** — those options are live settings on your station, with the
+  same values, and they keep governing.  There is nothing to comment out
+  by hand.  Also fixed: deleting `enable`, `compress` or `log_success`
+  from `[[RsyncSpec]]` — or deleting the whole section — used to stop
+  LoopData at startup with `Unknown boolean specifier: 'None'`.  Each now
+  defaults to `false`, which is what the installer has always written.
 * **7.0** — a field none of the parsers accept is logged
   (`Ignoring unrecognized field`), naming the report that declared it;
   it was dropped silently.  A trend window or windrose bands that differ

@@ -51,6 +51,7 @@ from datetime import date
 import weewx
 import weewx.accum
 import weewx.almanac
+import weewx.defaults
 import weewx.manager
 import weewx.station
 import weewx.units
@@ -8213,32 +8214,38 @@ class ProcessPacketTests(unittest.TestCase):
                          % stale)
 
     @classmethod
-    def installer_config(cls) -> configobj.ConfigObj:
-        """The stanza install.py writes into a fresh weewx.conf.
+    def installer_module(cls) -> Any:
+        """install.py, loaded as a module.
 
-        It is a ConfigObj rather than a dict so the option comments ride
-        along -- weecfg merges with weeutil.config.conditional_merge, which
-        copies a key's comments only if the source has them.  Loading it
-        needs weecfg.extension imported first: that module aliases itself as
-        'setup' in sys.modules for installers written against the pre-5.0
-        name, which is what install.py's own import resolves through.
+        Loading it needs weecfg.extension imported first: that module
+        aliases itself as 'setup' in sys.modules for installers written
+        against the pre-5.0 name, which is what install.py's own import
+        resolves through.  A module rather than an ast.literal_eval of the
+        source, because the stanza is weewx.conf TEXT, not a Python
+        literal.
         """
         importlib.import_module('weecfg.extension')   # registers the alias
         spec = importlib.util.spec_from_file_location(
             'loopdata_install', os.path.join(cls.REPO_ROOT, 'install.py'))
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        return module.LoopDataInstaller()['config']
+        return module
+
+    @classmethod
+    def installer_config(cls) -> configobj.ConfigObj:
+        """The stanza install.py writes into a fresh weewx.conf.
+
+        It is a ConfigObj rather than a dict so the option comments ride
+        along -- weecfg merges with weeutil.config.conditional_merge, which
+        copies a key's comments only if the source has them.
+        """
+        return cls.installer_module().LoopDataInstaller()['config']
 
     @classmethod
     def installer_files(cls) -> List[str]:
         """Every file install.py ships, repo-relative."""
-        importlib.import_module('weecfg.extension')
-        spec = importlib.util.spec_from_file_location(
-            'loopdata_install_files', os.path.join(cls.REPO_ROOT, 'install.py'))
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return [f for _dest, files in module.LoopDataInstaller()['files'] for f in files]
+        return [f for _dest, files in cls.installer_module().LoopDataInstaller()['files']
+                for f in files]
 
     @classmethod
     def installer_loopdata_config(cls) -> Dict[str, Any]:
@@ -8247,13 +8254,51 @@ class ProcessPacketTests(unittest.TestCase):
         assert set(config) >= {'FileSpec', 'LoopFrequency', 'RsyncSpec'}, sorted(config)
         return config
 
-    @staticmethod
-    def documented_sample_config(text: str) -> Tuple[Dict[str, str], List[str]]:
-        """The page's full [LoopData] sample block, parsed.
+    # A commented-out ASSIGNMENT ('#timeout = 1'), never a prose comment,
+    # which by convention always has a space after the '#'.
+    COMMENTED_OPTION_RE = re.compile(r'^(\s*)#(\w+)\s*=\s*(.*?)\s*$')
+    CONFIG_SECTION_RE = re.compile(r'^(\s*)(\[+)([^\]]+)\]+\s*$')
+
+    @classmethod
+    def installer_commented_options(cls) -> Dict[str, Dict[str, str]]:
+        """install.py's commented-out assignments, as {section: {option:
+        value}}, keyed by the innermost section name.
+
+        Read out of CONFIG as TEXT, because a commented-out option is by
+        definition absent from the parsed ConfigObj -- which is the whole
+        point (absent, the code's own fallback governs) and also the reason
+        test_installer_stanza_is_commented, which walks the parsed object,
+        cannot see any of these.
+        """
+        found: Dict[str, Dict[str, str]] = {}
+        section = None
+        for line in cls.installer_module().CONFIG.splitlines():
+            header = cls.CONFIG_SECTION_RE.match(line)
+            if header:
+                section = header.group(3).strip()
+                continue
+            option = cls.COMMENTED_OPTION_RE.match(line)
+            if option:
+                found.setdefault(section, {})[option.group(2)] = option.group(3)
+        return found
+
+    @classmethod
+    def documented_sample_config(cls, text: str) -> Tuple[Dict[str, str],
+                                                          Dict[str, str],
+                                                          List[str]]:
+        """The page's full [LoopData] sample block, parsed into its LIVE
+        assignments, its COMMENTED-OUT ones and the fields line.
 
         Selected by content, not position: the README has 37 fenced blocks
         and six of them mention [LoopData], but only the complete sample
         carries every sub-section.
+
+        The two kinds of assignment are kept apart rather than lumped
+        together: the block prints both, and which side a line is on is
+        the very thing the page is claiming.  Lumping them was
+        also the old parser's bug -- it kept any line containing '=' that
+        did not start with '[', so '#timeout = 1' parsed as an option
+        literally named '#timeout'.
         """
         # Odd indices only: splitting on the fence puts block CONTENTS at
         # odd positions and surrounding prose at even ones, and the prose
@@ -8264,17 +8309,24 @@ class ProcessPacketTests(unittest.TestCase):
         assert len(blocks) == 1, 'expected exactly one full sample block, got %d' % len(blocks)
         block = blocks[0]
         values: Dict[str, str] = {}
+        commented: Dict[str, str] = {}
         fields: List[str] = []
         for line in block.split('\n'):
             line = line.strip()
-            if '=' not in line or line.startswith('['):
+            if line.startswith('['):
+                continue
+            option = cls.COMMENTED_OPTION_RE.match(line)
+            if option:
+                commented[option.group(2)] = option.group(3)
+                continue
+            if '=' not in line or line.startswith('#'):
                 continue
             key, _, value = line.partition('=')
             if key.strip() == 'fields':
                 fields = [f.strip() for f in value.split(',')]
             else:
                 values[key.strip()] = value.strip()
-        return values, fields
+        return values, commented, fields
 
     def test_manual_sample_config_matches_the_installer(self):
         # Both the manual and the README print a [LoopData] block under the
@@ -8288,18 +8340,31 @@ class ProcessPacketTests(unittest.TestCase):
             if isinstance(section, dict):
                 for key, value in section.items():
                     installed[key] = str(value)
-        assert len(installed) >= 11, sorted(installed)
+        assert len(installed) >= 7, sorted(installed)
+        # The commented-out half of the same claim.  install.py's stanza
+        # carries commented options under [StdReport] too; only the
+        # [LoopData] ones belong in this block.
+        installer_commented = self.installer_commented_options()
+        commented_here: Dict[str, str] = {}
+        for name in config.sections:
+            commented_here.update(installer_commented.get(name, {}))
+        assert commented_here, 'no commented options found in [LoopData]'
         for where, text in (('docs/configuration.md',
                              self.doc_text('configuration.md')),
                             ('README.md', self.repo_text('README.md'))):
-            values, fields = self.documented_sample_config(text)
+            values, commented, fields = self.documented_sample_config(text)
             for key, value in sorted(installed.items()):
                 self.assertIn(key, values, (where, key))
                 self.assertEqual(values[key].lower(), value.lower(), (where, key))
+            for key, value in sorted(commented_here.items()):
+                self.assertIn(key, commented, (where, key))
+                self.assertEqual(commented[key].lower(), value.lower(), (where, key))
             # BOTH directions: a documented option the installer no longer
             # writes (7.0 dropped target_report and the fields line) is a
-            # stale claim too.
+            # stale claim too -- and so is printing as live an option that
+            # the installer now writes commented out, or the other way round.
             self.assertEqual(sorted(values), sorted(installed), where)
+            self.assertEqual(sorted(commented), sorted(commented_here), where)
             self.assertEqual(fields, [], where)
 
     def test_manual_field_grammar_matches_the_code(self):
@@ -8366,11 +8431,20 @@ class ProcessPacketTests(unittest.TestCase):
         # here was doing nothing; meanwhile the installer had been writing
         # both into every weewx.conf, undocumented, with semantics
         # (present-but-empty) that turned out to be broken.
+        #
+        # The installer's COMMENTED-OUT options count too, for the same
+        # reason and read the same way -- out of the stanza's text, since a
+        # commented option is absent from the parsed object.  An option is
+        # no less a user-facing knob for arriving commented out; if reading
+        # only what ConfigObj can see were enough, demoting an option would
+        # quietly excuse the manual from documenting it.  (The two asserts
+        # below are the landmark that catches exactly that.)
         skin = configobj.ConfigObj(
             os.path.join(self.I18N_SKIN_DIR, 'skin.conf'),
             encoding='utf-8', file_error=True)
         installed = self.installer_config()['StdReport']['LoopDataReport']['Extras']
-        extras = set(skin['Extras']) | set(installed)
+        extras = (set(skin['Extras']) | set(installed)
+                  | set(self.installer_commented_options().get('Extras', {})))
         assert 'loop_data_file' in extras, sorted(extras)
         assert 'googleAnalyticsId' in extras, sorted(extras)
         documented = set(re.findall(r'`([a-z_A-Z0-9]+)`',
@@ -8571,6 +8645,12 @@ class ProcessPacketTests(unittest.TestCase):
         # across only if the source has them.  A dict has none, which is why
         # this stanza used to land as bare key = value lines.  Every option
         # and every section must therefore arrive explained.
+        #
+        # This walks the PARSED stanza, so it reaches only the LIVE options.
+        # A commented-out one is absent from the parsed object -- demote an
+        # option and it drops out of this test's coverage without anything
+        # failing.  test_installer_commented_defaults is where those are
+        # covered instead.
         def walk(section, path: str) -> None:
             for key in section.scalars:
                 comment = [line for line in section.comments.get(key, [])
@@ -8593,6 +8673,208 @@ class ProcessPacketTests(unittest.TestCase):
         config = self.installer_config()
         self.assertEqual(sorted(config.sections), ['LoopData', 'StdReport'])
         walk(config, '')
+
+    # The commented-out options, section by section, with the value each
+    # shows.  Named here rather than derived from a rule: purple tried a
+    # derived rule twice and mis-sorted its `enable` both times.
+    COMMENTED_DEFAULTS = {
+        'RsyncSpec': {
+            'compress': 'false',
+            'log_success': 'false',
+            'timeout': '1',
+            'skip_if_older_than': '3',
+        },
+        'Extras': {
+            'loop_data_file': 'loop-data.txt',
+            'expiration_time': '4',
+            'googleAnalyticsId': 'G-XXXXXXXXXX',
+            'analytics_host': 'www.example.com',
+        },
+    }
+
+    # The two whose default is ABSENCE, not a value: their assignment is an
+    # EXAMPLE (and says so), so there is no fallback for it to equal.
+    COMMENTED_EXAMPLES = {'googleAnalyticsId', 'analytics_host'}
+
+    def test_installer_commented_defaults(self):
+        """The options a fresh install receives commented out, pinned as a
+        COMPLETE SET, values included.
+
+        An option that only selects a default is written commented out:
+        conditional_merge fills in absent keys and never rewrites, so a
+        live value freezes that station on today's default for ever, while
+        a commented one leaves the code's own fallback to answer --
+        including a better one a later release brings.
+
+        Pinned as a complete set in both directions, not by checking that
+        today's demoted names are absent: a release that adds a new option
+        LIVE against a fallback in the code is the very drift this scheme
+        exists to prevent, and would sail past a named-absence check.
+        Adding or demoting an option has to be a deliberate act that edits
+        this test.
+        """
+        self.assertEqual(self.installer_commented_options(),
+                         self.COMMENTED_DEFAULTS)
+        # And each one still arrives explained.  walk() above cannot see
+        # these -- they are not in the parsed object at all -- so the
+        # comment requirement is re-stated here against the source text.
+        #
+        # The line IMMEDIATELY above must be prose, with nothing skipped.
+        # An earlier form scanned back over blanks and over other commented
+        # assignments to the nearest prose line anywhere above, which an
+        # option with no comment of its own could satisfy with its
+        # NEIGHBOUR's: delete log_success's comment, sit it directly under
+        # compress, and that form passed.
+        lines = self.installer_module().CONFIG.splitlines()
+        for index, line in enumerate(lines):
+            option = self.COMMENTED_OPTION_RE.match(line)
+            if not option:
+                continue
+            above = lines[index - 1] if index else ''
+            self.assertTrue(above.strip().startswith('# '),
+                            'commented-out option with no comment of its '
+                            'own directly above it: %s' % line)
+
+    def test_installer_commented_defaults_match_the_value_that_governs(self):
+        """The drift guard.  A commented-out option shows the user the
+        value that will actually be used, so it must equal what answers
+        when the key is absent.
+
+        WHICH SIDE MOVES WHEN THIS FAILS IS A JUDGEMENT, NOT A FORMALITY.
+        While an option was written live, the installer's value is what
+        every fresh install has actually been running and the fallback was
+        never reached, so editing the assignment down to the fallback turns
+        this green while silently changing what new stations get.  Moving
+        the fallback is what preserves behavior; moving the assignment is a
+        deliberate change of default and belongs in changes.txt.  Existing
+        stations are unaffected either way -- their weewx.conf already
+        carries the value the installer wrote, and an upgrade never
+        rewrites it.
+        """
+        commented = self.installer_commented_options()
+
+        # [[RsyncSpec]]: read the fallbacks the way a station with no
+        # [[RsyncSpec]] section reads them -- through a real __init__.
+        # (That configuration used to RAISE: to_bool(None) is a ValueError,
+        # so the three booleans had no fallback at all until this release
+        # gave them one.)
+        rsync = dict(commented['RsyncSpec'])
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp)
+            del config_dict['LoopData']['RsyncSpec']
+            service = user.loopdata.LoopData(self.FakeEngine(config_dict), config_dict)
+            cfg = service.cfg
+            os.unlink(cfg.tmpname)
+        self.assertEqual(to_bool(rsync.pop('compress')), cfg.compress)
+        self.assertEqual(to_bool(rsync.pop('log_success')), cfg.log_success)
+        self.assertEqual(to_int(rsync.pop('timeout')), cfg.timeout)
+        self.assertEqual(to_int(rsync.pop('skip_if_older_than')),
+                         cfg.skip_if_older_than)
+        # Anything else demoted here is a default nothing checks.
+        self.assertEqual(rsync, {})
+
+        # [[[Extras]]] are read by the sample page, so what answers when
+        # weewx.conf is silent is the skin's own [Extras] -- shipped anew
+        # on every upgrade, which is the point of demoting them.  (Only
+        # what answers, not what governs: build_skin_dict merges skin.conf,
+        # then [[Defaults]], then [StdReport] scalars, then the report's
+        # own stanza, so a station can still override either.)
+        extras = dict(commented['Extras'])
+        skin = configobj.ConfigObj(
+            os.path.join(self.REPO_ROOT, 'skins', 'LoopData', 'skin.conf'),
+            encoding='utf-8', file_error=True)['Extras']
+        for name in sorted(self.COMMENTED_EXAMPLES):
+            # An example, not a default: its default is ABSENCE, so the
+            # skin must not set it either.
+            self.assertNotIn(name, skin, name)
+            extras.pop(name)
+        for name, value in sorted(extras.items()):
+            self.assertIn(name, skin, name)
+            self.assertEqual(str(skin[name]), value, name)
+
+    def test_installer_comment_blocks_land_where_they_are_written(self):
+        """Rule 3, checked on the source: ConfigObj attaches a comment
+        block to the NEXT key and writes it at THAT key's indent.  So a
+        comment block indented more deeply than the line that follows it
+        does not stay where its author put it -- it is re-indented out of
+        the block it documents, by as many levels as the next key is
+        shallower, reaching column 0 whenever that key is top-level.
+
+        That is what a virgin weewx.conf shows.  The production case is
+        worse and invisible: conditional_merge transfers comments only
+        inside its `k not in a_dict` branch, so a block attached to a key
+        the target ALREADY HAS -- [StdReport] always -- is dropped
+        entirely.  Nothing is left to measure, which is why
+        test_installer_merged_comments_stay_in_their_section counts.
+
+        The practical rule this enforces: every section ends with a LIVE
+        key.  It catches prose blocks as well as demoted options -- the
+        [[ScriptData]] "Your fields go here" example used to sit after the
+        section's last key and merged at [StdReport]'s indent, reading as
+        an option of somebody else's section.
+        """
+        lines = self.installer_module().CONFIG.splitlines()
+        for index, line in enumerate(lines):
+            if not line.strip().startswith('#'):
+                continue
+            following = [l for l in lines[index + 1:] if l.strip()]
+            assert following, 'CONFIG ends with a comment: %r' % line
+            self.assertLessEqual(
+                len(line) - len(line.lstrip()),
+                len(following[0]) - len(following[0].lstrip()),
+                'comment is indented deeper than the key it attaches to, so '
+                'it merges outside the block it documents: %r before %r'
+                % (line, following[0]))
+
+    def test_installer_merged_comments_stay_in_their_section(self):
+        """Rule 3 again, through the real weeutil.config.conditional_merge,
+        against BOTH merge targets.
+
+        Two things are checked, and the second is the one that matters.
+        The indent of every commented-out assignment that survives says it
+        landed inside the section it documents.  The COUNT says none went
+        missing -- and only the count can say that, because a comment block
+        attached to a key that already exists in the target is dropped
+        without a trace, leaving no line to measure.  A weewx.conf that
+        already has [StdReport] (every real one does) is exactly where that
+        happens, so it is merged into here as well as a virgin file.
+        """
+        expected = sum(len(options)
+                       for options in self.COMMENTED_DEFAULTS.values())
+        for label, text in (
+                # Parsed from TEXT, not built empty: ConfigObj takes its
+                # indent_type from what it read, and a config that was
+                # never read has indent_type = '' and writes flush left.
+                ('virgin', '[Station]\n    location = home\n'),
+                ('with [StdReport]',
+                 '[Station]\n    location = home\n'
+                 '[StdReport]\n    HTML_ROOT = public_html\n'
+                 '    [[SeasonsReport]]\n        skin = Seasons\n')):
+            merged = configobj.ConfigObj(io.StringIO(text), encoding='utf-8')
+            weeutil.config.conditional_merge(merged, self.installer_config())
+            out = io.BytesIO()
+            merged.write(out)
+
+            depth = 0
+            seen = 0
+            for line in out.getvalue().decode('utf-8').splitlines():
+                header = self.CONFIG_SECTION_RE.match(line)
+                if header:
+                    depth = len(header.group(2))
+                    continue
+                option = self.COMMENTED_OPTION_RE.match(line)
+                if option:
+                    seen += 1
+                    self.assertEqual(
+                        len(option.group(1)), 4 * depth,
+                        '%s: wrong indentation, so it merged outside its '
+                        'section: %r' % (label, line))
+            self.assertEqual(
+                seen, expected,
+                '%s: %d of %d commented-out options reached weewx.conf.  A '
+                'comment block attached to a key the target already has is '
+                'dropped entirely: order a LIVE key last in every section.'
+                % (label, seen, expected))
 
     def test_installer_comments_survive_the_merge(self):
         """The stanza's comments reach weewx.conf, through weecfg's own code.
@@ -8934,15 +9216,24 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertIn('[[[[fields]]]]', text)
 
     def test_installer_defaults(self):
-        """The values a fresh install writes.
+        """The values a fresh install writes LIVE.
 
         They are only ever read on a fresh `weectl extension install`, so a
         wrong one ships silently.  Compared through to_bool/to_int because a
         ConfigObj stanza yields strings where the old Python dict yielded an
         int -- the installed weewx.conf is text either way.
+
+        What a fresh install receives commented out instead is pinned by
+        test_installer_commented_defaults; the LIVE set here is complete,
+        section by section, so demoting one without saying so fails.
         """
         config = self.installer_config()
         loopdata = config['LoopData']
+        # [[FileSpec]] stays live in both keys: it has only these two, so
+        # demoting both would empty the section -- and an empty section
+        # dedents its own comments and writes a section for nothing.
+        self.assertEqual(loopdata['FileSpec'].scalars,
+                         ['loop_data_dir', 'filename'])
         self.assertEqual(loopdata['FileSpec']['loop_data_dir'], '.')
         self.assertEqual(loopdata['FileSpec']['filename'], 'loop-data.txt')
         # 7.0: the legacy trio is not written.  A fresh install declares
@@ -8951,19 +9242,31 @@ class ProcessPacketTests(unittest.TestCase):
         # declaring report is its own target.
         self.assertNotIn('Formatting', loopdata)
         self.assertNotIn('Include', loopdata)
+        # The station's loop cadence stays live for a mechanical reason as
+        # much as an editorial one: [[LoopFrequency]] has exactly one key,
+        # so demoting it would empty that section too.
+        self.assertEqual(loopdata['LoopFrequency'].scalars, ['seconds'])
         self.assertEqual(float(loopdata['LoopFrequency']['seconds']), 2.0)
+        # [[RsyncSpec]]: the switch and the three PLACEHOLDERs the user has
+        # to replace.  compress, log_success, timeout and skip_if_older_than
+        # only select a default and are written commented out; the switch is
+        # live because it is the line a user turns rsync on with, and the
+        # placeholders because the code cannot supply them.  The live keys
+        # are pinned as a COMPLETE SET, and the three placeholders come LAST
+        # so that the commented block above them attaches to a live key
+        # inside this section (see
+        # test_installer_merged_comments_stay_in_their_section).
         rsync = loopdata['RsyncSpec']
+        self.assertEqual(rsync.scalars,
+                         ['enable', 'remote_server', 'remote_user', 'remote_dir'])
         self.assertFalse(to_bool(rsync['enable']))
-        self.assertFalse(to_bool(rsync['compress']))
-        self.assertFalse(to_bool(rsync['log_success']))
         self.assertEqual(rsync['remote_server'], 'www.foobar.com')
         self.assertEqual(rsync['remote_user'], 'root')
         self.assertEqual(rsync['remote_dir'], '/home/weewx/loop-data')
-        self.assertEqual(to_int(rsync['timeout']), 1)
-        self.assertEqual(to_int(rsync['skip_if_older_than']), 3)
         # The ScriptData report: shipped disabled, for fields read by
         # something that is not a report.  Its skin generates nothing.
         script_data = config['StdReport']['ScriptData']
+        self.assertEqual(script_data.scalars, ['enable', 'skin'])
         self.assertFalse(to_bool(script_data['enable']))
         self.assertEqual(script_data['skin'], 'ScriptData')
         self.assertNotIn('LoopData', script_data)   # the user declares, not us
@@ -8973,21 +9276,30 @@ class ProcessPacketTests(unittest.TestCase):
         # installation's own StdReport HTML_ROOT at install time, so
         # 'public_html/loopdata' would land the report in
         # public_html/public_html/loopdata.
+        self.assertEqual(report.scalars, ['HTML_ROOT', 'enable', 'skin'])
         self.assertEqual(report['HTML_ROOT'], 'loopdata')
         self.assertEqual(report['skin'], 'LoopData')
         self.assertTrue(to_bool(report['enable']))
+        # Only the password stays live in [[[Extras]]] -- it is a
+        # PLACEHOLDER the user must replace, and it is last so the four
+        # commented options above it attach to it.
         extras = report['Extras']
-        self.assertEqual(extras['loop_data_file'], 'loop-data.txt')
-        self.assertEqual(to_int(extras['expiration_time']), 4)
+        self.assertEqual(extras.scalars, ['page_update_pwd'])
         self.assertEqual(extras['page_update_pwd'], 'foobar')
-        self.assertEqual(extras['googleAnalyticsId'], '')
-        self.assertEqual(extras['analytics_host'], '')
+        # These four stay live although they are WeeWX's own defaults.
+        # They are not defaults here: they sit on the REPORT's stanza, the
+        # last word in build_skin_dict's merge, precisely so a station-wide
+        # [StdReport] [[Defaults]] cannot put a decimal on a wind dial that
+        # has no room for one.  Commented out they would lose to it.
+        weewx_defaults = weewx.defaults.defaults['Units']['StringFormats']
         self.assertEqual(report['Units']['StringFormats'], {
             'mile_per_hour': '%.0f',
             'degree_C': '%.1f',
             'km_per_hour': '%.0f',
             'degree_F': '%.1f',
         })
+        for unit, spec in report['Units']['StringFormats'].items():
+            self.assertEqual(weewx_defaults[unit], spec, unit)
 
     # ------------------------------------------------------------------
     # 7.0: reports declare their own fields; each is its own target.

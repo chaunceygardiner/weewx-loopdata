@@ -101,8 +101,16 @@ generation time, the live values follow it on every packet — see
 
 ## Skin options
 
-In the skin's `[Extras]` — some in `skins/LoopData/skin.conf`, some
-written into `weewx.conf` by the installer, which is the copy that wins:
+In the skin's `[Extras]`.  Most of them have a value in
+`skins/LoopData/skin.conf`, which is replaced on every upgrade; a copy in
+the report's `weewx.conf` stanza, which is not, overrides it.  A fresh
+install now writes only `page_update_pwd` there as a live setting and
+leaves the rest commented out, so that the skin's own value answers
+unless something else in weewx.conf supplies one.  The two analytics
+options are the exception: neither file sets them, because their default
+is to be absent — see below.  A station installed before that change has
+live copies of `loop_data_file` and `expiration_time` in `weewx.conf`,
+and those still win — edit them there:
 
 * `loop_data_file` — the URL the page polls for the json file (default
   `loop-data.txt`; relative values are relative to this report's
@@ -121,8 +129,9 @@ written into `weewx.conf` by the installer, which is the copy that wins:
 * `googleAnalyticsId` — a Google Analytics measurement id.  Set it and the
   page loads Google's `gtag.js` and reports to that id; leave it empty, or
   leave the option out, and the page loads nothing and reports nothing.
-  The installer writes it empty, so a fresh install sends no analytics
-  until you fill it in.
+  Neither the skin nor a fresh install sets it — the installer writes a
+  commented-out example to fill in.  (Installs from 6.11.3 through 7.0 have
+  it in `weewx.conf` as an empty value, which also reports nothing.)
 * `analytics_host` — report only when the page is served from this
   hostname, which keeps a copy you are testing locally out of your
   figures.  Empty, or absent, means report from wherever the page is
@@ -130,7 +139,7 @@ written into `weewx.conf` by the installer, which is the copy that wins:
 
 {: .note }
 Before 6.11.3 both options were tested for *presence* rather than for a
-value.  Because the installer writes them present but empty, a default
+value.  Because the installer wrote them present but empty, a default
 install fetched `gtag.js` with an empty id on every page view, and anyone
 who set an id but left `analytics_host` empty had the page compare its
 hostname against `""` — never true — and report nothing.  Both now test

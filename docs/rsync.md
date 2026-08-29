@@ -73,7 +73,11 @@ Jun 27 23:15:53 charlemagne weewx[10156] INFO user.loopdata: skipping packet (20
 ```
 
 If too many packets are timing out, implement ssh control master
-multiplexing (above), or try raising the `timeout` value.
+multiplexing (above), or try raising the `timeout` value.  Go by what your
+weewx.conf shows: where it reads `#timeout = 1` (what a fresh install writes
+now), uncomment the line and change it; where it reads `timeout = 1` (every
+station installed earlier), edit the value.  Either way the default is the
+same 1 second.
 
 ## How the time bounds work (6.1 and later)
 

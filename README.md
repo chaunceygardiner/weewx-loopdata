@@ -199,10 +199,15 @@ Host www.paloaltoweather.com   # <-- CHANGE TO YOUR remote_server!
 
 Fresh installs add the following `[LoopData]` section to `weewx.conf`.  Since
 6.11.3 each section and option in it arrives with a comment saying what it is
-for; the block below strips those, so it is the values a fresh install writes,
-not the shape of the text.  There is no fields line: since 7.0 each report
-declares the fields it needs in its own `skin.conf` — the sample report's
-declares its panel's — see
+for; the block below strips those prose comments, so it is the values a fresh
+install writes, not the shape of the text.  The `#` marks are not prose,
+though, and are shown: an option that only selects a default now arrives
+commented out, so that the value LoopData itself supplies — including a better
+one a later release may bring — is the one that applies.  (A station installed
+before that change has all eight `[[RsyncSpec]]` options as live settings,
+with the same values, and nothing about it changes.)  There is no fields line: since 7.0
+each report declares the fields it needs in its own `skin.conf` — the sample
+report's declares its panel's — see
 [Declaring fields](https://chaunceygardiner.github.io/weewx-loopdata/declaring-fields.html).
 Upgrading installs keep whatever `[[Include]]` fields line and
 `[[Formatting]]` target_report are already in `weewx.conf`, and those keep
@@ -217,13 +222,13 @@ working as before.
         seconds = 2.0
     [[RsyncSpec]]
         enable = false
+        #compress = false
+        #log_success = false
+        #timeout = 1
+        #skip_if_older_than = 3
         remote_server = www.foobar.com
         remote_user = root
         remote_dir = /home/weewx/loop-data
-        compress = False
-        log_success = False
-        timeout = 1
-        skip_if_older_than = 3
 ```
 
 ## Entries in `LoopData` sections of `weewx.conf`:

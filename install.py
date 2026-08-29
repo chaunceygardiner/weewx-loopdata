@@ -26,7 +26,17 @@ from setup import ExtensionInstaller
 # plain dict has none.
 #
 # Only absent keys are merged, so nothing here rewrites a weewx.conf that
-# already has the option.
+# already has the option.  That is why an option shown COMMENTED OUT stays
+# commented out: written live it would freeze this station on today's
+# default for ever, while left commented the extension's own fallback
+# answers -- including a better one a later release brings.
+#
+# ORDER MATTERS.  ConfigObj attaches a comment block to the NEXT key and
+# writes it at THAT key's indent, so every section here ends with a LIVE
+# key.  Last in its section a comment block lands outside the block it
+# documents -- or, when the key it attaches to already exists in the
+# target weewx.conf ([StdReport] always does), is dropped without a
+# trace.
 #
 # No fields line and no target_report: since 7.0 a report declares the
 # fields it needs in its own skin.conf ([LoopData] [[fields]] -- see
@@ -81,6 +91,22 @@ CONFIG = """
         # false the rest of this section is ignored.
         enable = false
 
+        # true to compress the file before sending it.
+        #compress = false
+
+        # true to log every successful send, with timings (for debugging).
+        #log_success = false
+
+        # I/O timeout in seconds.  Also bounds the ssh connect and
+        # keepalive, so a dead or hanging remote cannot stall the loop
+        # processing thread.  0 disables all time bounds.
+        #timeout = 1
+
+        # Don't bother to rsync if the data is already older than this many
+        # seconds: skip the packet and move on rather than shipping stale
+        # data late.
+        #skip_if_older_than = 3
+
         # PLACEHOLDER -- replace with the server to copy the file to.
         remote_server = www.foobar.com
 
@@ -91,22 +117,6 @@ CONFIG = """
         # PLACEHOLDER -- replace with the directory on remote_server that
         # filename will be copied into.
         remote_dir = /home/weewx/loop-data
-
-        # true to compress the file before sending it.
-        compress = false
-
-        # true to log every successful send, with timings (for debugging).
-        log_success = false
-
-        # I/O timeout in seconds.  Also bounds the ssh connect and
-        # keepalive, so a dead or hanging remote cannot stall the loop
-        # processing thread.  0 disables all time bounds.
-        timeout = 1
-
-        # Don't bother to rsync if the data is already older than this many
-        # seconds: skip the packet and move on rather than shipping stale
-        # data late.
-        skip_if_older_than = 3
 
 [StdReport]
     # A report that generates nothing, for fields read by something that is
@@ -122,16 +132,15 @@ CONFIG = """
         # is enabled.
         enable = false
 
-        # The skin exists only because WeeWX requires every report to name
-        # one; it contains no templates.
-        skin = ScriptData
-
         # Your fields go here, in named groups, exactly as a skin declares
         # them.  For example:
         #     [[[LoopData]]]
         #         [[[[fields]]]]
         #             my_script = current.extraTemp2.raw
         #
+        # The skin below exists only because WeeWX requires every report to
+        # name one; it contains no templates.
+        skin = ScriptData
 
     # The sample report that ships with the extension: a live instrument
     # panel that polls the loop-data file.  It is a working example to crib
@@ -155,12 +164,25 @@ CONFIG = """
             # The URL the page polls for the json file, relative to
             # HTML_ROOT above.  The default loop_data_dir writes the file
             # right beside the page, so a bare filename finds it.
-            loop_data_file = loop-data.txt
+            #loop_data_file = loop-data.txt
 
             # Hours the page keeps polling before it gives up, so an
             # abandoned browser tab does not poll forever.  A mouse click
             # starts it again.
-            expiration_time = 4
+            #expiration_time = 4
+
+            # EXAMPLE, not a default: fill in your own google analytics
+            # measurement id and uncomment to have the page report to it.
+            # Left out, as it is here, the page loads nothing from google
+            # and reports nothing.
+            #googleAnalyticsId = G-XXXXXXXXXX
+
+            # EXAMPLE, not a default: uncomment with your own hostname to
+            # report only when the page is served from that host, which
+            # keeps a copy you are testing locally out of your figures.
+            # Left out, the page reports from wherever it is served.  It
+            # does nothing unless googleAnalyticsId is set.
+            #analytics_host = www.example.com
 
             # PLACEHOLDER -- choose your own password.  Loading the page as
             # ?pageUpdate=<this password> exempts it from expiring, which is
@@ -168,14 +190,6 @@ CONFIG = """
             # pageUpdate, not page_update_pwd.  The password is visible to
             # anyone reading the page source.
             page_update_pwd = foobar
-
-            # Fill in a google analytics id to have the page report to
-            # google analytics.  Empty means no analytics at all.
-            googleAnalyticsId = ""
-
-            # Report to google analytics only when the page is served from
-            # this hostname.  Empty means report from wherever it is served.
-            analytics_host = ""
 
         # Formatting overrides for this report -- which is also how
         # LoopData formats the values it writes into the file for this
