@@ -59,7 +59,7 @@ upload buys nothing at all: the page reads the file where it is written,
 and the copy on the far end is read by nobody.
 
 If your reports go out by `RsyncGenerator` and LoopData is *also* sending
-the file at loop cadence with its own [rsync](rsync.md), it is worth
+the file at loop cadence with its own [rsync](rsync.html), it is worth
 checking whether those two end up in the same place — configuration alone
 will not tell you, since the two name their destinations separately and
 an alias or a symlink defeats comparing the strings.  If they do land
@@ -171,7 +171,7 @@ by default) and otherwise shows the age instead, would be reporting
 minutes almost all the time, and a page of your own has nothing fresher
 to read.
 LoopData needs a loop-cadence transport to whatever machine serves the
-page — its own [rsync](rsync.md), which goes over ssh, or serving the
+page — its own [rsync](rsync.html), which goes over ssh, or serving the
 pages from the machine WeeWX runs on.
 
 ## `[[Formatting]]` (deprecated)

@@ -118,14 +118,21 @@ and those still win — edit them there:
   this page).
 * `refresh_rate` — seconds between polls (default `2`).  Set it to your
   station's loop frequency; polling faster than the file is rewritten just
-  re-reads the same json.
+  re-reads the same json.  A `0`, a negative, or anything that is not a
+  number, means the default.
 * `expiration_time` — hours after which the page stops polling (default
-  `4`), so abandoned browser tabs don't poll forever.  A click restarts it.
+  `24`), so abandoned browser tabs don't poll forever.  A click restarts it.
+  Set it to `0` and the page never expires — the same thing `?pageUpdate=`
+  buys a kiosk, without the URL.  A negative, or anything that is not a
+  number, means the default.
 * `page_update_pwd` — loading the page as `?pageUpdate=<page_update_pwd>`
   exempts it from expiration (for a kiosk display).  Note the URL parameter
   is `pageUpdate`, while the option that sets its expected value is
-  `page_update_pwd`.  This password is visible to anyone reading the page
-  source.
+  `page_update_pwd`.  Any characters work — spaces, quotes, accents — and
+  the URL value is compared both as typed and percent-decoded, so a URL
+  that already worked goes on working.  Set the option empty and no URL
+  exempts the page; it expires like any other.  This password is visible
+  to anyone reading the page source.
 * `googleAnalyticsId` — a Google Analytics measurement id.  Set it and the
   page loads Google's `gtag.js` and reports to that id; leave it empty, or
   leave the option out, and the page loads nothing and reports nothing.
@@ -159,6 +166,12 @@ custom properties in `index.html.tmpl` for the html, and the `C` and `RAMP`
 literals in `realtime_updater.inc` for the canvases, which cannot read css
 variables.  Retune it freely — the windrose and the dials share a face
 radius, so they read as one size whatever you do to the colors.
+
+`RAMP`'s six shades are stops on a curve rather than one colour per band:
+`bandColor` samples them for however many speed bands your
+`windrose_bands` produces, so the calmest band is always the first stop
+and the windiest always the last, and six bands get the six stops
+exactly.
 
 [Building a live page](build-a-live-page.html) walks through the same
 pattern for your own skin.

@@ -89,9 +89,9 @@ the values accordingly.  In particular:
   declares its fields the same way — see
   [Declaring fields](declaring-fields.html), later, after you are sure
   LoopData is running correctly.  Another extension with a live page
-  declares its own when installed — weewx-celestial from the release after
-  8.4 (8.4's installer only adds to a fields line that already exists,
-  and a fresh 7.0 install writes none).
+  declares its own when installed — weewx-celestial does so from 9.0
+  (8.4 and earlier only add their fields to a line that already exists,
+  and a fresh install of loopdata 7.0 or later writes none).
 * If you need the loop-data.txt file pushed to a remote webserver, you will
   also need to fill in the `RsyncSpec` fields; but one can fill that in
   later, after LoopData is up and running.  See

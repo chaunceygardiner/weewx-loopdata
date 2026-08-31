@@ -56,7 +56,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '7.0'
+LOOP_DATA_VERSION = '7.0.1'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -1583,9 +1583,19 @@ class LoopData(StdService):
         loop_data_dir = LoopData.compose_loop_data_dir(config_dict, anchor_dict, file_spec_dict)
         os.makedirs(loop_data_dir, exist_ok=True)
 
-        # Get a temporay file in which to write data before renaming.
+        # Reserve a unique name to write each packet to before renaming it
+        # onto the loop-data file.  Only the NAME is wanted: mkstemp creates
+        # the file to guarantee the name is nobody else's, and it is removed
+        # again straight away, which is the state it is in between writes
+        # anyway (write_packet_to_file renames it away every packet).
+        # Leaving it behind littered loop_data_dir -- which is inside the
+        # web-served report tree by default -- with a zero-byte file for
+        # every process that builds this service without ever reaching a
+        # packet, `weectl report run` above all, since report_services
+        # carries LoopData and its processor thread never starts there.
         tmp = tempfile.NamedTemporaryFile(prefix='LoopData', dir=loop_data_dir, delete=False)
         tmp.close()
+        os.unlink(tmp.name)
 
         # Get the loop frequency seconds to be passed as the weight to accumulators.
         loop_frequency = to_float(loop_frequency_spec_dict.get('seconds', '2.0'))
@@ -3807,7 +3817,12 @@ class LoopProcessor:
             weeutil.logger.log_traceback(log.critical, "    ****  ")
             raise
         finally:
-            os.unlink(self.cfg.tmpname)
+            # Normally already renamed onto the loop-data file by the last
+            # write, and absent before the first one.
+            try:
+                os.unlink(self.cfg.tmpname)
+            except FileNotFoundError:
+                pass
 
     @staticmethod
     def generate_output(in_pkt: Dict[str, Any], cfg: Configuration, accums: Accumulators,

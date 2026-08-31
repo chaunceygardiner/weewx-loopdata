@@ -22,6 +22,17 @@ tracking both time and distance per cell, plus a directionless "calm" total.
 startup from the archive, so even `alltime.windrose` starts fully primed
 after a restart.
 
+![A windrose drawn by the sample skin: two petals, from the north-northwest and the west-southwest, above a centre reading 30% calm](images/windrose.png)
+
+The [sample skin](sample-skin.html) drawing `day.windrose.banded` on a real
+morning in Palo Alto, with the default speed bands.  Each petal's length is
+that direction's share of the day, stacked and shaded by speed band, and the
+centre carries the calm total — the 30% here sits in the middle of the
+10–40% that is normal on real roses.  Two lobes and a large calm share is
+what a real site looks like; a rose with every direction filled evenly is a
+sign the edges want revisiting, which is what [Choosing your
+bands](#choosing-your-bands) is about.
+
 ## The four aggregates
 
 Four aggregates project the matrix into json:
@@ -97,8 +108,17 @@ Then place the edges by three rules:
   wasted legend entry, and one band holding most of the time is a monochrome
   rose.
 * **Top edge**: rare on purpose — around the speed you exceed only a few
-  hours a year (the 99.5th percentile or so), so the darkest color flags
-  genuinely notable wind rather than never appearing at all.
+  hours a year (the 99.5th percentile or so), so the band at the bright end
+  of the ramp flags genuinely notable wind rather than never appearing at
+  all.  (The sample page runs dim to bright with wind speed, where some
+  windrose tools run the other way.)
+
+How many bands is up to you — the default six is the WRPLOT convention, not
+a limit.  The sample page's palette holds six shades and samples them for
+however many bands you configure, so seven or eight get seven or eight
+distinct colours, calmest to windiest.  Beyond eight or so the shades start
+to be hard to tell apart on a small dial, which is a better reason to stop
+than any rule.
 
 Round numbers in the report unit make the best legend.  Iterating is cheap:
 changing the bands is just an edit and a weewxd restart — every period

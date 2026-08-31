@@ -168,8 +168,8 @@ CONFIG = """
 
             # Hours the page keeps polling before it gives up, so an
             # abandoned browser tab does not poll forever.  A mouse click
-            # starts it again.
-            #expiration_time = 4
+            # starts it again.  Zero keeps polling for ever.
+            #expiration_time = 24
 
             # EXAMPLE, not a default: fill in your own google analytics
             # measurement id and uncomment to have the page report to it.
@@ -267,7 +267,7 @@ def loader():
 class LoopDataInstaller(ExtensionInstaller):
     def __init__(self):
         super(LoopDataInstaller, self).__init__(
-            version = "7.0",
+            version = "7.0.1",
             name = 'loopdata',
             description = 'Loop statistics for real time reporting.',
             author = "John A Kline",

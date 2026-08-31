@@ -153,7 +153,24 @@ The sample skin's `realtime_updater.inc` shows the touches that separate a
 demo from a page you can leave running for months:
 
 * **A LIVE/age indicator** driven by `current.dateTime.raw` — the packet's
-  own timestamp, so the page knows how fresh its data really is.  The sample
+  own timestamp, so the page knows how fresh its data really is.  Age it
+  against the **server's** clock, not the viewer's: read `Date` off the
+  response that carried the record (`response.headers.get('Date')`, adding
+  back any `Age` a proxy reports).  Subtracting a station timestamp from
+  `new Date()` puts whatever the viewer's device is set wrong by into the
+  reading, and if your LIVE window is a few seconds wide, a device a little
+  out never shows LIVE at all.  Keep a monotonic backstop from
+  `performance.now()` since the data last changed and take the larger of
+  the two: elapsed is always a lower bound on the true age, so it only wins
+  when the header reads too young, which is the cached-response case.
+  `Date.parse` decodes the header's own string and never consults the local
+  clock.  If your page is served from a different origin than the loop-data
+  file, a fetch may not read `Date` unless the server sends
+  `Access-Control-Expose-Headers: Date` — worth adding, since it is what
+  makes the age accurate.  Where it is not available, use the viewer's
+  clock rather than elapsed alone: elapsed starts at zero for each page
+  instance, so a feed that had stopped before the page loaded reads LIVE
+  until the tab is reloaded.  The sample
   skin distinguishes the failure modes: a rejected fetch (server
   unreachable) shows OFFLINE; an HTTP error shows
   `NO DATA (HTTP 404) — check loop_data_file` (the classic cause: loopdata
@@ -161,9 +178,9 @@ demo from a page you can leave running for months:
   `BAD DATA — check loop_data_file`.  A later successful poll rewrites the
   indicator to LIVE.
 * **A page-expiration timer** that stops polling in abandoned browser tabs.
-  In the sample skin this is the `expiration_time` Extras option (in hours);
-  loading the page with `?pageUpdate=<page_update_pwd>` exempts it (for a
-  kiosk display that should never stop).
+  In the sample skin this is the `expiration_time` Extras option (in hours,
+  `0` for never); loading the page with `?pageUpdate=<page_update_pwd>`
+  exempts it too (for a kiosk display that should never stop).
 * **Keep rendering errors out of the poll loop.**  If your page draws
   (canvas gauges, charts), catch drawing errors separately from fetch
   errors, so a drawing bug cannot stop the polling.

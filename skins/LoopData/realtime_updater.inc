@@ -4,21 +4,53 @@
 
 #errorCatcher Echo
 <script>
-  #if $Extras.has_key('page_update_pwd')
-    page_update_pwd = '$Extras.page_update_pwd';
+  #if $Extras.get('page_update_pwd')
+    // json.dumps, not a hand-quoted literal: it escapes a quote or a
+    // backslash that would otherwise end the string early and kill the
+    // whole script, and its \u escapes survive the html_entities encoding
+    // that would turn a non-ASCII password into character references.
+    // json.dumps leaves the slash alone, so the closing-tag sequence is
+    // escaped after it: the HTML parser ends this script block at a
+    // literal closing script tag, in a javascript string or not.  (This
+    // comment says it in words for the same reason.)
+    // chr(92) rather than a backslash literal, and NOT a tidy-up to undo:
+    // this file sets #errorCatcher Echo, so Cheetah does not compile the
+    // placeholder inline -- it eval()s the expression's source out of a
+    // triple-quoted string.  A backslash in the template is consumed by
+    // that outer literal, leaving an invalid escape in the eval'd source,
+    // which warns on EVERY render under Python 3.12+ and is slated to
+    // become a SyntaxError.
+    page_update_pwd = $json.dumps($Extras.page_update_pwd).replace('</', '<' + chr(92) + '/');
   #else
-    page_update_pwd = 'foo';
+    // No password configured, so no URL exempts the page.  Not a sentinel
+    // word: that one is in the shipped source for anyone to read.
+    page_update_pwd = null;
   #end if
+  // Quoted by json.dumps for the same reasons as the password above: a
+  // quote in either value used to end the string early and stop the whole
+  // script.  Number() of a string that is not a number is NaN, which the
+  // fallback below catches.
   #if $Extras.get('refresh_rate')
-    refresh_rate = $Extras.refresh_rate;
+    refresh_rate = Number($json.dumps($Extras.refresh_rate).replace('</', '<' + chr(92) + '/'));
   #else
     refresh_rate = 2;
   #end if
   #if $Extras.get('expiration_time')
-    expiration_time = $Extras.expiration_time;
+    expiration_time = Number($json.dumps($Extras.expiration_time).replace('</', '<' + chr(92) + '/'));
   #else
-    expiration_time = 4;
+    expiration_time = 24;
   #end if
+  // ConfigObj yields strings, so a '0' passes the tests above.  A negative
+  // or non-numeric setting means the default -- a negative is a number, so
+  // isNaN alone would let one through, and for expiration_time it would
+  // then read as never expiring.  expiration_time = 0 IS never; refresh_rate
+  // has no such reading, since a page that never polls is a dead page.
+  if (!(refresh_rate > 0)) {
+    refresh_rate = 2;
+  }
+  if (isNaN(expiration_time) || expiration_time < 0) {
+    expiration_time = 24;
+  }
   // The report's language drives toLocaleTimeString (the last-update
   // stamp); an unknown tag must not break every render.
   LOCALE = '$lang';
@@ -87,17 +119,83 @@
       results = regex.exec(window.location.href);
       if (results === null) {
           return '';
-      } else {
-          return results[1];
+      }
+      return results[1];
+  }
+  // The URL value arrives percent-encoded, so compared raw a password
+  // holding any character the browser encodes could never match -- but a
+  // password that itself contains a percent-escape DID match raw before
+  // that was fixed, and those kiosk URLs must go on working.  Either
+  // reading is accepted.  A '+' is left alone: this is a hand-written URL,
+  // not a form submission.
+  function urlParamMatches(given, expected) {
+      if (expected === null) {
+          return false;                  // no password: nothing exempts
+      }
+      if (given === expected) {
+          return true;
+      }
+      try {
+          return decodeURIComponent(given) === expected;
+      } catch (e) {
+          return false;                  // malformed escape: raw was its chance
       }
   }
+  // The SERVER's clock, read off the response that carried the record.
+  // Date.parse only decodes the header's string form; it never consults
+  // the viewer's clock.  That is the whole point: a station timestamp
+  // subtracted from the browser's wall clock charges whatever the viewer's
+  // device is set wrong by straight to the reported age, and with a LIVE
+  // window of 3 x refresh_rate -- six seconds at the default -- a tablet
+  // ten seconds out never shows LIVE over a perfectly healthy feed.
+  // Add back any Age a proxy reports, or a cached copy reads as young as
+  // when it was stored.  NaN when the header is absent or unparseable
+  // (Date is not CORS-safelisted, so a cross-origin fetch needs
+  // Access-Control-Expose-Headers: Date); the caller then falls back to
+  // the monotonic backstop.
+  function serverNowFromHeaders(getHeader) {
+    var serverNow = Date.parse(getHeader('Date'));
+    if (isNaN(serverNow)) {
+      return NaN;
+    }
+    var cacheAge = Number(getHeader('Age'));
+    if (isFinite(cacheAge) && cacheAge > 0) {
+      serverNow += cacheAge * 1000;
+    }
+    return serverNow;
+  }
+
+  // Every write to the two status elements goes through these: a page
+  // adapted from this one need not carry them, and a missing element must
+  // not throw out of the poll -- which would take the gauge drawing with
+  // it and leave the panel dead.
+  function setIndicator(text) {
+    var el = document.getElementById("live-label");
+    if (el !== null) {
+      el.innerHTML = text;
+    }
+  }
+  function setStamp(text) {
+    var el = document.getElementById("last-update");
+    if (el !== null) {
+      el.innerHTML = text;
+    }
+  }
+
+  // When the feed last carried a NEW record, on the monotonic clock.
+  var lastStampSeen = null;
+  var lastChangeAt = null;
+
   var pageTimedOut = false;
   function expirePage() {
     pageTimedOut = true;
   }
   function setUpExpiredClickListener() {
     var liveLabel = document.getElementById("live-label");
-    if (liveLabel != fmt('CLICK-ME')) {
+    if (liveLabel === null) {
+      return;
+    }
+    if (liveLabel.textContent !== fmt('CLICK-ME')) {
       liveLabel.innerHTML = fmt('CLICK-ME');
       // set an onclick event on live-label to restart everything
       liveLabel.addEventListener("click", clickListener);
@@ -114,9 +212,17 @@
     setPageExpirationTimer();
   }
   function setPageExpirationTimer() {
-    if (getUrlParam('pageUpdate') !== page_update_pwd) {
-      // expire in N hours
-      setTimeout(expirePage, 1000 * 60 * 60 * expiration_time);
+    if (expiration_time <= 0) {
+      return;                          // 0 hours: the page never expires
+    }
+    if (!urlParamMatches(getUrlParam('pageUpdate'), page_update_pwd)) {
+      // Expire in N hours, clamped to the browser's int32 timer-delay
+      // ceiling (~24.8 days): past 2147483647 ms the delay overflows and
+      // the timer fires at once, so an expiration_time over ~596 hours --
+      // someone reaching for "effectively never" -- would expire the page
+      // immediately instead.  Zero is how you say never.
+      setTimeout(expirePage,
+                 Math.min(1000 * 60 * 60 * expiration_time, 2147483647));
     }
   }
   setPageExpirationTimer();
@@ -146,6 +252,33 @@
   // clears 3:1 against the face: the calmest band is the biggest segment of
   // most petals, and it used to disappear into the disc.
   var RAMP = ['#4a739b', '#5d89b2', '#75a3c8', '#90bcdd', '#aed4ef', '#d2ecff'];
+  // Those six are STOPS on a curve, not a fixed set of six colours.  A rose
+  // banded some other way samples the same curve, so the calmest band is
+  // always that floor and the windiest is always the ceiling, however many
+  // bands sit between.  Six bands -- the WRPLOT default, and what the
+  // sample configuration ships -- return the six stops exactly.  Indexing
+  // the list directly wrapped at a seventh band and painted the windiest
+  // band in the calmest band's colour, in the rose and its legend alike.
+  function bandColor(i, n) {
+    if (n <= 1 || i <= 0) {
+      return RAMP[0];
+    }
+    if (i >= n - 1) {
+      return RAMP[RAMP.length - 1];
+    }
+    var x = (i / (n - 1)) * (RAMP.length - 1);
+    var lo = Math.floor(x), t = x - lo;
+    if (t === 0) {
+      return RAMP[lo];
+    }
+    var from = RAMP[lo], to = RAMP[lo + 1];
+    var mix = [0, 1, 2].map(function (k) {
+      var a = parseInt(from.substr(1 + 2 * k, 2), 16);
+      var b = parseInt(to.substr(1 + 2 * k, 2), 16);
+      return Math.round(a + (b - a) * t);
+    });
+    return 'rgb(' + mix.join(', ') + ')';
+  }
 
   // Dial scales by the report's unit, keyed off the unit.label fields.
   function tempScale(label) {
@@ -533,7 +666,7 @@
         ctx.arc(cx, cy, r + seg, a0, a1);
         ctx.arc(cx, cy, r, a1, a0, true);
         ctx.closePath();
-        ctx.fillStyle = RAMP[b % RAMP.length];
+        ctx.fillStyle = bandColor(b, rose.banded[i].length);
         ctx.fill();
         ctx.strokeStyle = C.face;
         ctx.lineWidth = 2;
@@ -578,26 +711,44 @@
     if (key === legendKey) {
       return;
     }
-    legendKey = key;
     var el = document.getElementById('rose-legend');
+    if (el === null) {
+      return;                          // a page built without a legend
+    }
     el.innerHTML = '';
     edges.forEach(function (lo, i) {
       var span = document.createElement('span');
       var chip = document.createElement('i');
-      chip.style.background = RAMP[i % RAMP.length];
+      chip.style.background = bandColor(i, edges.length);
       span.appendChild(chip);
       var hi = i + 1 < edges.length ? '-' + edges[i + 1] : '+' + unitLabel;
       span.appendChild(document.createTextNode(lo + hi));
       el.appendChild(span);
     });
+    legendKey = key;                   // only once the legend is built
   }
 
   function updateGauges(result) {
     // If layout has changed the displayed size since the backing stores
     // were built (late layout, rotation), rebuild them at the new size.
-    if (ctxs !== null && ctxs.rose !== null &&
-        Math.abs(ctxs.rose.canvas_el.clientWidth - ctxs.rose.cssSize) > 2) {
-      ctxs = null;
+    // A canvas in a hidden cell measures 0 and was built at the fallback
+    // size, so it stays wrong once its cell is shown: check every context,
+    // skipping the ones still hidden.
+    if (ctxs !== null) {
+      var stale = false;
+      Object.keys(ctxs).forEach(function (k) {
+        var ctx = ctxs[k];
+        if (ctx === null) {
+          return;
+        }
+        var shown = ctx.canvas_el.clientWidth;
+        if (shown > 0 && Math.abs(shown - ctx.cssSize) > 2) {
+          stale = true;
+        }
+      });
+      if (stale) {
+        ctxs = null;
+      }
     }
     if (!initCanvases()) {
       return;
@@ -792,7 +943,7 @@
     } catch (e) {
       // Network-level failure (server unreachable, request blocked): no
       // status to show.  A later successful poll rewrites the indicator.
-      document.getElementById("live-label").innerHTML = fmt('OFFLINE');
+      setIndicator(fmt('OFFLINE'));
       console.log(e);
       return;
     }
@@ -803,9 +954,8 @@
       // (say /dev/shm) with nothing on the web server serving it.  Say so
       // in the indicator: the old behavior (a console error only a
       // debugging user ever finds) left the panel silently dead.
-      document.getElementById("live-label").innerHTML =
-          fmt('NO DATA (HTTP {status}) \u2014 check loop_data_file',
-              {status: response.status});
+      setIndicator(fmt('NO DATA (HTTP {status}) \u2014 check loop_data_file',
+                       {status: response.status}));
       return;
     }
     var result;
@@ -826,25 +976,72 @@
       // A 200 with a non-json body, or json without this report's key:
       // loop_data_file points at something, but not at loopdata's output
       // for this page.
-      document.getElementById("live-label").innerHTML =
-          fmt('BAD DATA \u2014 check loop_data_file');
+      setIndicator(fmt('BAD DATA \u2014 check loop_data_file'));
       console.log(e);
       return;
     }
     try {
-      // The LIVE indicator, from the packet's own timestamp.
-      var lastUpdate = new Date(result["current.dateTime.raw"] * 1000);
-      var age = Math.round(Math.abs(new Date() - lastUpdate) / 1000);
-      var element = document.getElementById("live-label");
-      if (age <= 3 * refresh_rate) {
-        element.innerHTML = fmt('LIVE');
-      } else {
-        element.innerHTML = fmt('{age}s ago', {age: age});
+      var stamp = result["current.dateTime.raw"];
+      if (stamp === undefined || stamp === null || stamp === ''
+          || isNaN(Number(stamp))) {
+        // This report declared fields but not the clock group, so there is
+        // no packet timestamp to age.  null and '' are tested before
+        // Number(), which maps both to 0 -- an epoch-0 stamp would put an
+        // age of half a century on the label rather than saying the data
+        // is unusable.  Draw FIRST and say so after: on a page adapted
+        // without these two elements, writing them first would throw and
+        // the gauges would never draw at all.
+        updateGauges(result);
+        setIndicator(fmt('BAD DATA \u2014 check loop_data_file'));
+        setStamp("");
+        console.log("no current.dateTime.raw in this report's loop data");
+        return;
       }
-      var activityElement = document.getElementById("last-update");
-      activityElement.innerHTML = lastUpdate.toLocaleTimeString(LOCALE, {hour: '2-digit', minute:'2-digit', second:'2-digit'});
-
+      // The LIVE indicator, from the packet's own timestamp aged against
+      // the SERVER's clock -- never the viewer's.
+      if (stamp !== lastStampSeen) {
+        lastStampSeen = stamp;
+        lastChangeAt = performance.now();
+      }
+      var age = null;
+      var serverNow = serverNowFromHeaders(function (name) {
+        return response.headers.get(name);
+      });
+      if (!isNaN(serverNow)) {
+        age = Math.round(serverNow / 1000 - Number(stamp));
+      } else {
+        // No usable Date -- a cross-origin fetch without
+        // Access-Control-Expose-Headers: Date, say.  Fall back to the
+        // viewer's clock: a poorer estimate, and the very thing this
+        // change stopped trusting, but it is the ONLY measure that can see
+        // data which was already stale when the page loaded.  Without it
+        // the backstop below starts at zero and an abandoned feed reads
+        // LIVE for as long as the tab stays open.
+        age = Math.round(Date.now() / 1000 - Number(stamp));
+      }
+      // Backstop: elapsed since the data last advanced is always a LOWER
+      // bound on the true age, so it can only win where the header reads
+      // too young -- a response served from cache, whose Date is frozen
+      // with its body.  performance.now() is monotonic, so an NTP step on
+      // the viewer's machine cannot make this jump.
+      var elapsed = Math.round((performance.now() - lastChangeAt) / 1000);
+      age = (age === null) ? elapsed : Math.max(age, elapsed);
+      if (age < 0) {
+        age = 0;
+      }
+      // The stamp still renders in the viewer's own local time below --
+      // that is a display of when the packet was taken, a different job
+      // from measuring how old it is, and correct against their clock.
+      var lastUpdate = new Date(Number(stamp) * 1000);
+      // Same shape as the no-clock branch above: draw FIRST, then write the
+      // labels, and guard both lookups.  A page adapted without them --
+      // which the manual invites -- would otherwise throw here and never
+      // draw a gauge, the very fault that branch was fixed for.
       updateGauges(result);
+      setIndicator((age <= 3 * refresh_rate)
+          ? fmt('LIVE') : fmt('{age}s ago', {age: age}));
+      setStamp(lastUpdate.toLocaleTimeString(
+          LOCALE, {hour: '2-digit', minute: '2-digit', second: '2-digit'}));
     } catch (e) {
       // A rendering error must not stop the polling; try again next
       // interval.

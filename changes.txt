@@ -1,10 +1,18 @@
 loopdata change history
 -----------------------
 
-7.x (in progress)
------------------
-- Existing installs are untouched: nothing below changes a weewx.conf that
-  already exists, and there is nothing to do by hand.
+7.0.1 2026/08/31
+----------------
+- Nothing below edits a weewx.conf that already exists, and there is
+  nothing to do by hand.  The one change that reaches a station without an
+  edit is the expiration_time default, immediately below.
+- The sample page's default expiration_time is 24 hours, where it was 4,
+  matching the sibling extensions.  This reaches a station that has no
+  live expiration_time in weewx.conf: a fresh install, where the option is
+  written commented out.  A station whose weewx.conf carries
+  expiration_time = 4 as a live setting -- every install made before the
+  option was demoted -- goes on expiring after 4 hours until that line is
+  edited or removed.
 - A fresh install writes eight options into weewx.conf commented out,
   each showing the value that will apply: compress, log_success, timeout
   and skip_if_older_than in [[RsyncSpec]], and loop_data_file,
@@ -30,6 +38,114 @@ loopdata change history
   [StdReport].  ConfigObj attaches a comment block to the next key and
   writes it at that key's indent, and the block sat after the section's
   last option.
+- Fixed: a kiosk URL whose ?pageUpdate= password contains a space, or any
+  other character a browser percent-encodes, now matches.  The password
+  was compared still encoded, so such a password never exempted the page
+  and the display went dead after expiration_time hours.  The URL value is
+  compared both as typed and percent-decoded, so a URL that worked before
+  -- including a password that itself contains a percent-escape -- goes on
+  working untouched.
+- Fixed: a quote or a backslash in page_update_pwd, refresh_rate or
+  expiration_time no longer kills the page outright, and a page_update_pwd
+  containing an accent or any other non-ASCII character now matches.  All
+  three were written into the javascript as hand-quoted literals: a quote
+  ended the string early, which is a parse error that stops the whole
+  script -- no polling, no gauges -- and a non-ASCII password was rendered
+  as a character reference, which could never equal what the URL supplied.
+  All three are emitted with json.dumps now, as the page's translated
+  strings already were, so a mistyped number falls back to its default
+  instead of taking the page down.
+- Fixed: blanking page_update_pwd no longer leaves every visitor's page
+  polling for ever, and no URL exempts a page whose password is blank.
+  An empty value used to be read as a password, so the empty ?pageUpdate=
+  every visitor has matched it; it then fell back to a fixed word that is
+  in the shipped source for anyone to read.  Now there is no password at
+  all, which nothing in a URL can equal.  (An [Extras] option written
+  empty is present, so the test for one fired on it.)
+- expiration_time = 0 now means the page never expires, which is what a
+  zero timeout ought to mean and what it never did: it expired the page
+  before the first packet arrived, since ConfigObj yields strings and a
+  '0' passed the template's test for a value.  It is the kiosk exemption
+  without the ?pageUpdate= URL.
+- Fixed: refresh_rate = 0 no longer polls as fast as the browser can; a
+  page that never polls is a dead page, so zero means the default there.
+  A negative, or a setting that is not a number, means the default for
+  both -- rather than emitting javascript that stopped the whole script,
+  and, for a negative expiration_time, rather than quietly never expiring.
+- Fixed: a large expiration_time no longer expires the page at once.  Past
+  2147483647 milliseconds (~596 hours) the delay overflows the browser's
+  int32 timer and fires immediately, so an expiration_time of 1000, reached
+  for as "effectively never", did the opposite.  It is clamped to that
+  ceiling now, and zero is how you say never.
+- Fixed: once the page has expired, the CLICK-ME prompt is written once
+  rather than rewritten every couple of seconds for as long as the tab is
+  open.  The test meant to prevent that compared the element itself
+  against the string.
+- Fixed: a page adapted without the sample skin's status elements no
+  longer throws on every poll.  Each of the five places that writes the
+  LIVE indicator or the timestamp -- including the OFFLINE, NO DATA and
+  BAD DATA branches -- now goes through one guarded writer, and the gauges
+  are drawn before the labels rather than after, so a missing label cannot
+  stop the drawing.
+- Fixed: a page adapted without the windrose legend's element no longer
+  takes the eleven dials down with it.  The lookup is guarded, and the
+  legend's cache key is now set only once the legend is built, which is
+  what made the symptom intermittent.
+- Fixed: a report that declares gauge fields but not the clock group now
+  says BAD DATA -- check loop_data_file instead of reading "NaNs ago" and
+  "Invalid Date" for ever.  The gauges still draw.
+- Fixed: the sample page's windrose colours stretch to however many speed
+  bands are configured.  The six shades were indexed one per band, so a
+  seventh band wrapped around and painted the windiest band in the calmest
+  band's colour -- in the rose and in its legend alike, so the page did not
+  even look wrong.  They are stops on a curve now, sampled for the band
+  count in use; six bands, which is what the default edges and the shipped
+  sample configuration both produce, get exactly the six shades they
+  always did.
+- A README correction: the list of [LoopData] options had every rsync
+  option, plus the loop frequency, sitting under the heading that marks the
+  three deprecated ones -- so options a fresh install does write, and the
+  block just above it shows being written, read as deprecated.  The
+  deprecated three (target_report, fields and the [LoopData] spelling of
+  windrose_bands) are together at the end of the list now, under that
+  heading and nothing else.
+- Fixed: the sample page's data age is measured against the web server's
+  clock instead of the browser's, so a viewer whose device has the wrong
+  time no longer sees a false age -- or, since the page reads LIVE only
+  while the packet is younger than three times refresh_rate (six seconds by
+  default), never sees LIVE at all over a perfectly healthy feed.  The age
+  now comes from the Date header of the response that carried the record,
+  plus any Age a proxy reports, and never reads the viewer's clock while
+  that header is there.  A monotonic floor -- how long since the data last
+  changed -- catches a cached copy whose header reads younger than its
+  body.  Where no Date header reaches the page at all the viewer's clock is
+  still the only measure available and is used, since otherwise a feed that
+  had already stopped before the page loaded would read LIVE.
+- Fixed: running weectl report run no longer drops a zero-byte LoopData
+  file into the directory the loop-data file is written to -- which is
+  inside the web-served report tree by default, and got one more on every
+  run.  LoopData reserves a unique name at startup to write each packet to
+  before renaming it onto loop-data.txt, and was leaving the empty file
+  itself behind; only the name was wanted.  weewxd never left one, which is
+  why this went unseen: the file is renamed away by every packet, and the
+  cleanup that existed ran on the loop-processor thread, which weectl
+  report run never starts even though report_services builds the service.
+- The windrose manual page gains a picture of one: the sample skin's rose on
+  a real morning, with the default bands, captioned so that the calm centre
+  and the two-lobed shape illustrate the advice on choosing edges that
+  follows it.
+- Manual corrections: the windrose page's advice on the top band edge said
+  the darkest color flags the strongest wind.  It is the other way round on
+  the sample page, whose ramp runs dim for calm to bright for windy; some
+  other windrose tools do run dark for fast, which is where the sentence
+  came from.  The troubleshooting page's BAD DATA row gave only one of the
+  three things that show it -- a body that is not json -- and not the two
+  that name a report: no entry for this report at all, or an entry with no
+  current.dateTime.raw in it.
+- Fixed: a gauge whose cell is hidden because the station has no such
+  sensor is re-sized when the sensor reappears.  A hidden element measures
+  zero, so its canvas was built at a fallback size, and only the windrose
+  was ever checked for that drift.
 - Internal: three guard tests on the installer stanza -- the commented
   options pinned as a complete set with their values, each value checked
   against the fallback that governs when the key is absent, and comment

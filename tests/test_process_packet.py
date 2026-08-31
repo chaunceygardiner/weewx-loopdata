@@ -8686,7 +8686,7 @@ class ProcessPacketTests(unittest.TestCase):
         },
         'Extras': {
             'loop_data_file': 'loop-data.txt',
-            'expiration_time': '4',
+            'expiration_time': '24',
             'googleAnalyticsId': 'G-XXXXXXXXXX',
             'analytics_host': 'www.example.com',
         },
@@ -8764,7 +8764,6 @@ class ProcessPacketTests(unittest.TestCase):
             del config_dict['LoopData']['RsyncSpec']
             service = user.loopdata.LoopData(self.FakeEngine(config_dict), config_dict)
             cfg = service.cfg
-            os.unlink(cfg.tmpname)
         self.assertEqual(to_bool(rsync.pop('compress')), cfg.compress)
         self.assertEqual(to_bool(rsync.pop('log_success')), cfg.log_success)
         self.assertEqual(to_int(rsync.pop('timeout')), cfg.timeout)
@@ -8918,6 +8917,35 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(target['StdReport']['LoopDataReport']['HTML_ROOT'],
                          os.path.join('public_html', 'loopdata'))
 
+    def test_service_init_leaves_no_temp_file(self):
+        """__init__ reserves a name to write each packet to before renaming
+        it onto the loop-data file.  It must reserve the NAME only.
+
+        It used to leave the zero-byte file behind, and loop_data_dir is
+        inside the web-served report tree by default, so every process that
+        built the service without ever reaching a packet dropped another
+        LoopData* file into a directory the web server hands out.  The one
+        that does that in practice is `weectl report run`: report_services
+        carries LoopData, so __init__ runs, while the processor thread whose
+        finally-clause was the only cleanup never starts.  Nine tests in
+        this file used to unlink it by hand."""
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp)
+            service = user.loopdata.LoopData(self.FakeEngine(config_dict), config_dict)
+            cfg = service.cfg
+            self.assertFalse(os.path.exists(cfg.tmpname),
+                             '%s left behind by __init__' % cfg.tmpname)
+            left = [f for f in os.listdir(cfg.loop_data_dir) if f.startswith('LoopData')]
+            self.assertEqual([], left, 'temp files left in loop_data_dir: %s' % left)
+
+            # The reserved name still works: a write lands on the loop-data
+            # file and takes the temp name away again.
+            user.loopdata.LoopProcessor.write_packet_to_file(
+                {'current.outTemp': 1.0}, cfg.tmpname, cfg.loop_data_dir, cfg.filename)
+            written = os.path.join(cfg.loop_data_dir, cfg.filename)
+            self.assertTrue(os.path.exists(written))
+            self.assertFalse(os.path.exists(cfg.tmpname))
+
     def test_legacy_bands_follow_the_target_report(self):
         """The [[Include]] line is rendered through target_report, so it
         bands the way that report bands.  A station that moved
@@ -8941,7 +8969,6 @@ class ProcessPacketTests(unittest.TestCase):
             self.assertEqual(len(cfg.windrose_bandings), 1)
             self.assertEqual(set(cfg.legacy_shared), set(fields) | {'windrose.bands'})
             self.assertEqual(set(cfg.legacy_shared.values()), {'LoopDataReport'})
-            os.unlink(cfg.tmpname)
 
         # And with the value still under [LoopData] -- every pre-7.0
         # station -- the answer is what it always was.
@@ -8952,7 +8979,6 @@ class ProcessPacketTests(unittest.TestCase):
             with self.assertLogs('user.loopdata', level='WARNING'):
                 service = user.loopdata.LoopData(self.FakeEngine(config_dict), config_dict)
             self.assertEqual(service.cfg.legacy.windrose_bands, [2.0, 5.0])
-            os.unlink(service.cfg.tmpname)
 
     def test_legacy_fields_are_shared_with_any_matching_report(self):
         """The fields line carries other extensions' entries -- what every
@@ -9023,7 +9049,6 @@ class ProcessPacketTests(unittest.TestCase):
                 self.assertEqual(out[field], out[report][field], field)
             self.assertIn('current.inHumidity.raw', out)      # the legacy context's own
             self.assertIn('trend.outTemp.raw', out['Odd'])
-            os.unlink(cfg.tmpname)
 
     def test_a_failing_report_does_not_stop_the_file(self):
         """Every enabled report's declaration is rendered, including skins
@@ -9122,7 +9147,6 @@ class ProcessPacketTests(unittest.TestCase):
             reread = configobj.ConfigObj(config_path, encoding='utf-8')
             service = user.loopdata.LoopData(self.FakeEngine(reread), reread)
             self.assertIsNone(service.cfg.legacy)
-            os.unlink(service.cfg.tmpname)
 
     def test_finish_migration_does_not_move_the_file(self):
         """Removing target_report re-anchors a relative loop_data_dir, so
@@ -9989,7 +10013,6 @@ class ProcessPacketTests(unittest.TestCase):
             self.assertEqual(os.path.normpath(cfg.loop_data_dir),
                              os.path.join(tmp, 'public_html', 'loopdata'))
             self.assertTrue(os.path.isdir(cfg.loop_data_dir))
-            os.unlink(cfg.tmpname)
 
         # No fields line at all, but the deprecated [LoopData] windrose_bands
         # still set: it bands target_report's rose only, so a declaring
@@ -10011,7 +10034,6 @@ class ProcessPacketTests(unittest.TestCase):
             self.assertTrue(any('windrose_bands is deprecated' in m for m in logs.output), logs.output)
             self.assertTrue(any('target_report = Other is deprecated' in m for m in logs.output), logs.output)
             self.assertEqual(os.path.normpath(cfg.loop_data_dir), os.path.join(tmp, 'public_html', 'other'))
-            os.unlink(cfg.tmpname)
 
         # A target_report that exists but cannot be built (a broken
         # skin.conf) is reported as such, exception included -- not as
@@ -10031,7 +10053,6 @@ class ProcessPacketTests(unittest.TestCase):
             self.assertTrue(any('Could not build target_report BrokenReport' in m and 'Exception:' in m
                                 for m in logs.output), logs.output)
             self.assertFalse(any('Could not find target_report' in m for m in logs.output), logs.output)
-            os.unlink(cfg.tmpname)
 
         # A target_report that does not exist: the legacy line is dropped
         # with the honest message, the declaring report is still served, and
@@ -10050,7 +10071,6 @@ class ProcessPacketTests(unittest.TestCase):
             self.assertTrue(any('Could not find target_report: Nope' in m for m in logs.output), logs.output)
             self.assertEqual(os.path.normpath(cfg.loop_data_dir), os.path.join(tmp, 'public_html'))
             self.assertTrue(any('WARNING' in m and 'relative to [StdReport] HTML_ROOT' in m for m in logs.output), logs.output)
-            os.unlink(cfg.tmpname)
 
         # A disabled LoopDataReport still anchors: enable = false is how the
         # sample page is turned off, and the section stays.
@@ -10064,7 +10084,6 @@ class ProcessPacketTests(unittest.TestCase):
             self.assertEqual(cfg.reports, [])          # disabled: declares nothing
             self.assertIsNotNone(cfg.legacy)          # but the line still renders through it
             self.assertEqual(os.path.normpath(cfg.loop_data_dir), os.path.join(tmp, 'public_html', 'loopdata'))
-            os.unlink(cfg.tmpname)
 
         # The same with nothing else declaring: LoopData exits, and says the
         # line was there but could not be set up -- not that it is absent.

@@ -244,18 +244,6 @@ working as before.
                          outside the web root, which keeps it out of your report sync
                          and off an SD card.
  * `filename`          : The name of the loop data file to write.
-
-Deprecated, still honored on an upgraded station, not written by a fresh
-install:
-
- * `target_report`     : The report the old station-wide `fields` line is rendered
-                         through -- its units, formatting and language -- and the
-                         report whose directory a relative `loop_data_dir` is relative
-                         to.  `LoopDataReport`, the sample report, when absent.
- * `fields`            : The old station-wide list of fields, written as flat keys at
-                         the top level of the file.  Reports declare their own fields
-                         now; do not edit this line by hand -- a later release removes
-                         it once every extension that used it declares its fields.
  * `seconds`           : How often your station emits loop packets.  LoopData weights
                          its accumulator entries with it, and gives each packet an
                          `interval` of `seconds / 60`.  Get it right.  `2.0` is the
@@ -292,6 +280,18 @@ install:
                          bounds described under `ssh_options`.  0 disables all time bounds.
  * `skip_if_older_than`: Don't bother to rsync if greater than this number of seconds.  Default is 3.
                          (Skip this and move on to the next if this data is older than 3 seconds.)
+
+Deprecated, still honored on an upgraded station, not written by a fresh
+install:
+
+ * `target_report`     : The report the old station-wide `fields` line is rendered
+                         through -- its units, formatting and language -- and the
+                         report whose directory a relative `loop_data_dir` is relative
+                         to.  `LoopDataReport`, the sample report, when absent.
+ * `fields`            : The old station-wide list of fields, written as flat keys at
+                         the top level of the file.  Reports declare their own fields
+                         now; do not edit this line by hand -- a later release removes
+                         it once every extension that used it declares its fields.
  * `windrose_bands`    : Pre-7.0 spelling of the `windrose` band edges, in
                          `target_report`'s windSpeed unit; it bands that report's rose
                          and no other's, as it did before 7.0.  Since 7.0

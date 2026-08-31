@@ -92,9 +92,9 @@ defaults.  Finishing the migration moves it onto that report's stanza; see
 {: .note }
 A **fresh** install of 7.0 writes no fields line, and weewx-celestial 8.4's
 installer adds its fields only to a line that already exists.  A fresh
-station therefore needs a weewx-celestial newer than 8.4 — one that
-declares its own fields — for the Celestial page to have live values.
-Upgraded stations keep their line and are unaffected.
+station therefore needs weewx-celestial 9.0 or later, which declares its
+own fields, for the Celestial page to have live values.  Upgraded stations
+keep their line and are unaffected.
 
 ### 6.4 — `[[BarometerTrendDescriptions]]` was removed
 
@@ -142,7 +142,7 @@ a restart.  Details, and the aggregates the new type adds, are under
 
 ## Worth knowing, but nothing to do
 
-* **7.x (in progress)** — a *fresh* install now writes eight of the options it puts in
+* **7.0.1** — a *fresh* install now writes eight of the options it puts in
   `weewx.conf` commented out, showing the value that applies: four in
   `[[RsyncSpec]]` (`compress`, `log_success`, `timeout`,
   `skip_if_older_than`) and four in the sample report's `[Extras]`
@@ -157,6 +157,24 @@ a restart.  Details, and the aggregates the new type adds, are under
   from `[[RsyncSpec]]` — or deleting the whole section — used to stop
   LoopData at startup with `Unknown boolean specifier: 'None'`.  Each now
   defaults to `false`, which is what the installer has always written.
+
+  Also fixed: `weectl report run` used to leave a zero-byte `LoopData…`
+  file in the directory the loop-data file is written to — inside your
+  web-served report tree, unless you moved it — one per run.  Nothing
+  cleans up the ones already there: they are all zero bytes, and
+  `loop-data.txt` itself does not match `LoopData*`, so they can be
+  deleted.
+
+  One behavior does reach a station without an edit: the sample page's
+  `expiration_time` default is now 24 hours where it was 4, so the page
+  polls six times longer before it gives up and waits for a click.  That
+  applies only where `weewx.conf` does not set the option itself — a fresh
+  install since 6.11.3, where it is written commented out.  If your
+  `weewx.conf` carries `expiration_time = 4` as a live setting, as every
+  install made before that does, it still wins and nothing changes; delete
+  or edit that line to take the new default.  `expiration_time = 0` now
+  means the page never expires, where it used to expire the page before
+  its first packet arrived.
 * **7.0** — a field none of the parsers accept is logged
   (`Ignoring unrecognized field`), naming the report that declared it;
   it was dropped silently.  A trend window or windrose bands that differ

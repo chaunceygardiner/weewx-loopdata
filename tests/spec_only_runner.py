@@ -151,6 +151,7 @@ SPEC_TESTS = [
     'test_a_failing_report_does_not_stop_the_file',
     'test_legacy_fields_are_shared_with_any_matching_report',
     'test_version_tuple_is_shared_with_the_installer',
+    'test_service_init_leaves_no_temp_file',
 ]
 
 suite = unittest.TestSuite([T.ProcessPacketTests(name) for name in SPEC_TESTS])

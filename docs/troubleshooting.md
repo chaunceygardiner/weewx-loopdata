@@ -30,8 +30,8 @@ The [sample skin](sample-skin.html) diagnoses its own data feed:
 |---|---|
 | `OFFLINE` | The fetch itself failed — the web server is unreachable. |
 | `NO DATA (HTTP 404) — check loop_data_file` | The web server answered, but not with the file.  The classic cause: `loop_data_dir` points outside the web server's tree (say `/dev/shm`) with nothing configured to serve it, or the skin's `loop_data_file` Extras option doesn't match where the file actually lands.  Keeping the file outside the web root is a perfectly good arrangement — it just has to be served and named; see [Where the loop-data file should live](configuration.html#where-the-loop-data-file-should-live). |
-| `BAD DATA — check loop_data_file` | The poll got HTTP 200 but the body isn't json — usually a catch-all web server rule serving an HTML page at that URL. |
-| A growing age readout | The file is served but not being rewritten — check that weewxd is running and the log for loopdata errors; if you rsync, see below. |
+| `BAD DATA — check loop_data_file` | The web server answered with something, but not with this page's data.  Three causes: the body isn't json at all — usually a catch-all web server rule serving an HTML page at that URL; the json has no entry for this report, meaning an older loopdata is running or this report does not [declare its fields](declaring-fields.html); or the entry is there but carries no `current.dateTime.raw`, so there is no packet timestamp to age — declare the field, and note the gauges themselves still draw meanwhile. |
+| A growing age readout | The file is served but not being rewritten — check that weewxd is running and the log for loopdata errors; if you rsync, see below.  The age is measured against the web server's clock, not the browser's, so a device with the wrong time is not the cause. |
 
 A later successful poll rewrites the indicator to LIVE.
 
