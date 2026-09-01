@@ -192,10 +192,10 @@ Upgrading an existing install?  Some releases need a change to your
 
 Same steps, but install with:
 
-`sudo /home/weewx/bin/wee_extension --install weewx-loopdata.zip`
+`sudo wee_extension --install weewx-loopdata.zip`
 
-(This assumes weewx is installed in `/home/weewx`; adjust the path
-accordingly.)
+(A package install has `wee_extension` on the path, as above.  On a setup.py
+install use the full path, e.g. `/home/weewx/bin/wee_extension`.)
 
 **Optional: SSH control master multiplexing.**  This applies only if you rsync
 loop-data.txt to another machine.  Rsync'ing every 2 seconds means a few

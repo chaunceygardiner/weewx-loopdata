@@ -17,7 +17,8 @@ extension in place and leaves your `[LoopData]` section alone:
 weectl extension install weewx-loopdata.zip
 ```
 
-(WeeWX 4: `sudo /home/weewx/bin/wee_extension --install weewx-loopdata.zip`.)
+(WeeWX 4: `sudo wee_extension --install weewx-loopdata.zip`, or the full path on a
+setup.py install.)
 Restart weewxd afterwards.  Full steps are on the
 [Installation](installation.html) page.
 

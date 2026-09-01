@@ -64,11 +64,12 @@ in `[[LoopFrequency]] seconds`.
 1. Install the loopdata extension:
 
    ```
-   sudo /home/weewx/bin/wee_extension --install weewx-loopdata.zip
+   sudo wee_extension --install weewx-loopdata.zip
    ```
 
-   Note: this command assumes weewx is installed in `/home/weewx`.  If it's
-   installed elsewhere, adjust the path of `wee_extension` accordingly.
+   Note: a package install has `wee_extension` on the path, as above.  On
+   a setup.py install use the full path, e.g.
+   `/home/weewx/bin/wee_extension`.
 
 1. Adjust the `[LoopData]` section the install added to weewx.conf (see
    [First-time configuration](#first-time-configuration) below).
