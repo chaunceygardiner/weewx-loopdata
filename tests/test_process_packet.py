@@ -8992,17 +8992,17 @@ class ProcessPacketTests(unittest.TestCase):
             # the sample skin does not -- the celestial case.
             other = os.path.join(tmp, 'skins', 'Other')
             os.makedirs(other)
-            open(os.path.join(other, 'skin.conf'), 'w').write(
-                '[Generators]\n    generator_list = weewx.cheetahgenerator.CheetahGenerator\n'
-                '[LoopData]\n    [[fields]]\n        a = hour.outTemp.max.raw, week.rain.sum\n')
+            with open(os.path.join(other, 'skin.conf'), 'w') as f:
+                f.write('[Generators]\n    generator_list = weewx.cheetahgenerator.CheetahGenerator\n'
+                        '[LoopData]\n    [[fields]]\n        a = hour.outTemp.max.raw, week.rain.sum\n')
             # And a third whose trend window differs, so it renders trends
             # differently and must NOT be used as a stand-in.  The window
             # goes on the report's stanza: [[Defaults]] beats a skin.conf.
             odd = os.path.join(tmp, 'skins', 'Odd')
             os.makedirs(odd)
-            open(os.path.join(odd, 'skin.conf'), 'w').write(
-                '[Generators]\n    generator_list = weewx.cheetahgenerator.CheetahGenerator\n'
-                '[LoopData]\n    [[fields]]\n        a = trend.outTemp.raw\n')
+            with open(os.path.join(odd, 'skin.conf'), 'w') as f:
+                f.write('[Generators]\n    generator_list = weewx.cheetahgenerator.CheetahGenerator\n'
+                        '[LoopData]\n    [[fields]]\n        a = trend.outTemp.raw\n')
             config_dict['StdReport']['Other'] = {'skin': 'Other', 'HTML_ROOT': 'public_html/other'}
             config_dict['StdReport']['Odd'] = {'skin': 'Odd', 'HTML_ROOT': 'public_html/odd',
                                                'Units': {'Trend': {'time_delta': '3600'}}}
@@ -9955,10 +9955,12 @@ class ProcessPacketTests(unittest.TestCase):
         if declare_sample:
             shutil.copy(os.path.join(ProcessPacketTests.I18N_SKIN_DIR, 'skin.conf'), skin_dir)
         else:
-            open(os.path.join(skin_dir, 'skin.conf'), 'w').write('[Generators]\n    generator_list = weewx.cheetahgenerator.CheetahGenerator\n')
+            with open(os.path.join(skin_dir, 'skin.conf'), 'w') as f:
+                f.write('[Generators]\n    generator_list = weewx.cheetahgenerator.CheetahGenerator\n')
         ftp_dir = os.path.join(tmp, 'skins', 'Ftp')
         os.makedirs(ftp_dir)
-        open(os.path.join(ftp_dir, 'skin.conf'), 'w').write('[Generators]\n    generator_list = weewx.reportengine.FtpGenerator\n')
+        with open(os.path.join(ftp_dir, 'skin.conf'), 'w') as f:
+            f.write('[Generators]\n    generator_list = weewx.reportengine.FtpGenerator\n')
         config_dict['StdReport']['LoopDataReport'] = {'skin': 'LoopData', 'HTML_ROOT': 'public_html/loopdata'}
         config_dict['StdReport']['FTP'] = {'skin': 'Ftp', 'enable': 'true'}
         config_dict['LoopData'] = {'FileSpec': {'loop_data_dir': '.', 'filename': 'loop-data.txt'},
@@ -10042,7 +10044,8 @@ class ProcessPacketTests(unittest.TestCase):
             config_dict = self._init_fixture(tmp)
             broken = os.path.join(tmp, 'skins', 'Broken')
             os.makedirs(broken)
-            open(os.path.join(broken, 'skin.conf'), 'w').write('[Extras\n    oops = 1\n')
+            with open(os.path.join(broken, 'skin.conf'), 'w') as f:
+                f.write('[Extras\n    oops = 1\n')
             config_dict['StdReport']['BrokenReport'] = {'skin': 'Broken', 'enable': 'false'}
             config_dict['LoopData']['Include'] = {'fields': ['current.outTemp']}
             config_dict['LoopData']['Formatting'] = {'target_report': 'BrokenReport'}

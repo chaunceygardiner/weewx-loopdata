@@ -1,6 +1,15 @@
 loopdata change history
 -----------------------
 
+7.x (in progress)
+-----------------
+- Internal: the two archive database connections loopdata opened -- one
+  when the service starts, one when the first loop packet builds the
+  accumulators -- are closed when they are finished with, rather than
+  held open for the life of weewxd.
+- Internal: the test suite closes the files it writes, so a run no longer
+  prints a ResourceWarning for each one.
+
 7.0.1 2026/08/31
 ----------------
 - Nothing below edits a weewx.conf that already exists, and there is

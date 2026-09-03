@@ -1427,10 +1427,9 @@ class LoopData(StdService):
 
         # Get the unit_system as specified by StdConvert->target_unit.
         # Note: this value will be overwritten if the day accumulator has a a unit_system.
-        db_binder = weewx.manager.DBBinder(config_dict)
         default_binding = config_dict.get('StdReport')['data_binding']
-        dbm = db_binder.get_manager(default_binding)
-        unit_system = dbm.std_unit_system
+        with weewx.manager.DBBinder(config_dict) as db_binder:
+            unit_system = db_binder.get_manager(default_binding).std_unit_system
         if unit_system is None:
             unit_system = weewx.units.unit_constants[self.config_dict['StdConvert'].get('target_unit', 'US').upper()]
 
@@ -2205,76 +2204,80 @@ class LoopData(StdService):
         log.debug('new_loop: event: %s' % event)
         if not self.accumulator_payload_sent:
             self.accumulator_payload_sent = True
-            binder = weewx.manager.DBBinder(self.config_dict)
             binding = self.config_dict.get('StdReport')['data_binding']
-            dbm = binder.get_manager(binding)
-            pkt_time = to_int(event.packet['dateTime'])
+            with weewx.manager.DBBinder(self.config_dict) as binder:
+                dbm = binder.get_manager(binding)
+                pkt_time = to_int(event.packet['dateTime'])
 
-            # Init day accumulator from day_summary
-            day_summary = dbm._get_day_summary(time.time())
-            # Init an accumulator
-            timespan = weeutil.weeutil.archiveDaySpan(pkt_time)
-            unit_system = day_summary.unit_system
-            if unit_system is not None:
-                # Database has a unit_system already (true unless the db just got intialized.)
-                self.cfg.unit_system = unit_system
-            day_accum = weewx.accum.Accum(timespan, unit_system=self.cfg.unit_system)
-            for k in day_summary:
-                day_accum.set_stats(k, day_summary[k].getStatsTuple())
+                # Init day accumulator from day_summary
+                day_summary = dbm._get_day_summary(time.time())
+                # Init an accumulator
+                timespan = weeutil.weeutil.archiveDaySpan(pkt_time)
+                unit_system = day_summary.unit_system
+                if unit_system is not None:
+                    # Database has a unit_system already (true unless the db just got intialized.)
+                    self.cfg.unit_system = unit_system
+                day_accum = weewx.accum.Accum(timespan, unit_system=self.cfg.unit_system)
+                for k in day_summary:
+                    day_accum.set_stats(k, day_summary[k].getStatsTuple())
 
-            # Create fixed accums
-            alltime_accum, self.cfg.obstypes.alltime = LoopData.create_alltime_accum(
-                self.cfg.unit_system, self.cfg.archive_interval, self.cfg.obstypes.alltime, day_accum, dbm)
-            rainyear_accum, self.cfg.obstypes.rainyear = LoopData.create_rainyear_accum(
-                self.cfg.unit_system, self.cfg.archive_interval, self.cfg.obstypes.rainyear, pkt_time, self.cfg.rainyear_start, day_accum, dbm)
-            year_accum, self.cfg.obstypes.year = LoopData.create_year_accum(
-                self.cfg.unit_system, self.cfg.archive_interval, self.cfg.obstypes.year, pkt_time, day_accum, dbm)
-            month_accum, self.cfg.obstypes.month = LoopData.create_month_accum(
-                self.cfg.unit_system, self.cfg.archive_interval, self.cfg.obstypes.month, pkt_time, day_accum, dbm)
-            week_accum, self.cfg.obstypes.week = LoopData.create_week_accum(
-                self.cfg.unit_system, self.cfg.archive_interval, self.cfg.obstypes.week, pkt_time, self.cfg.week_start, day_accum, dbm)
-            hour_accum, self.cfg.obstypes.hour = LoopData.create_hour_accum(
-                self.cfg.unit_system, self.cfg.archive_interval, self.cfg.obstypes.hour, pkt_time, day_accum, dbm,
-                archive_delay=self.cfg.archive_delay)
-
-            # Create continuous accums
-            continuous_accums: Dict[str, ContinuousAccum] = {}
-            for per, obstypes in self.cfg.obstypes.continuous.items():
-                if LoopData.is_trend_key(per):
-                    timelength = LoopData.trend_key_seconds(per)
-                elif LoopData.is_hour_period(per):
-                    timelength = int(per[:-1])*3600
-                elif LoopData.is_minute_period(per):
-                    timelength = int(per[:-1])*60
-                else:
-                    # Unreachable: is_continuous_period admits only the three
-                    # forms above, and union_obstypes re-keys 'trend'.  Skip
-                    # rather than carry the previous iteration's window.
-                    log.debug('No window for continuous period %s, skipping it.' % per)
-                    continue
-
-                cont_accum, obstypes = LoopData.create_continuous_accum(
-                    per, self.cfg.unit_system, self.cfg.archive_interval, obstypes, timelength, day_accum, dbm,
+                # Create fixed accums
+                alltime_accum, self.cfg.obstypes.alltime = LoopData.create_alltime_accum(
+                    self.cfg.unit_system, self.cfg.archive_interval, self.cfg.obstypes.alltime, day_accum, dbm)
+                rainyear_accum, self.cfg.obstypes.rainyear = LoopData.create_rainyear_accum(
+                    self.cfg.unit_system, self.cfg.archive_interval, self.cfg.obstypes.rainyear, pkt_time, self.cfg.rainyear_start, day_accum, dbm)
+                year_accum, self.cfg.obstypes.year = LoopData.create_year_accum(
+                    self.cfg.unit_system, self.cfg.archive_interval, self.cfg.obstypes.year, pkt_time, day_accum, dbm)
+                month_accum, self.cfg.obstypes.month = LoopData.create_month_accum(
+                    self.cfg.unit_system, self.cfg.archive_interval, self.cfg.obstypes.month, pkt_time, day_accum, dbm)
+                week_accum, self.cfg.obstypes.week = LoopData.create_week_accum(
+                    self.cfg.unit_system, self.cfg.archive_interval, self.cfg.obstypes.week, pkt_time, self.cfg.week_start, day_accum, dbm)
+                hour_accum, self.cfg.obstypes.hour = LoopData.create_hour_accum(
+                    self.cfg.unit_system, self.cfg.archive_interval, self.cfg.obstypes.hour, pkt_time, day_accum, dbm,
                     archive_delay=self.cfg.archive_delay)
-                if cont_accum:
-                    continuous_accums[per], self.cfg.obstypes.continuous[per]  = cont_accum, obstypes
 
-            # Create windrose accums (span periods seeded by one SQL GROUP BY
-            # each, continuous periods by archive replay).
-            windrose_span_accums, windrose_continuous_accums = \
-                LoopData.create_windrose_accums(self.cfg, dbm, pkt_time)
+                # Create continuous accums
+                continuous_accums: Dict[str, ContinuousAccum] = {}
+                for per, obstypes in self.cfg.obstypes.continuous.items():
+                    if LoopData.is_trend_key(per):
+                        timelength = LoopData.trend_key_seconds(per)
+                    elif LoopData.is_hour_period(per):
+                        timelength = int(per[:-1])*3600
+                    elif LoopData.is_minute_period(per):
+                        timelength = int(per[:-1])*60
+                    else:
+                        # Unreachable: is_continuous_period admits only the three
+                        # forms above, and union_obstypes re-keys 'trend'.  Skip
+                        # rather than carry the previous iteration's window.
+                        log.debug('No window for continuous period %s, skipping it.' % per)
+                        continue
 
-            self.cfg.queue.put(Accumulators(
-                alltime_accum       = alltime_accum,
-                rainyear_accum      = rainyear_accum,
-                year_accum          = year_accum,
-                month_accum         = month_accum,
-                week_accum          = week_accum,
-                day_accum           = day_accum,
-                hour_accum          = hour_accum,
-                continuous          = continuous_accums,
-                windrose_span       = windrose_span_accums,
-                windrose_continuous = windrose_continuous_accums))
+                    cont_accum, obstypes = LoopData.create_continuous_accum(
+                        per, self.cfg.unit_system, self.cfg.archive_interval, obstypes, timelength, day_accum, dbm,
+                        archive_delay=self.cfg.archive_delay)
+                    if cont_accum:
+                        continuous_accums[per], self.cfg.obstypes.continuous[per]  = cont_accum, obstypes
+
+                # Create windrose accums (span periods seeded by one SQL GROUP BY
+                # each, continuous periods by archive replay).
+                windrose_span_accums, windrose_continuous_accums = \
+                    LoopData.create_windrose_accums(self.cfg, dbm, pkt_time)
+
+                # Inside the with: the payload goes on the queue before the
+                # binder closes, since a close that raised would otherwise
+                # leave it unsent with accumulator_payload_sent already set,
+                # and no later packet rebuilds the accumulators.
+                self.cfg.queue.put(Accumulators(
+                    alltime_accum       = alltime_accum,
+                    rainyear_accum      = rainyear_accum,
+                    year_accum          = year_accum,
+                    month_accum         = month_accum,
+                    week_accum          = week_accum,
+                    day_accum           = day_accum,
+                    hour_accum          = hour_accum,
+                    continuous          = continuous_accums,
+                    windrose_span       = windrose_span_accums,
+                    windrose_continuous = windrose_continuous_accums))
         self.cfg.queue.put(event)
 
     @staticmethod
