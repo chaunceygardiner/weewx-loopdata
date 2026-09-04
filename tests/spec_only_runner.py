@@ -152,6 +152,9 @@ SPEC_TESTS = [
     'test_legacy_fields_are_shared_with_any_matching_report',
     'test_version_tuple_is_shared_with_the_installer',
     'test_service_init_leaves_no_temp_file',
+    'test_queue_loop_writes_the_file',
+    'test_create_period_accum_counts_today_once',
+    'test_skip_if_older_than_must_be_at_least_one',
 ]
 
 suite = unittest.TestSuite([T.ProcessPacketTests(name) for name in SPEC_TESTS])

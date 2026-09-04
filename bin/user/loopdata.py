@@ -56,7 +56,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '7.0.1'
+LOOP_DATA_VERSION = '7.1'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -1415,6 +1415,8 @@ class LoopData(StdService):
             raise Exception("Python 3 is required for the loopdata plugin.")
 
         self.loop_processor_started = False
+        self.loop_thread: Optional[threading.Thread] = None
+        self.thread_loss_logged = False
 
         station_dict             = config_dict.get('Station', {})
         std_archive_dict         = config_dict.get('StdArchive', {})
@@ -1617,6 +1619,25 @@ class LoopData(StdService):
         # ssh_options (see compose_ssh_options), so resolve it first.
         rsync_timeout: int = to_int(rsync_spec_dict.get('timeout', 1))
 
+        # A cutoff below one second would ship every packet however late --
+        # the backlog the option exists to prevent -- so it is refused, the
+        # way an invalid windrose_bands is, and the default answers.  A blank
+        # or explicitly none value converts to None, refused the same way:
+        # to_int has no safe absent case, so comparing it raises.  The value
+        # is reported as written rather than as converted, since to_int
+        # truncates (0.9 would otherwise be reported as 0).  A value that is
+        # not a number at all raises rather than returning None, so it is
+        # caught and refused the same way.
+        skip_spec = rsync_spec_dict.get('skip_if_older_than', 3)
+        try:
+            skip_if_older_than = to_int(skip_spec)
+        except ValueError:
+            skip_if_older_than = None
+        if skip_if_older_than is None or skip_if_older_than < 1:
+            log.warning('Ignoring skip_if_older_than = %s (must be at least 1); using the default of 3.'
+                        % skip_spec)
+            skip_if_older_than = 3
+
         self.cfg: Configuration = Configuration(
             queue                    = queue.SimpleQueue(),
             config_dict              = config_dict,
@@ -1645,7 +1666,7 @@ class LoopData(StdService):
             ssh_options              = LoopData.compose_ssh_options(
                                        rsync_spec_dict.get('ssh_options', ''), rsync_timeout),
             timeout                  = rsync_timeout,
-            skip_if_older_than       = to_int(rsync_spec_dict.get('skip_if_older_than', 3)),
+            skip_if_older_than       = skip_if_older_than,
             week_start               = week_start,
             rainyear_start           = rainyear_start,
             legacy                   = legacy,
@@ -2151,8 +2172,8 @@ class LoopData(StdService):
             # accumulator_payload_sent is used to only create accumulators on first new_loop packet
             self.accumulator_payload_sent = False
             lp: LoopProcessor = LoopProcessor(self.cfg)
-            t: threading.Thread = threading.Thread(target=lp.process_queue, name='LoopData', daemon=True)
-            t.start()
+            self.loop_thread = threading.Thread(target=lp.process_queue, name='LoopData', daemon=True)
+            self.loop_thread.start()
         except Exception as e:
             reraise_if_terminate(e)
             # Print problem to log and give up.
@@ -2169,7 +2190,7 @@ class LoopData(StdService):
         # opposite right-edge convention from archive-record queries
         # (start < t <= stop); day-summary rows are keyed by day-start, so the
         # row at exactly 'start' is included and the row at exactly 'stop' is
-        # not.  latest_time should be the period span's stop.
+        # not.  latest_time is that exclusive upper bound.
         table_name = 'archive_day_%s' % obstype
         cols: List[str] = dbm.connection.columnsOf(table_name)
         if latest_time is None:
@@ -2200,8 +2221,44 @@ class LoopData(StdService):
                 timestamp_to_string(pkt['dateTime']), pkt))
         return packets
 
+    def shutDown(self):
+        """Called by the engine as weewxd stops, before the process is
+        killed: stop the processor thread, so a stop that lands while a
+        packet is being written does not leave the temp file in the served
+        directory.  The thread's finally clause removes it, and a killed
+        daemon thread never reaches its finally clause.  A service whose
+        pre_loop never ran -- weectl report run -- has no thread to stop.
+        Queued packets are discarded first: nobody will read them now, and
+        each would cost a render, an fsync and possibly an rsync timeout
+        before the thread saw the stop behind them.  The join then waits on
+        the one packet in hand, bounded and logged when it expires, as
+        weewx's own REST and report threads are (twenty seconds, as theirs)."""
+        thread = self.loop_thread
+        if thread is None or not thread.is_alive():
+            return
+        try:
+            while True:
+                self.cfg.queue.get_nowait()
+        except queue.Empty:
+            pass
+        self.cfg.queue.put(None)
+        thread.join(20)
+        if thread.is_alive():
+            log.error('Unable to shut down LoopData thread')
+
     def new_loop(self, event):
         log.debug('new_loop: event: %s' % event)
+        thread = self.loop_thread
+        if self.loop_processor_started and (thread is None or not thread.is_alive()):
+            # The processor thread has died, or pre_loop failed to start it
+            # (either way the cause is in the log above).  Nothing drains the
+            # queue, so queuing on would grow memory by a packet every loop
+            # for the life of weewxd.
+            if not self.thread_loss_logged:
+                self.thread_loss_logged = True
+                log.error('LoopData thread is not running; loop packets are ignored from here on '
+                          'and the loop-data file will not update again.')
+            return
         if not self.accumulator_payload_sent:
             self.accumulator_payload_sent = True
             binding = self.config_dict.get('StdReport')['data_binding']
@@ -2209,10 +2266,14 @@ class LoopData(StdService):
                 dbm = binder.get_manager(binding)
                 pkt_time = to_int(event.packet['dateTime'])
 
-                # Init day accumulator from day_summary
-                day_summary = dbm._get_day_summary(time.time())
-                # Init an accumulator
+                # Init day accumulator from the summary of the packet's day,
+                # the day its timespan covers (the wall clock sits in the next
+                # day when a start straddles midnight).  Looked up by the
+                # span's start, as weewx's own callers do: exactly midnight is
+                # the old day to archiveDaySpan and the new day to
+                # _get_day_summary's own normalization.
                 timespan = weeutil.weeutil.archiveDaySpan(pkt_time)
+                day_summary = dbm._get_day_summary(timespan.start)
                 unit_system = day_summary.unit_system
                 if unit_system is not None:
                     # Database has a unit_system already (true unless the db just got intialized.)
@@ -2359,10 +2420,18 @@ class LoopData(StdService):
             else:
                 return None, set()
             record_count = 0
-            # For periods > day, accumulate from day summary records.
+            # For periods > day, accumulate from the day summary rows of the
+            # whole days before today, then add today from day_accum.  Today
+            # has a row in that table too -- it is what day_accum was built
+            # from -- so the rows stop at today's start, or today counts twice.
+            # Every production span is built from the packet's own time and so
+            # contains today, which makes today's start the tighter of the two
+            # bounds; a caller whose span ended before today would need the
+            # span's stop instead.
             # hour accumulator is handled by reading archive records (see below).
             if  name != 'hour':
-                for record in LoopData.day_summary_records_generator(dbm, obstype, span.start, latest_time=span.stop):
+                for record in LoopData.day_summary_records_generator(dbm, obstype, span.start,
+                        latest_time=day_accum.timespan.start):
                     record_count += 1
                     if type(stats) == weewx.accum.ScalarStats:
                         sstat = weewx.accum.ScalarStats((record['min'], record['mintime'],
@@ -3772,6 +3841,11 @@ class LoopProcessor:
             while True:
                 event               = self.cfg.queue.get()
 
+                if event is None:
+                    # Stop signal, sent by LoopData.shutDown: end the loop,
+                    # and with it the temp file (the finally clause below).
+                    return
+
                 if type(event) == Accumulators:
                     LoopProcessor.log_configuration(self.cfg)
                     self.accumulators: Accumulators = event
@@ -4453,11 +4527,10 @@ class LoopProcessor:
             compress: bool, log_success: bool) -> None:
         log.debug('rsync_data(%d) start' % pktTime)
         # Don't upload if more than skip_if_older_than seconds behind.
-        if skip_if_older_than != 0:
-            age = time.time() - pktTime
-            if age > skip_if_older_than:
-                log.info('skipping packet (%s) with age: %f' % (timestamp_to_string(pktTime), age))
-                return
+        age = time.time() - pktTime
+        if age > skip_if_older_than:
+            log.info('skipping packet (%s) with age: %f' % (timestamp_to_string(pktTime), age))
+            return
         rsync_upload = weeutil.rsyncupload.RsyncUpload(
             local_root= os.path.join(loop_data_dir, filename),
             remote_root = os.path.join(remote_dir, filename),

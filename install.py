@@ -104,7 +104,7 @@ CONFIG = """
 
         # Don't bother to rsync if the data is already older than this many
         # seconds: skip the packet and move on rather than shipping stale
-        # data late.
+        # data late.  Must be at least 1.
         #skip_if_older_than = 3
 
         # PLACEHOLDER -- replace with the server to copy the file to.
@@ -267,7 +267,7 @@ def loader():
 class LoopDataInstaller(ExtensionInstaller):
     def __init__(self):
         super(LoopDataInstaller, self).__init__(
-            version = "7.0.1",
+            version = "7.1",
             name = 'loopdata',
             description = 'Loop statistics for real time reporting.',
             author = "John A Kline",

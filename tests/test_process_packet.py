@@ -31,9 +31,11 @@
 """Test processing packets."""
 
 import configobj
+import contextlib
 import importlib
 import importlib.util
 import io
+import json
 import logging
 import math
 import os
@@ -7314,9 +7316,10 @@ class ProcessPacketTests(unittest.TestCase):
             # obstype entirely (it only processes obstypes present in day_accum).
             # Give it one reading at value 50 -- distinct from dayA (40) and
             # dayB (80) -- so the asserted max proves which day-summary rows
-            # were merged.  'today' here is a day AFTER dayB so it is not itself
-            # a day-summary row in the db.
-            today = dayB + 86400
+            # were merged.  'today' is dayB, so the bound in force -- today's
+            # start -- lands exactly on dayB's summary key, and dayB's row is
+            # excluded by the same exclusive-right rule this test is about.
+            today = dayB
             day_accum = weewx.accum.Accum(
                 weeutil.weeutil.archiveDaySpan(today), unit_system)
             day_accum.addRecord(
@@ -7328,8 +7331,8 @@ class ProcessPacketTests(unittest.TestCase):
             self.assertIsNotNone(accum)
             self.assertIn('outTemp', accum)
             # dayA's summary (1 obs, value 40) is within [start, stop).  dayB's
-            # row (value 80), keyed exactly at stop, is EXCLUDED by the
-            # exclusive-right bound.  day_accum adds 1 obs (value 50).  So:
+            # row (value 80), keyed exactly at the bound, is EXCLUDED by the
+            # exclusive-right rule.  day_accum adds 1 obs (value 50).  So:
             #   count = 1 (dayA) + 1 (day_accum) = 2
             #   max   = 50 (day_accum); NOT 80 -- proving dayB was excluded.
             self.assertEqual(accum['outTemp'].count, 2)
@@ -7339,6 +7342,45 @@ class ProcessPacketTests(unittest.TestCase):
             if dbm is not None:
                 dbm.close()
             shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_create_period_accum_counts_today_once(self) -> None:
+        """Spec: a span accumulator is the day summary rows of the whole
+        days before today plus today's running totals, day_accum.  Today has
+        a summary row too -- it is what new_loop builds day_accum from -- so
+        the rows must stop at today's start, or today counts twice.  Expected
+        values come from the records written, not from loopdata."""
+        unit_system = weewx.units.unit_constants['US']
+        os.environ['TZ'] = 'America/Los_Angeles'
+        time.tzset()
+        with tempfile.TemporaryDirectory() as tmp:
+            dbm = weewx.manager.DaySummaryManager.open_with_create(
+                {'database_name': os.path.join(tmp, 'test.sdb'), 'driver': 'weedb.sqlite'},
+                table_name='archive', schema=wview_extended_schema)
+            try:
+                yesterday = 1593543600          # 2020-06-30 12:00 PDT
+                today = yesterday + 86400       # 2020-07-01 12:00 PDT
+                for d, temp in ((yesterday, 40.0), (today - 600, 60.0), (today - 300, 80.0)):
+                    dbm.addRecord({'dateTime': d, 'usUnits': 1, 'interval': 5,
+                                   'outTemp': temp, 'rain': 0.1})
+                # Today's summary row, as the populated Accum over that day
+                # the manager hands back -- what the rows-before-today bound
+                # must not add a second time.
+                day_accum = dbm._get_day_summary(weeutil.weeutil.archiveDaySpan(today).start)
+
+                span = weeutil.weeutil.archiveYearSpan(today)     # holds both days
+                accum, valid = user.loopdata.LoopData.create_period_accum(
+                    'year', unit_system, 5, {'outTemp', 'rain'}, span, day_accum, dbm)
+                self.assertIsNotNone(accum)
+                self.assertEqual(valid, {'outTemp', 'rain'})
+                # yesterday's row (1 obs) + today's totals (2 obs); today's row
+                # is not added on top of them.
+                self.assertEqual(accum['outTemp'].count, 3)
+                self.assertEqual(accum['outTemp'].sum, 180.0)
+                self.assertAlmostEqual(accum['rain'].sum, 0.3)
+                self.assertEqual(accum['outTemp'].min, 40.0)
+                self.assertEqual(accum['outTemp'].max, 80.0)
+            finally:
+                dbm.close()
 
     def test_create_hour_accum_from_database(self) -> None:
         # Covers the name=='hour' path of create_period_accum, which primes the
@@ -8945,6 +8987,163 @@ class ProcessPacketTests(unittest.TestCase):
             written = os.path.join(cfg.loop_data_dir, cfg.filename)
             self.assertTrue(os.path.exists(written))
             self.assertFalse(os.path.exists(cfg.tmpname))
+
+    def test_queue_loop_writes_the_file(self):
+        """The path production runs and the test entry point skips: the
+        service's own first-packet build (accumulators seeded from the
+        database, payload queued ahead of the packet), the LoopProcessor
+        thread dequeuing, computing windrun and beaufort, rendering and
+        replacing the loop-data file -- and, stopped by shutDown, taking
+        its temp file with it and leaving the last packet on disk.
+
+        generate_loopdata_dictionary feeds accumulators it built itself, so
+        every other packet test here would pass with new_loop never having
+        opened the database or the thread never having written a byte.
+
+        The packets are stamped in 2020, not today, so the day seed is
+        right only if it reads the summary of the PACKET's day; and the
+        archive holds records from that day, so a span seed that counted
+        today's summary row as well as today's running totals shows
+        double."""
+        L = user.loopdata
+        os.environ['TZ'] = 'America/Los_Angeles'    # t below is noon here and midnight at UTC+5
+        time.tzset()
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp)
+            # A weewx.conf-side group beside the sample skin's own: the two
+            # types only the thread computes, plus enough to tell a seeded
+            # accumulator from one the packets alone would have filled.
+            config_dict['StdReport']['LoopDataReport']['LoopData'] = {'fields': {'thread': [
+                'current.dateTime.raw', 'current.outTemp.raw', 'current.windrun.raw',
+                'current.beaufort.raw', 'day.outTemp.max.raw', '10m.outTemp.max.raw',
+                'month.rain.sum.raw', 'month.outTemp.count.raw']}}
+
+            # Records 15 to 25 minutes before the packets: inside their day,
+            # outside the 10m window.
+            t = 1593630000                                  # 2020-07-01 12:00 PDT
+            dbm = weewx.manager.open_manager_with_config(config_dict, 'wx_binding')
+            try:
+                for dt, temp in ((t - 1500, 65.0), (t - 1200, 60.0), (t - 900, 90.0)):
+                    dbm.addRecord({'dateTime': dt, 'usUnits': weewx.US, 'interval': 5,
+                                   'outTemp': temp, 'rain': 0.2, 'windSpeed': 4.0, 'windDir': 180.0})
+            finally:
+                dbm.close()
+
+            service = L.LoopData(self.FakeEngine(config_dict), config_dict)
+            cfg = service.cfg
+            written = os.path.join(cfg.loop_data_dir, cfg.filename)
+            self.assertIsNone(service.loop_thread)
+            service.shutDown()                       # nothing to stop yet: a no-op
+            service.pre_loop(None)
+            thread = service.loop_thread
+            self.assertIsNotNone(thread)
+            self.assertTrue(thread.daemon)
+
+            # weewx prints a one-time deprecation of the beaufort TYPE from
+            # calc_beaufort, on the processor thread, so the redirect has to
+            # cover the stop as well as the packets.
+            with contextlib.redirect_stdout(io.StringIO()):
+                try:
+                    for dt, temp in ((t, 70.0), (t + 2, 72.0), (t + 4, 71.0)):
+                        service.new_loop(weewx.Event(weewx.NEW_LOOP_PACKET, packet={
+                            'dateTime': dt, 'usUnits': weewx.US, 'outTemp': temp,
+                            'windSpeed': 10.0, 'windDir': 90.0, 'barometer': 30.0, 'rain': 0.0}))
+                    # shutDown discards whatever is still queued, so let the
+                    # thread take every packet first.  Once the queue is empty
+                    # the last one is in hand, and the join waits for it to be
+                    # written.  Bounded by shutDown's own twenty seconds, so a
+                    # loaded machine waits rather than failing.
+                    deadline = time.time() + 20
+                    while not cfg.queue.empty() and time.time() < deadline:
+                        time.sleep(0.01)
+                    self.assertTrue(cfg.queue.empty())
+                finally:
+                    service.shutDown()
+            self.assertFalse(thread.is_alive())
+
+            with open(written) as f:
+                out = json.load(f)
+            self.assertEqual(sorted(out), ['LoopDataReport'])      # no legacy line: nothing flat
+            entry = out['LoopDataReport']
+            self.assertEqual(entry['current.dateTime.raw'], t + 4)  # the last packet, written before the stop
+            self.assertEqual(entry['current.outTemp.raw'], 71.0)
+            # Seeded by the first-packet build from the database, not the packets.
+            self.assertEqual(entry['day.outTemp.max.raw'], 90.0)
+            # The 10m window reaches back 600 s; the records sit 900 s and more back.
+            self.assertEqual(entry['10m.outTemp.max.raw'], 72.0)
+            # Spans seed from the whole days in the summary table plus today's
+            # running totals; today's own row must not be counted as well.
+            self.assertAlmostEqual(entry['month.rain.sum.raw'], 0.6)     # three records; the packets add 0.0
+            self.assertEqual(entry['month.outTemp.count.raw'], 6)         # three records and three packets
+            # Computed by the thread, per packet, with loop_frequency as the interval.
+            self.assertAlmostEqual(entry['current.windrun.raw'], 10.0 * (cfg.loop_frequency / 60.0) / 60.0)
+            self.assertEqual(entry['current.beaufort.raw'], 3)      # 10 mph = 8.7 knots
+            # The sample skin's own declaration rendered in the same entry.
+            self.assertEqual(entry['current.windDir.ordinal_compass'], 'E')
+
+            # Once the loop has stopped only the loop-data file remains: the
+            # temp name is unlinked.
+            self.assertFalse(os.path.exists(cfg.tmpname))
+            self.assertEqual(os.listdir(cfg.loop_data_dir), [cfg.filename])
+
+            # A packet arriving with the thread gone is not queued -- nothing
+            # drains the queue, so it would grow for the life of weewxd -- and
+            # the loss is logged once.  A stopped thread and a dead one look
+            # the same to is_alive(), so this is the death path as it runs.
+            late = weewx.Event(weewx.NEW_LOOP_PACKET, packet={'dateTime': t + 6, 'usUnits': weewx.US, 'outTemp': 70.0})
+            with self.assertLogs('user.loopdata', level='ERROR') as logs:
+                service.new_loop(late)
+            self.assertEqual(len(logs.output), 1, logs.output)
+            self.assertIn('LoopData thread is not running', logs.output[0])
+            # The second is silent: capture at DEBUG, which new_loop always
+            # writes, and look for an error among what arrived.
+            with self.assertLogs('user.loopdata', level='DEBUG') as logs:
+                service.new_loop(late)
+            self.assertEqual([m for m in logs.output if not m.startswith('DEBUG')], [], logs.output)
+            self.assertTrue(cfg.queue.empty())
+
+            # The same guard covers a thread pre_loop failed to start: it
+            # marks the processor started before its try block, and a
+            # failure leaves the handle None.
+            failed = L.LoopData(self.FakeEngine(config_dict), config_dict)
+            failed.loop_processor_started = True
+            with self.assertLogs('user.loopdata', level='ERROR') as logs:
+                failed.new_loop(late)
+            self.assertIn('LoopData thread is not running', logs.output[0])
+            self.assertTrue(failed.cfg.queue.empty())
+
+    def test_skip_if_older_than_must_be_at_least_one(self):
+        """Spec: a stale-packet cutoff below one second would ship every
+        packet however late, so zero and negatives are refused with a
+        warning and the default of 3 answers; 1 and above are taken as
+        given.  And the cutoff is applied unconditionally: a packet older
+        than it is skipped, logged, before rsync is ever run."""
+        L = user.loopdata
+        # A blank value, or an explicit none, converts to None, and anything
+        # non-numeric raises: both must be refused like any other value below
+        # 1, since either reaching the comparison stops weewxd at startup.
+        for spec, expected in (('0', 3), ('-5', 3), ('', 3), ('None', 3), ('0.9', 3),
+                               ('3s', 3), ('abc', 3), ('1', 1), ('7', 7)):
+            with tempfile.TemporaryDirectory() as tmp:
+                config_dict = self._init_fixture(tmp)
+                config_dict['LoopData']['RsyncSpec']['skip_if_older_than'] = spec
+                with self.assertLogs('user.loopdata', level='INFO') as logs:
+                    service = L.LoopData(self.FakeEngine(config_dict), config_dict)
+                self.assertEqual(service.cfg.skip_if_older_than, expected, spec)
+                warned = [m for m in logs.output if 'Ignoring skip_if_older_than' in m]
+                if spec in ('1', '7'):
+                    self.assertEqual(warned, [], spec)
+                else:
+                    self.assertEqual(len(warned), 1, logs.output)
+                    # Reported as configured, not as converted: 0.9 is not 0.
+                    self.assertIn('skip_if_older_than = %s (must be at least 1)' % spec, warned[0])
+        # Ten seconds old against a cutoff of 3: skipped, and rsync never runs
+        # (there is no server here to run it against).
+        with self.assertLogs('user.loopdata', level='INFO') as logs:
+            L.LoopProcessor.rsync_data(int(time.time()) - 10, 3, '/nonexistent', 'loop-data.txt',
+                                       '/remote', 'nowhere.invalid', None, 1, 'nobody', '', False, False)
+        self.assertEqual(len(logs.output), 1, logs.output)
+        self.assertIn('skipping packet', logs.output[0])
 
     def test_legacy_bands_follow_the_target_report(self):
         """The [[Include]] line is rendered through target_report, so it

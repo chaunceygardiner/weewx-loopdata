@@ -195,6 +195,8 @@ write; the errors all mean something you can act on.
 | `Ignoring non-numeric windrose_bands: <spec>` | A `windrose_bands` edge isn't a number.  The default bands are used. |
 | `Ignoring windrose_bands (need ascending, non-negative edges): <spec>` | The edges are out of order or negative.  The default bands are used. |
 | `round requires a WeeWX with weeutil.weeutil.rounder` | A field used `round(n)` on a WeeWX too old to support it.  Drop the `round(n)`, or upgrade WeeWX. |
+| `LoopData thread is not running; loop packets are ignored from here on and the loop-data file will not update again.` | The thread that writes the file died on an earlier packet, or never started — its traceback, or the `Error in LoopData setup` line, is above this one in the log and is the thing to fix.  weewxd itself keeps running, so a page simply freezes at its last values.  Logged once; restart weewxd after fixing the cause. |
+| `Unable to shut down LoopData thread` | Written while weewxd was stopping, or rebuilding its engine after a driver error: the writer thread did not finish within twenty seconds, usually because it was in the middle of an rsync to a remote that was not answering.  The stop or restart goes ahead without it.  The one consequence is that a LoopData temp file may be left in `loop_data_dir`; it is harmless and can be deleted. |
 
 **Warnings — something to fix, but LoopData carries on**
 
@@ -208,6 +210,7 @@ write; the errors all mean something you can act on.
 | `Ignoring unrecognized field <field> (report <name>)` | A declared field is in none of loopdata's grammars — a typo, most often.  That one field is dropped; the rest of the report's fields still work. |
 | `Ignoring [LoopData] fields in report <name>: declare fields as named groups in a [[fields]] section, not as a single fields = line.` | The skin's `skin.conf` wrote `fields =` directly under `[LoopData]`.  The declaration is a `[[fields]]` sub-section of named groups; that report declares nothing until it is fixed. |
 | `Ignoring [LoopData] [[fields]] [[[<group>]]] in report <name>: a group is a line of fields, not a section.` | A group was written as a sub-section.  Each group is one `name = field, field, ...` line. |
+| `Ignoring skip_if_older_than = <n> (must be at least 1); using the default of 3.` | `[[RsyncSpec]] skip_if_older_than` is zero, negative or blank.  Below 1 it would ship every packet however late — the backlog the option exists to prevent.  The default of 3 seconds is used; set a value of at least 1.  The value is quoted as you wrote it, so a fractional setting shows as you typed it rather than as the whole number it converts to. |
 
 **Informational — usually normal, occasionally a clue**
 

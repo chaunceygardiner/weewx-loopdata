@@ -254,7 +254,7 @@ Only needed if you push loop-data.txt to a remote webserver — see
 | `log_success` | `True` to write success-with-timing messages to the log (for debugging).  Default is `False`. |
 | `ssh_options` | Extra options for the ssh transport (e.g., a key file or port).  Whether or not this is set, LoopData appends safety bounds for any keyword you don't set yourself: `-o ConnectTimeout=<timeout>`, `-o ServerAliveInterval=<timeout>`, `-o ServerAliveCountMax=2` and `-o BatchMode=yes`, so a dead or hanging remote cannot stall the loop processing thread (an option you set always wins). |
 | `timeout` | I/O timeout.  Default is `1` (when sending, time out in 1 second).  Also used for the ssh `ConnectTimeout` and `ServerAliveInterval` bounds described under `ssh_options`.  `0` disables all time bounds. |
-| `skip_if_older_than` | Don't bother to rsync if the data is older than this number of seconds.  Default is `3`.  (Skip it and move on to the next packet rather than shipping stale data late.) |
+| `skip_if_older_than` | Don't bother to rsync if the data is older than this number of seconds.  Default is `3`.  (Skip it and move on to the next packet rather than shipping stale data late.)  Must be at least `1`; a blank, zero, negative or smaller value is ignored with a warning and the default is used. |
 
 ## `[[Include]]` (deprecated)
 

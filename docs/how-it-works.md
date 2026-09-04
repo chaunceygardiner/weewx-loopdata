@@ -51,9 +51,14 @@ settings from `[StdReport] [[Defaults]]` — most stations — the accumulator
 set is exactly what it would be for one report.
 
 Once the thread starts and the accumulators are built, LoopData never
-touches the database and never consults WeeWX's accumulators.  Its only
-connection to the WeeWX main thread is that `NEW_LOOP_PACKET` is bound to
-queue each loop packet.
+touches the database and never consults WeeWX's accumulators.  Its
+connection to the WeeWX main thread is the queue: `NEW_LOOP_PACKET` is
+bound to queue each loop packet, and when weewxd stops — or rebuilds its
+engine after a driver error — the service queues a stop signal and waits
+for the thread to finish the packet in hand, so the thread removes its
+temp file on the way out rather than being killed mid-write.  Should the
+thread ever die, its traceback is logged and packets are no longer queued
+to it; the file simply stops updating, and the log says so once.
 
 ## Only what you ask for
 
@@ -105,7 +110,9 @@ attributes once, and recompute only `uptime`/`os_uptime` per packet.
 ## Atomic writes
 
 The json file is written as a temp file in the same directory and then
-renamed over the target, so a reader can never see a partial file.  If
+renamed over the target, so a reader can never see a partial file.  The
+temp file exists only for the duration of a write; when the thread stops it
+removes the name it was using, so a stop leaves nothing behind.  If
 rsync is enabled, the upload happens after the write, with time bounds that
 keep a dead remote from stalling the processor thread and a staleness check
 (`skip_if_older_than`) that drops old packets rather than shipping them

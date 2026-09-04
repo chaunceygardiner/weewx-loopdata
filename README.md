@@ -298,6 +298,8 @@ working as before.
                          bounds described under `ssh_options`.  0 disables all time bounds.
  * `skip_if_older_than`: Don't bother to rsync if greater than this number of seconds.  Default is 3.
                          (Skip this and move on to the next if this data is older than 3 seconds.)
+                         Must be at least 1; a blank, zero, negative or smaller value is ignored
+                         with a warning and the default is used.
 
 Deprecated, still honored on an upgraded station, not written by a fresh
 install:

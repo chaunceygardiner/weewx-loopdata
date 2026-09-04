@@ -1,8 +1,42 @@
 loopdata change history
 -----------------------
 
-7.x (in progress)
------------------
+7.1 2026/09/03
+--------------
+- Week, month, year, rain-year and all-time sums, counts and averages no
+  longer count today twice after a restart.  Loopdata seeds those spans
+  from the daily summary table and then adds today's running totals on
+  top, but today has a row in that table too, so from a restart on,
+  month.rain.sum and its kin read today's contribution double and every
+  span average leaned toward today's mean.  Minimums and maximums were
+  unaffected.  The error lasted until the span rolled over -- and for the
+  all-time span, which never does, until the next restart doubled it
+  afresh.
+- When weewxd stops, loopdata stops its writer thread before the process
+  ends, so a stop that lands while a packet is being written does not
+  leave a LoopData temp file behind in the directory the loop-data file is
+  served from.  Packets still queued at that moment are discarded rather
+  than written and shipped to nobody.  Should the thread not stop within
+  twenty seconds -- a stalled rsync could hold it that long -- the stop
+  goes ahead without it and says so in the log.  A driver restart, where
+  weewxd rebuilds its engine in the same process, likewise no longer
+  leaves the previous writer thread and its accumulators behind.
+- Should the writer thread die -- its traceback has always been logged --
+  loop packets are no longer queued to it for the rest of weewxd's life,
+  which grew memory by one packet every loop interval while the loop-data
+  file sat frozen.  The loss is logged once more, saying the file will not
+  update again.
+- [[RsyncSpec]] skip_if_older_than must be at least 1.  Zero used to mean
+  never skip, undocumented, and a station that set it would rsync every
+  packet however late -- the backlog the option exists to prevent.  A
+  value below 1, and a blank one, are now ignored with a warning and the
+  default of 3 is used.
+- When weewxd starts, the day accumulator is seeded from the daily summary
+  of the first loop packet's day rather than the wall clock's.  The two
+  differ only when a start straddles midnight in the second or so between
+  a packet being stamped and being processed -- exceedingly unlikely in
+  practice -- but when they did, the day's min/max/sum carried the wrong
+  day's history until the packet-time day rolled over.
 - Internal: the two archive database connections loopdata opened -- one
   when the service starts, one when the first loop packet builds the
   accumulators -- are closed when they are finished with, rather than
