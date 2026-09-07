@@ -60,6 +60,15 @@ temp file on the way out rather than being killed mid-write.  Should the
 thread ever die, its traceback is logged and packets are no longer queued
 to it; the file simply stops updating, and the log says so once.
 
+One more thing travels that same queue.  `NEW_ARCHIVE_RECORD` is bound so
+that the earliest record the archive holds — the start of the
+[`alltime` span](field-reference.html#span-properties) — stays current on
+a station whose archive was still empty when LoopData started.  The
+archive record carries its own timestamp, so this costs no database
+access, and because it rides the queue the processor applies it *between*
+packets: no file can carry an `alltime.start` that disagrees with the
+`alltime.length` written beside it.
+
 ## Only what you ask for
 
 LoopData gathers at startup only what is needed to prime its accumulators
@@ -78,6 +87,12 @@ Accumulator priming happens on the first loop packet, not earlier — day
 accumulators come from the database's daily summary, the longer spans from
 day summaries plus archive records, and one continuous accumulator per
 rolling/trend period.
+
+A period's [span properties](field-reference.html#span-properties) are free
+of all this: `week.start` is a property of the week itself, not of anything
+the week accumulated, so it is computed from the packet's own time and
+needs no accumulator at all.  A report may declare `week.start.raw` and no
+other week field, and still get it on every packet.
 
 ## Continuous accumulators
 

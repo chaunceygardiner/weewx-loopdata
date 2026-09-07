@@ -86,7 +86,9 @@ translations, and the recipe for building your own live page.
 
 * **Every period a report tag has**, live: `current`, `trend`, `hour`, `day`,
   `week`, `month`, `year`, `rainyear`, `alltime`, plus rolling windows of any
-  length from `1m` through `1440m` and `1h` through `24h`.
+  length from `1m` through `1440m` and `1h` through `24h` — and each period's
+  own boundaries (`week.start`, `month.length`), so a page can tell for
+  itself when a period began.
 * **Values formatted as your report would render them** — each report
   declares the fields it needs and gets them in its own units, formats and
   language, so page javascript can drop them straight into HTML.  Any

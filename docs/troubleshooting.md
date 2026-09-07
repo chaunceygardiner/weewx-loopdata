@@ -115,6 +115,16 @@ In roughly descending order of likelihood:
   observation's unit group (e.g. `day.outTemp.avg.beaufort`) causes the
   field to be omitted.  A unit registered by another extension is recognized
   only if that extension initializes before LoopData.
+* **It is an `alltime` span property, and the station has not archived
+  yet.**  `alltime.start`, `alltime.end`, `alltime.length` and
+  `alltime.dateTime` need the archive's earliest record.  On a station where
+  WeeWX and LoopData were installed together, the archive is empty when
+  LoopData starts, so those four are omitted until the first archive record
+  is written — one archive interval, five minutes by default — after which
+  they appear on their own.  Nothing to do but wait one cycle.  `alltime`
+  aggregates such as `alltime.outTemp.max` are not affected, nor is any
+  other period.  See
+  [Span properties](field-reference.html#span-properties).
 * **A removed grammar.**  The experimental `windrun_<dir>` types were
   removed in 6.0; fields naming them are ignored.  See
   [the migration mapping](windrose.html#upgrading-from-windrun_direction-fields).
@@ -216,6 +226,7 @@ write; the errors all mean something you can act on.
 
 | Message | What it means |
 |---|---|
+| `StdArchive writes binding <a> but reports read <b>; the alltime span start is read from <b> at startup only.` | Written at startup on the unusual station whose `[StdArchive] data_binding` differs from `[StdReport] data_binding`.  LoopData cannot tell which archive an incoming record belongs to, so it does not use archive records to keep the [`alltime` span](field-reference.html#span-properties) start current; it uses the reading taken when the accumulators were built.  The only effect is on a station with an empty archive at startup, where `alltime`'s span properties then wait for a restart. |
 | `LoopData file is: <path>` | Written at startup.  The quickest way to confirm where loop-data.txt is actually landing — check this first when the page reports `NO DATA (HTTP 404)`. |
 | `<n> of the <m> [[Include]] fields are declared by report <name> (its target_report) and are rendered once, for both.` | Written at startup on an upgraded station: the fields line lists what its target report's skin now declares itself, so those are computed once and copied flat rather than rendered twice.  Normal; the line goes in a later release. |
 | `report <name>: <n> fields (<n> almanac, <n> station), trend window <n>s, windrose bands [...]` | Written at startup, one line per declaring report (and one for the old fields line, if present): what each report asked for and the two settings of its own that reach the accumulators. |

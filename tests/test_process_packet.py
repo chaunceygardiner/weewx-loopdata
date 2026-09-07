@@ -44,6 +44,7 @@ import queue
 import random
 import re
 import shutil
+import threading
 import tempfile
 import time
 import unittest
@@ -4715,7 +4716,7 @@ class ProcessPacketTests(unittest.TestCase):
 
         pkt = {'dateTime': pkt_time, 'usUnits': 1, 'outTemp': 65.0}
         loopdata_pkt = user.loopdata.LoopProcessor.create_loopdata_packet(
-            pkt, cfg.legacy, accums, cfg.loop_frequency)
+            pkt, cfg.legacy, accums, cfg)
 
         # Each period routed to its own accum (cross-checks routing).
         self.assertAlmostEqual(loopdata_pkt['day.outTemp.max.raw'], 80.0)
@@ -4724,6 +4725,795 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertAlmostEqual(loopdata_pkt['hour.outTemp.min.raw'], 60.0)
         # 'current' routed to the live packet, not an accum.
         self.assertAlmostEqual(loopdata_pkt['current.outTemp.raw'], 65.0)
+
+    def test_span_prop_grammar(self) -> None:
+        """Spec (7.2): a period's span properties -- start, end, length and
+        dateTime -- parse where an obstype stands, take no aggregate, and
+        exist only on the periods that HAVE a span.  Expectations come from
+        weewx.tags.TimespanBinder, which exposes exactly these four as
+        properties: a property shadows __getattr__, so $day.dateTime is the
+        day's start and $day.dateTime.max is not a thing."""
+        L = user.loopdata.LoopData
+
+        # Every property on every period that has a span.
+        for period in ('hour', 'day', 'week', 'month', 'year', 'rainyear', 'alltime'):
+            for prop in ('start', 'end', 'length', 'dateTime'):
+                field = '%s.%s.raw' % (period, prop)
+                cname = L.parse_cname(field)
+                self.assertIsNotNone(cname, msg=field)
+                self.assertEqual(cname.span_prop, prop, msg=field)
+                self.assertEqual(cname.obstype, prop, msg=field)
+                self.assertIsNone(cname.agg_type, msg=field)
+                self.assertEqual(cname.period, period, msg=field)
+
+        # No format spec at all, and the full spec machinery, both parse.
+        self.assertEqual(L.parse_cname('week.start').span_prop, 'start')
+        self.assertEqual(L.parse_cname('week.start.formatted').span_prop, 'start')
+        self.assertEqual(L.parse_cname('week.length.long_form()').span_prop, 'length')
+        self.assertEqual(L.parse_cname('week.start.format("%Y-%m-%d")').span_prop, 'start')
+        self.assertEqual(L.parse_cname('week.length.hour.raw').unit, 'hour')
+        self.assertEqual(L.parse_cname('day.start.round(0).raw').round_ndigits, 0)
+
+        # An aggregate on a span property is nonsense; the report tag has no
+        # such form.
+        for field in ('week.start.max', 'day.dateTime.max', 'year.length.sum',
+                      'month.end.avg.raw'):
+            self.assertIsNone(L.parse_cname(field), msg=field)
+
+        # The continuous windows roll with every packet: no span, so the
+        # names fall back to being obstypes and the missing aggregate is
+        # fatal, exactly as for any other unknown obstype.
+        for field in ('10m.start.raw', '24h.start.raw', '1440m.length.raw'):
+            self.assertIsNone(L.parse_cname(field), msg=field)
+
+        # Where there is no span, the four names keep whatever meaning they
+        # already had.  dateTime is a real observation and current.dateTime.raw
+        # is the shipped packet timestamp -- it must not become a span
+        # property, and unit.label.dateTime must stay the observation's label.
+        for field in ('current.dateTime.raw', 'unit.label.dateTime', 'trend.dateTime'):
+            cname = L.parse_cname(field)
+            self.assertIsNotNone(cname, msg=field)
+            self.assertIsNone(cname.span_prop, msg=field)
+
+    def test_span_props_match_weeutil(self) -> None:
+        """Spec (7.2): each span property is the corresponding edge of the
+        period's weeutil span at the PACKET's time -- the same call
+        create_*_accum makes.  Compared against weeutil rather than against
+        literals, so the station's own week_start and rain_year_start are
+        covered; the fixture uses rain_year_start=10 (October), where an
+        off-by-one in the rain year shows up.  .raw must be a json NUMBER:
+        the consumer compares start values numerically."""
+        os.environ['TZ'] = 'America/Los_Angeles'
+        time.tzset()
+        # Noon PDT, Wednesday 2020-07-01.  Past October 1, so the rain year
+        # that began in October 2019 is the one in force -- the case a
+        # January-anchored rain year would get wrong.
+        pkt_time = 1593630000
+        rainyear_start = 10
+        week_start = 6      # Sunday
+
+        fields = []
+        for period in ('hour', 'day', 'week', 'month', 'year', 'rainyear'):
+            for prop in ('start', 'end', 'length'):
+                fields.append('%s.%s.raw' % (period, prop))
+            fields.append('%s.dateTime.raw' % period)
+        cfg = ProcessPacketTests._get_config('us', 10800, rainyear_start, week_start, fields)
+        accums = ProcessPacketTests._get_accums(cfg, pkt_time)
+        pkt = {'dateTime': pkt_time, 'usUnits': 1, 'outTemp': 65.0}
+        out = user.loopdata.LoopProcessor.generate_loopdata_dictionary(pkt, cfg, accums)
+
+        spans = {
+            'hour'    : weeutil.weeutil.archiveHoursAgoSpan(pkt_time),
+            'day'     : weeutil.weeutil.archiveDaySpan(pkt_time),
+            'week'    : weeutil.weeutil.archiveWeekSpan(pkt_time, week_start),
+            'month'   : weeutil.weeutil.archiveMonthSpan(pkt_time),
+            'year'    : weeutil.weeutil.archiveYearSpan(pkt_time),
+            'rainyear': weeutil.weeutil.archiveRainYearSpan(pkt_time, rainyear_start),
+        }
+        for period, span in spans.items():
+            self.assertEqual(out['%s.start.raw' % period], span.start, msg=period)
+            self.assertEqual(out['%s.end.raw' % period], span.stop, msg=period)
+            self.assertEqual(out['%s.length.raw' % period], span.stop - span.start, msg=period)
+            # dateTime is TimespanBinder's alias for start.
+            self.assertEqual(out['%s.dateTime.raw' % period], span.start, msg=period)
+            # json numbers, not strings (the consumer compares numerically).
+            for prop in ('start', 'end', 'length', 'dateTime'):
+                self.assertNotIsInstance(out['%s.%s.raw' % (period, prop)], str,
+                    msg='%s.%s.raw' % (period, prop))
+
+        # The rain year really is the October one, not January's.
+        self.assertEqual(time.localtime(out['rainyear.start.raw']).tm_mon, 10)
+        self.assertEqual(time.localtime(out['rainyear.start.raw']).tm_year, 2019)
+
+    def test_span_props_track_the_packets_time(self) -> None:
+        """Spec (7.2): the span follows the PACKET's time, so a boundary
+        crossed while loopdata runs moves it.  This is the whole point of
+        the feature: a consumer that decides 'did this period begin today?'
+        must see the new week the instant the packet does.
+
+        The case that catches a stale span: on the FIRST day of a week,
+        week.start == day.start; on the second day it does not."""
+        os.environ['TZ'] = 'America/Los_Angeles'
+        time.tzset()
+        week_start = 6      # Sunday
+        fields = ['day.start.raw', 'week.start.raw', 'month.start.raw']
+        cfg = ProcessPacketTests._get_config('us', 10800, 1, week_start, fields)
+
+        # Sunday 2020-06-28 noon PDT -- the first day of its week, and the
+        # week's own start.
+        sunday = 1593370800
+        self.assertEqual(time.localtime(sunday).tm_wday, 6)     # Sunday
+        # The accumulators are built ONCE, on the Sunday packet, and reused
+        # for the Monday one -- a span cached at build time would answer
+        # Sunday's week for both.
+        accums = ProcessPacketTests._get_accums(cfg, sunday)
+
+        out = user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+            {'dateTime': sunday, 'usUnits': 1, 'outTemp': 65.0}, cfg, accums)
+        self.assertEqual(out['week.start.raw'], out['day.start.raw'])
+
+        # Monday, one day on: same week, a new day.
+        monday = sunday + 86400
+        self.assertEqual(time.localtime(monday).tm_wday, 0)     # Monday
+        out = user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+            {'dateTime': monday, 'usUnits': 1, 'outTemp': 65.0}, cfg, accums)
+        self.assertNotEqual(out['week.start.raw'], out['day.start.raw'])
+        self.assertEqual(out['week.start.raw'], sunday - 12 * 3600)
+        self.assertEqual(out['day.start.raw'], monday - 12 * 3600)
+
+        # The next Sunday starts a new week, and the span moves with it.
+        next_sunday = sunday + 7 * 86400
+        out = user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+            {'dateTime': next_sunday, 'usUnits': 1, 'outTemp': 65.0}, cfg, accums)
+        self.assertEqual(out['week.start.raw'], out['day.start.raw'])
+        self.assertEqual(out['week.start.raw'], next_sunday - 12 * 3600)
+        # July 1 fell mid-week, so the month moved without the week.
+        self.assertEqual(time.localtime(out['month.start.raw']).tm_mon, 7)
+
+    def test_span_props_need_no_declared_obstypes(self) -> None:
+        """Spec (7.2): a span property is a property of the SPAN, so a report
+        that declares week.start.raw and no other week field must still get
+        it.  create_period_accum returns None for an empty obstype set, so a
+        span read off the accumulator would be silently absent here -- which
+        is exactly the shape weewx-liveseasons' front_page group has."""
+        fields = ['current.outTemp.raw', 'week.start.raw', 'month.start.raw',
+                  'year.start.raw']
+        cfg = ProcessPacketTests._get_config('us', 10800, 1, 6, fields)
+        # No week/month/year observations are declared, so none are tracked.
+        self.assertEqual(cfg.obstypes.week, set())
+        self.assertEqual(cfg.obstypes.month, set())
+        self.assertEqual(cfg.obstypes.year, set())
+
+        pkt_time = 1593630000
+        accums = ProcessPacketTests._get_accums(cfg, pkt_time)
+        accums.week_accum = None
+        accums.month_accum = None
+        accums.year_accum = None
+        out = user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+            {'dateTime': pkt_time, 'usUnits': 1, 'outTemp': 65.0}, cfg, accums)
+        self.assertEqual(out['week.start.raw'],
+            weeutil.weeutil.archiveWeekSpan(pkt_time, cfg.week_start).start)
+        self.assertEqual(out['month.start.raw'],
+            weeutil.weeutil.archiveMonthSpan(pkt_time).start)
+        self.assertEqual(out['year.start.raw'],
+            weeutil.weeutil.archiveYearSpan(pkt_time).start)
+
+    def test_span_props_agree_with_the_rolled_accumulator(self) -> None:
+        """Spec (7.2): the span property and the period's aggregates in the
+        same file must describe the SAME period.  A page showing
+        week.outTemp.max beside week.start is reading one number as a
+        caption for the other; if the accumulator rolls at a boundary and
+        the span property does not (or the reverse), the caption lies.
+
+        period_span computes from the packet's time and accumulate_packet
+        rolls on OutOfSpan -- two independent mechanisms -- so this drives
+        both through the real accumulation path and compares them.
+
+        Every period here declares a REAL OBSERVATION as well as its span
+        properties, and that is the whole point: with only span properties
+        declared, compute_period_obstypes leaves the period's obstype set
+        EMPTY, accumulate_packet skips it, the accumulator never raises
+        OutOfSpan and never rolls -- and a test written that way passes
+        while proving nothing about agreement.  The assertions on
+        cfg.obstypes below pin that the fields line really did earn the
+        accumulators.
+
+        2023-01-01 00:00 PST rolls all six at once: it is a Sunday (the
+        week start here), New Year's Day, and the rain year begins in
+        January."""
+        os.environ['TZ'] = 'America/Los_Angeles'
+        time.tzset()
+        periods = ['hour', 'day', 'week', 'month', 'year', 'rainyear']
+        fields = []
+        for period in periods:
+            fields.append('%s.outTemp.max.raw' % period)
+            fields.append('%s.start.raw' % period)
+            fields.append('%s.end.raw' % period)
+        cfg = ProcessPacketTests._get_config('us', 10800, 1, 6, fields)
+        # The trap this test exists to avoid: an empty obstype set means the
+        # accumulator is never fed and so never rolls.
+        for period in periods:
+            self.assertIn('outTemp', getattr(cfg.obstypes, period), period)
+
+        accums_of = {
+            'hour'    : lambda a: a.hour_accum,
+            'day'     : lambda a: a.day_accum,
+            'week'    : lambda a: a.week_accum,
+            'month'   : lambda a: a.month_accum,
+            'year'    : lambda a: a.year_accum,
+            'rainyear': lambda a: a.rainyear_accum,
+        }
+
+        before = 1672559940     # 2022-12-31 23:59:00 PST
+        after  = 1672560030     # 2023-01-01 00:00:30 PST, one boundary for all six
+        self.assertEqual(time.localtime(after).tm_wday, 6)       # Sunday
+
+        # The accumulators are built on the OLD side of every boundary, so
+        # each one must roll on the second packet.
+        accums = ProcessPacketTests._get_accums(cfg, before)
+        old_accums = {p: accums_of[p](accums) for p in periods}
+
+        out = user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+            {'dateTime': before, 'usUnits': 1, 'outTemp': 50.0}, cfg, accums)
+        for period in periods:
+            accum = accums_of[period](accums)
+            self.assertEqual(out['%s.start.raw' % period], accum.timespan.start, period)
+            self.assertEqual(out['%s.end.raw' % period], accum.timespan.stop, period)
+            self.assertEqual(out['%s.outTemp.max.raw' % period], 50.0, period)
+
+        out = user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+            {'dateTime': after, 'usUnits': 1, 'outTemp': 70.0}, cfg, accums)
+        for period in periods:
+            accum = accums_of[period](accums)
+            # It really rolled: a fresh accumulator holding only the new
+            # packet, not the old one's 50.0 carried across the boundary.
+            self.assertIsNot(accum, old_accums[period], period)
+            self.assertEqual(out['%s.outTemp.max.raw' % period], 70.0, period)
+            self.assertEqual(out['%s.start.raw' % period], accum.timespan.start, period)
+            self.assertEqual(out['%s.end.raw' % period], accum.timespan.stop, period)
+            # And the span moved with it, rather than both agreeing on a
+            # stale span they were each handed at build time.
+            self.assertEqual(out['%s.start.raw' % period], 1672560000, period)
+
+    def test_span_props_across_a_dst_boundary(self) -> None:
+        """Spec (7.2): length is ELAPSED seconds, not a nominal calendar
+        constant, so the two days a year that are not 24 hours long report
+        what they actually are.
+
+        This is loopdata's own arithmetic, not weeutil's: weeutil supplies
+        the span's boundaries and add_span_prop subtracts them.  It matters
+        because week.length exists precisely so a page need not hardcode
+        604800 -- and a page that divides elapsed by a hardcoded 604800 is
+        an hour wrong twice a year, which is the mistake this field is
+        meant to retire.
+
+        Both boundaries are Sundays, and the week starts on Sunday here, so
+        each short or long day is the first day of its own week and moves
+        the week's length with it.  The expected values are arithmetic a
+        reader can check without running anything: 23 and 25 hours, and a
+        week of 167 and 169."""
+        os.environ['TZ'] = 'America/Los_Angeles'
+        time.tzset()
+        week_start = 6                                  # Sunday
+        fields = ['day.start.raw', 'day.end.raw', 'day.length.raw',
+                  'week.start.raw', 'week.end.raw', 'week.length.raw']
+
+        # (packet time, day seconds, week seconds).  Noon on each boundary
+        # Sunday: 2020-03-08 (PST -> PDT, an hour vanishes) and 2020-11-01
+        # (PDT -> PST, an hour repeats).
+        cases = ((1583694000, 23 * 3600, 167 * 3600),
+                 (1604260800, 25 * 3600, 169 * 3600))
+        for pkt_time, day_secs, week_secs in cases:
+            self.assertEqual(time.localtime(pkt_time).tm_wday, 6, pkt_time)
+            cfg = ProcessPacketTests._get_config('us', 10800, 1, week_start, fields)
+            accums = ProcessPacketTests._get_accums(cfg, pkt_time)
+            out = user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+                {'dateTime': pkt_time, 'usUnits': 1, 'outTemp': 50.0}, cfg, accums)
+
+            self.assertEqual(out['day.length.raw'], day_secs, pkt_time)
+            self.assertEqual(out['week.length.raw'], week_secs, pkt_time)
+            # Not the nominal constants -- the whole point of the case.
+            self.assertNotEqual(out['day.length.raw'], 86400, pkt_time)
+            self.assertNotEqual(out['week.length.raw'], 604800, pkt_time)
+            # length is exactly what end - start says, so a page can use
+            # either and agree with itself.
+            self.assertEqual(out['day.length.raw'],
+                out['day.end.raw'] - out['day.start.raw'], pkt_time)
+            self.assertEqual(out['week.length.raw'],
+                out['week.end.raw'] - out['week.start.raw'], pkt_time)
+            # Each boundary day is its own week's first day, so the two
+            # spans start together.
+            self.assertEqual(out['day.start.raw'], out['week.start.raw'], pkt_time)
+            # The boundaries are real local midnights either side.
+            for key in ('day.start.raw', 'day.end.raw'):
+                local = time.localtime(out[key])
+                self.assertEqual((local.tm_hour, local.tm_min, local.tm_sec),
+                    (0, 0, 0), '%s at %s' % (key, pkt_time))
+
+    def test_span_props_match_the_report_tags(self) -> None:
+        """Spec (7.2): loopdata's span properties are the REPORT TAGS served
+        live, so they are pinned against weewx.tags itself -- the same
+        TimespanBinder a Cheetah template renders -- over a throwaway archive.
+        Both halves are compared: the .raw instant AND the rendered string,
+        because "the report tags served live" is a claim about what a page
+        SEES, and only the rendering can carry a wrong time context (an
+        alltime that stopped riding 'year' keeps its .raw and changes what
+        the reader gets).
+        This covers alltime, whose span WeeWX takes from the archive's first
+        record to the report time (loopdata's report time is the packet's).
+        The accumulator is no help there: its span is a fabricated 1970-2525
+        window chosen to swallow every record."""
+        import weewx.tags
+        os.environ['TZ'] = 'America/Los_Angeles'
+        time.tzset()
+        pkt_time = 1593630000                   # noon PDT, 2020-07-01
+        first_stamp = pkt_time - 400 * 86400    # a record well before it
+        rainyear_start = 10
+        week_start = 6
+
+        props = ('start', 'end', 'length', 'dateTime')
+        # 'hour' is not in this loop: weewx.tags binds the $hour tag with
+        # context='day', while loopdata has always given the hour period its
+        # own 'hour' TimeFormats entry (pinned by
+        # test_time_context_formatting, documented in the manual).  The VALUES
+        # agree, so hour would pass the .raw comparison; the FORMATTED strings
+        # differ, deliberately, and that divergence is pinned on its own below
+        # rather than left to a comment to assert.
+        periods = ('day', 'week', 'month', 'year', 'rainyear', 'alltime')
+        fields = ['%s.%s%s' % (p, s, suffix)
+                  for p in periods + ('hour',) for s in props
+                  for suffix in ('', '.raw')]
+        cfg = ProcessPacketTests._get_config('us', 10800, rainyear_start, week_start, fields)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            dbm = weewx.manager.DaySummaryManager.open_with_create(
+                {'database_name': os.path.join(tmp, 'test.sdb'), 'driver': 'weedb.sqlite'},
+                table_name='archive', schema=wview_extended_schema)
+            try:
+                dbm.addRecord({'dateTime': first_stamp, 'usUnits': 1, 'interval': 5,
+                               'outTemp': 50.0})
+                dbm.addRecord({'dateTime': pkt_time - 300, 'usUnits': 1, 'interval': 5,
+                               'outTemp': 70.0})
+                self.assertEqual(dbm.firstGoodStamp(), first_stamp)
+
+                accums = ProcessPacketTests._get_accums(cfg, pkt_time)
+                accums.first_good_stamp = dbm.firstGoodStamp()
+                out = user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+                    {'dateTime': pkt_time, 'usUnits': 1, 'outTemp': 65.0}, cfg, accums)
+
+                binder = weewx.tags.TimeBinder(
+                    lambda data_binding=None: dbm, pkt_time,
+                    formatter=cfg.legacy.formatter, converter=cfg.legacy.converter,
+                    week_start=week_start, rain_year_start=rainyear_start)
+                for period in periods:
+                    tag = getattr(binder, period)()
+                    for prop in props:
+                        expected = getattr(tag, prop).raw
+                        self.assertEqual(out['%s.%s.raw' % (period, prop)], expected,
+                            msg='%s.%s.raw' % (period, prop))
+                        # The FORMATTED string too.  These fields are the
+                        # report tags served live, so a page must see what a
+                        # template would -- and comparing the rendering, not
+                        # just the instant, is what derives week.length's
+                        # '604800 seconds' from WeeWX instead of asserting a
+                        # literal beside it.
+                        self.assertEqual(out['%s.%s' % (period, prop)],
+                            str(getattr(tag, prop)), msg='%s.%s' % (period, prop))
+                # alltime really does run from the first record to the
+                # packet's time, and so its end moves with every packet.
+                self.assertEqual(out['alltime.start.raw'], first_stamp)
+                self.assertEqual(out['alltime.end.raw'], pkt_time)
+
+                # The hour period: the one place loopdata deliberately does
+                # NOT render what weewx.tags renders.  Pinned here so it stays
+                # deliberate -- if the formats ever converge, this fails and
+                # somebody decides that on purpose rather than discovering it
+                # in a skin.
+                hour_tag = binder.hour()
+                for prop in props:
+                    # The instants agree to the second; only the rendering
+                    # differs.
+                    self.assertEqual(out['hour.%s.raw' % prop],
+                        getattr(hour_tag, prop).raw, msg='hour.%s.raw' % prop)
+                for prop in ('start', 'end', 'dateTime'):
+                    # loopdata renders through the fixture's 'hour' entry
+                    # (%H:%M); weewx renders through 'day' (%X).
+                    self.assertEqual(out['hour.%s' % prop], time.strftime(
+                        '%H:%M', time.localtime(getattr(hour_tag, prop).raw)),
+                        msg='hour.%s' % prop)
+                    self.assertNotEqual(out['hour.%s' % prop],
+                        str(getattr(hour_tag, prop)), msg='hour.%s' % prop)
+                # length is a duration and carries no time context, so it
+                # agrees even here.
+                self.assertEqual(out['hour.length'], str(hour_tag.length))
+            finally:
+                dbm.close()
+
+    def test_span_props_never_raise_out_of_the_render(self) -> None:
+        """Spec (7.2): period_span must never raise.  It is called from the
+        render path, where an exception is not one lost field -- generate_output
+        catches per report, logs once and omits that report's WHOLE entry from
+        loop-data.txt for every packet after.
+
+        The reachable case: weeutil.weeutil.TimeSpan raises ValueError when
+        start > stop, and the alltime span is (archive's first record ->
+        packet time).  A packet stamped before that record -- a console whose
+        clock was reset, a machine that came up behind itself -- inverts it."""
+        os.environ['TZ'] = 'America/Los_Angeles'
+        time.tzset()
+        pkt_time = 1593630000
+        fields = ['current.outTemp.raw', 'day.outTemp.max.raw',
+                  'week.start.raw', 'alltime.start.raw', 'alltime.end.raw',
+                  'alltime.length.raw']
+        cfg = ProcessPacketTests._get_config('us', 10800, 1, 6, fields)
+        pkt = {'dateTime': pkt_time, 'usUnits': 1, 'outTemp': 65.0}
+
+        # TimeSpan really does raise on an inverted span -- the premise.
+        with self.assertRaises(ValueError):
+            weeutil.weeutil.TimeSpan(pkt_time + 86400, pkt_time)
+
+        # period_span absorbs it rather than passing it on.
+        self.assertIsNone(user.loopdata.LoopData.period_span(
+            'alltime', pkt_time, 6, 1, pkt_time + 86400))
+
+        for stamp in (pkt_time + 86400,   # archive starts after this packet
+                      pkt_time + 1,       # one second after
+                      None):              # empty archive
+            accums = ProcessPacketTests._get_accums(cfg, pkt_time)
+            accums.first_good_stamp = stamp
+            out = user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+                pkt, cfg, accums)
+            # The alltime span properties are omitted...
+            for prop in ('start', 'end', 'length'):
+                self.assertNotIn('alltime.%s.raw' % prop, out, msg=repr(stamp))
+            # ...and every OTHER field still arrives.  This is the assertion
+            # that matters: the failure being guarded against costs the whole
+            # entry, not one key.
+            self.assertAlmostEqual(out['current.outTemp.raw'], 65.0, msg=repr(stamp))
+            self.assertAlmostEqual(out['day.outTemp.max.raw'], 65.0, msg=repr(stamp))
+            self.assertEqual(out['week.start.raw'],
+                weeutil.weeutil.archiveWeekSpan(pkt_time, 6).start, msg=repr(stamp))
+
+        # And through the real production path, which is where an escaped
+        # exception would empty the entry.
+        accums = ProcessPacketTests._get_accums(cfg, pkt_time)
+        accums.first_good_stamp = pkt_time + 86400
+        renderers = [user.loopdata.ReportRenderer.for_context(cfg.legacy, cfg)]
+        failures: set = set()
+        output = user.loopdata.LoopProcessor.generate_output(
+            pkt, cfg, accums, renderers, failures)
+        self.assertEqual(failures, set())
+        self.assertAlmostEqual(output['current.outTemp.raw'], 65.0)
+
+    def test_alltime_span_appears_at_the_first_archive_record(self) -> None:
+        """Spec (7.2): a station whose archive is empty when loopdata builds
+        its accumulators -- weewx and loopdata installed together -- picks up
+        the alltime span at its first archive record, not at the next
+        restart.  new_archive_record takes the stamp from the record itself,
+        so this costs no database read.
+
+        Why absence is not a benign default: a page deciding "did this period
+        begin today?" by comparing alltime.start against day.start gets no
+        answer at all while the field is missing, and on a brand-new station
+        every reading IS an all-time record by arithmetic -- the one day that
+        comparison most needs to work.
+
+        The stamp travels on the QUEUE, so this drives the real path end to
+        end: a real LoopData (so the binding is exercised, not asserted
+        about), the real handler, and the real process_queue branch that
+        applies it."""
+        L = user.loopdata
+        os.environ['TZ'] = 'America/Los_Angeles'
+        time.tzset()
+        t = 1593630000                          # 2020-07-01 12:00 PDT
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp)
+            engine = self.FakeEngine(config_dict)
+            service = L.LoopData(engine, config_dict)
+            try:
+                # The wiring itself: __init__ really bound the handler.
+                self.assertIn(weewx.NEW_ARCHIVE_RECORD, engine.bound)
+
+                cfg = service.cfg
+                accums = ProcessPacketTests._get_accums(cfg, t)
+                processor = L.LoopProcessor(cfg)
+                processor.accumulators = accums
+
+                # _init_fixture's archive has no records: the fresh-install
+                # case.  Nothing to report an alltime span from.
+                self.assertIsNone(accums.first_good_stamp)
+
+                def drain():
+                    """Apply whatever the handler queued, through the REAL
+                    process_queue branch rather than a copy of it: take the
+                    items to count them, put them back, and let the
+                    processor's own loop apply them, ended by the stop signal
+                    it already understands.  Returns how many were queued."""
+                    items = []
+                    while True:
+                        try:
+                            items.append(cfg.queue.get_nowait())
+                        except queue.Empty:
+                            break
+                    for item in items:
+                        self.assertIsInstance(item, L.ArchiveStamp)
+                        cfg.queue.put(item)
+                    cfg.queue.put(None)     # the stop signal ends the loop
+                    processor.process_queue()
+                    return len(items)
+
+                def archived(ts):
+                    rec = {'usUnits': weewx.US, 'interval': 5}
+                    if ts is not None:
+                        rec['dateTime'] = ts
+                    service.new_archive_record(
+                        weewx.Event(weewx.NEW_ARCHIVE_RECORD, record=rec))
+
+                class LiveThread:
+                    @staticmethod
+                    def is_alive():
+                        return True
+                    @staticmethod
+                    def join(timeout=None):
+                        return None
+
+                # Each guard is exercised ALONE, with the other satisfied --
+                # a live thread here, so only the payload guard can stop it.
+                # Before the accumulators exist the handler queues NOTHING:
+                # the database read that builds them covers every record so
+                # far.  StdArchive catches up at STARTUP, so this is real.
+                service.loop_thread = LiveThread()
+                service.loop_processor_started = True
+                self.assertFalse(service.accumulator_payload_sent)
+                archived(t)
+                self.assertEqual(drain(), 0,
+                    'must not queue before the accumulators exist')
+                self.assertIsNone(accums.first_good_stamp)
+
+                # Now the payload guard is satisfied and only the thread
+                # guard is left: a dead thread drains nothing, so queuing to
+                # it would grow memory for the life of weewxd.
+                service.accumulator_payload_sent = True
+                dead = threading.Thread(target=lambda: None)
+                dead.start()
+                dead.join()
+                service.loop_thread = dead
+                archived(t)
+                self.assertEqual(drain(), 0, 'must not queue to a dead thread')
+                self.assertIsNone(accums.first_good_stamp)
+
+                service.loop_thread = LiveThread()
+
+                # The first record supplies the stamp, with no database read.
+                archived(t)
+                self.assertEqual(drain(), 1)
+                self.assertEqual(accums.first_good_stamp, t)
+                self.assertEqual(
+                    L.LoopData.period_span('alltime', t + 60, 6, 1,
+                        accums.first_good_stamp),
+                    weeutil.weeutil.TimeSpan(t, t + 60))
+
+                # A LATER record must not move the start forward.
+                archived(t + 300)
+                drain()
+                self.assertEqual(accums.first_good_stamp, t)
+
+                # An EARLIER one must lower it: a hardware catchup on an
+                # empty archive dispatches the console's whole memory, one
+                # event per record, in the driver's own order.
+                archived(t - 86400)
+                drain()
+                self.assertEqual(accums.first_good_stamp, t - 86400)
+
+                # A record with no dateTime is ignored rather than raising:
+                # this runs on the ENGINE thread, where an exception reaches
+                # weewxd itself.
+                archived(None)
+                self.assertEqual(drain(), 0)
+                self.assertEqual(accums.first_good_stamp, t - 86400)
+
+                # Drop the stub before shutDown: its is_alive() is
+                # unconditionally True, so shutDown would join it, find it
+                # still "running" and log 'Unable to shut down LoopData
+                # thread'.  A suite that routinely logs an error it does not
+                # mean is one where a real error goes unread.
+                service.loop_thread = None
+            finally:
+                service.shutDown()
+
+    def test_every_span_period_has_a_span(self) -> None:
+        """Spec (7.2): the grammar and period_span must not drift apart.
+        Every period parse_cname accepts a span property for must get a real
+        span back -- a period admitted by one and unhandled by the other
+        would omit the field on every packet with only a log.debug.
+
+        period_span cannot assert or raise instead: it runs on the render
+        path, where an exception costs the report its WHOLE entry (see
+        test_span_props_never_raise_out_of_the_render), so the guard has to
+        live here.  Both sides are driven from VALID_FIXED_PERIODS, so
+        adding a period to that list without teaching period_span fails."""
+        L = user.loopdata.LoopData
+        os.environ['TZ'] = 'America/Los_Angeles'
+        time.tzset()
+        pkt_time = 1593630000
+
+        accepted = set()
+        for period in user.loopdata.VALID_FIXED_PERIODS:
+            cname = L.parse_cname('%s.start.raw' % period)
+            if cname is None or cname.span_prop is None:
+                continue
+            accepted.add(period)
+            for prop in ('start', 'end', 'length', 'dateTime'):
+                self.assertIsNotNone(L.parse_cname('%s.%s.raw' % (period, prop)),
+                    msg='%s.%s.raw' % (period, prop))
+            span = L.period_span(period, pkt_time, 6, 1, pkt_time - 86400)
+            self.assertIsNotNone(span, msg='no span for accepted period %s' % period)
+            self.assertLessEqual(span.start, span.stop, msg=period)
+
+        # Every fixed period but 'current', which is an instant.  Pinned as an
+        # exact set so a period added to VALID_FIXED_PERIODS has to be
+        # accounted for here rather than slipping through the loop above.
+        self.assertEqual(accepted,
+            {'hour', 'day', 'week', 'month', 'year', 'rainyear', 'alltime'})
+        self.assertIsNone(L.parse_cname('current.start.raw').span_prop)
+
+    def test_archive_records_from_another_binding_are_ignored(self) -> None:
+        """Spec (7.2): NEW_ARCHIVE_RECORD is dispatched by StdArchive for ITS
+        data_binding, and the event does not name one.  Everything loopdata
+        reads -- the accumulators, the day summaries, firstGoodStamp -- comes
+        from the report binding, so the alltime span describes THAT archive.
+        Where the two bindings differ, a record could otherwise lower the
+        span start to a time the report's archive does not contain, and
+        disagree with the alltime accumulator seeded from it.
+
+        __init__ compares them once and the handler stands down when they
+        differ, queueing nothing at all."""
+        L = user.loopdata
+        os.environ['TZ'] = 'America/Los_Angeles'
+        time.tzset()
+        t = 1593630000
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp)
+            config_dict['StdArchive']['data_binding'] = 'some_other_binding'
+            service = L.LoopData(self.FakeEngine(config_dict), config_dict)
+            try:
+                self.assertFalse(service.archive_records_are_ours)
+                # Everything else the handler checks is satisfied, so only
+                # the binding gate can stop it.
+                service.accumulator_payload_sent = True
+                service.loop_processor_started = True
+
+                class LiveThread:
+                    @staticmethod
+                    def is_alive():
+                        return True
+                    @staticmethod
+                    def join(timeout=None):
+                        return None
+                service.loop_thread = LiveThread()
+
+                service.new_archive_record(weewx.Event(weewx.NEW_ARCHIVE_RECORD,
+                    record={'dateTime': t, 'usUnits': weewx.US, 'interval': 5}))
+                with self.assertRaises(queue.Empty):
+                    service.cfg.queue.get_nowait()
+                service.loop_thread = None
+            finally:
+                service.shutDown()
+
+        # The ordinary station, for contrast: same binding, record queued.
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp)
+            service = L.LoopData(self.FakeEngine(config_dict), config_dict)
+            try:
+                self.assertTrue(service.archive_records_are_ours)
+                service.accumulator_payload_sent = True
+                service.loop_processor_started = True
+
+                class LiveThread2:
+                    @staticmethod
+                    def is_alive():
+                        return True
+                    @staticmethod
+                    def join(timeout=None):
+                        return None
+                service.loop_thread = LiveThread2()
+
+                service.new_archive_record(weewx.Event(weewx.NEW_ARCHIVE_RECORD,
+                    record={'dateTime': t, 'usUnits': weewx.US, 'interval': 5}))
+                item = service.cfg.queue.get_nowait()
+                self.assertIsInstance(item, L.ArchiveStamp)
+                self.assertEqual(item.timestamp, t)
+                service.loop_thread = None
+            finally:
+                service.shutDown()
+
+    def test_one_file_carries_one_alltime_span(self) -> None:
+        """Spec (7.2): the alltime span start reaches the LoopProcessor as an
+        ArchiveStamp on the QUEUE, and process_queue applies it BETWEEN
+        packets -- in the same loop that renders, so never during a render.
+        That is what keeps one loop-data.txt coherent: an alltime.start can
+        never disagree with the alltime.length written beside it.
+
+        The alternative, a field both threads touch, was rejected for exactly
+        this: read once per field, it could omit alltime.start while
+        rendering alltime.end and alltime.length from a value that arrived
+        mid-render, on the packet coinciding with a station's first archive
+        record."""
+        L = user.loopdata
+        os.environ['TZ'] = 'America/Los_Angeles'
+        time.tzset()
+        t = 1593630000
+        fields = ['alltime.start.raw', 'alltime.end.raw', 'alltime.length.raw']
+        cfg = ProcessPacketTests._get_config('us', 10800, 1, 6, fields)
+        accums = ProcessPacketTests._get_accums(cfg, t)
+
+        # Structural, and the point of the design: the engine thread has no
+        # such field to write.  The stamp lives on the accumulators, which
+        # belong to the LoopProcessor.  Pinned so a shared mutable field
+        # cannot creep back in.
+        self.assertFalse(hasattr(cfg, 'first_good_stamp'),
+            'the alltime stamp must not live on the shared Configuration')
+        self.assertTrue(hasattr(accums, 'first_good_stamp'))
+        self.assertIsNone(accums.first_good_stamp)
+
+        # The real dispatch: process_queue's own branch, reached the way
+        # production reaches it, ending on the stop signal.
+        processor = L.LoopProcessor(cfg)
+        cfg.queue.put(accums)
+        cfg.queue.put(L.ArchiveStamp(t - 3600))     # first: takes it
+        cfg.queue.put(L.ArchiveStamp(t - 60))       # later: must not raise it
+        cfg.queue.put(L.ArchiveStamp(t - 86400))    # earlier: must lower it
+        cfg.queue.put(None)
+        processor.process_queue()
+        self.assertEqual(processor.accumulators.first_good_stamp, t - 86400)
+
+        # One render off that value: all three fields present and agreeing.
+        out = L.LoopProcessor.create_loopdata_packet(
+            {'dateTime': t, 'usUnits': 1, 'outTemp': 65.0},
+            cfg.legacy, processor.accumulators, cfg)
+        for k in fields:
+            self.assertIn(k, out)
+        self.assertEqual(out['alltime.start.raw'], t - 86400)
+        self.assertEqual(out['alltime.end.raw'], t)
+        self.assertEqual(out['alltime.length.raw'],
+            out['alltime.end.raw'] - out['alltime.start.raw'])
+
+    def test_span_props_formatted_as_the_report_tags_are(self) -> None:
+        """Spec (7.2): start/end/dateTime are instants and render through the
+        period's [Units][TimeFormats] entry; length is a DURATION and renders
+        as one.  Expectations are the fixture's own formats applied with
+        time.strftime -- the same derivation test_time_context_formatting
+        uses -- so a duration rendered as a date, or an instant rendered as a
+        number, fails here."""
+        os.environ['TZ'] = 'America/Los_Angeles'
+        time.tzset()
+        pkt_time = 1593630000
+        week_start = 6
+        fields = ['day.start', 'week.start', 'month.start', 'year.start',
+                  'week.start.formatted', 'week.length', 'week.length.raw',
+                  'week.length.long_form()', 'week.length.hour.raw']
+        cfg = ProcessPacketTests._get_config('us', 10800, 1, week_start, fields)
+        accums = ProcessPacketTests._get_accums(cfg, pkt_time)
+        out = user.loopdata.LoopProcessor.generate_loopdata_dictionary(
+            {'dateTime': pkt_time, 'usUnits': 1, 'outTemp': 65.0}, cfg, accums)
+
+        week_start_ts = weeutil.weeutil.archiveWeekSpan(pkt_time, week_start).start
+        day_start_ts = weeutil.weeutil.archiveDaySpan(pkt_time).start
+        # The fixture's TimeFormats: day %X, week '%X (%A)', month/year %x %X.
+        self.assertEqual(out['day.start'], time.strftime('%X', time.localtime(day_start_ts)))
+        self.assertEqual(out['week.start'], time.strftime('%X (%A)', time.localtime(week_start_ts)))
+        self.assertEqual(out['week.start.formatted'],
+            time.strftime('%X (%A)', time.localtime(week_start_ts)))
+        self.assertEqual(out['month.start'], time.strftime('%x %X',
+            time.localtime(weeutil.weeutil.archiveMonthSpan(pkt_time).start)))
+        self.assertEqual(out['year.start'], time.strftime('%x %X',
+            time.localtime(weeutil.weeutil.archiveYearSpan(pkt_time).start)))
+
+        # length is group_deltatime: a count of seconds, never a date.
+        self.assertEqual(out['week.length.raw'], 7 * 86400)
+        self.assertEqual(out['week.length'], '604800 seconds')
+        self.assertEqual(out['week.length.long_form()'], '7 days, 0 hours, 0 minutes')
+        self.assertAlmostEqual(out['week.length.hour.raw'], 168.0)
 
     def test_unit_override_current(self) -> None:
         # Pins the unit-override path of add_current_obstype (6.0).  A US packet
@@ -9112,6 +9902,308 @@ class ProcessPacketTests(unittest.TestCase):
             self.assertIn('LoopData thread is not running', logs.output[0])
             self.assertTrue(failed.cfg.queue.empty())
 
+    def test_archive_stamps_interleave_with_packets_on_the_real_thread(self):
+        """Spec (7.2): the alltime stamp travels on the queue so that a
+        stamp arriving mid-run can never land inside a render.  Every file
+        written must therefore carry an alltime.start, .end and .length
+        that describe ONE span -- all three absent, or all three present and
+        arithmetically consistent -- however the engine thread's archive
+        records fall among its loop packets.
+
+        test_one_file_carries_one_alltime_span drives process_queue
+        SYNCHRONOUSLY, from one thread, so it reads the design back rather
+        than running it.  This runs it: the real LoopProcessor thread
+        rendering and writing while new_archive_record is called from this
+        thread, with no synchronization of any kind between the two.
+
+        Every write is captured, not just the last, because the fault this
+        guards against is transient by nature: a torn file appears for one
+        packet and is overwritten by the next.  An assertion on the file
+        left on disk at the end would never see it.
+
+        The archive starts EMPTY -- weewx and loopdata installed together --
+        so the run crosses the transition from no alltime span to one, which
+        is the moment a stamp can arrive mid-render."""
+        L = user.loopdata
+        os.environ['TZ'] = 'America/Los_Angeles'
+        time.tzset()
+        t = 1593630000                                  # 2020-07-01 12:00 PDT
+        with tempfile.TemporaryDirectory() as tmp:
+            # No sample declaration: this report declares the alltime span
+            # and one alltime observation and nothing else, so the renders
+            # are cheap enough to run hundreds of packets through the thread.
+            config_dict = self._init_fixture(tmp, declare_sample=False)
+            config_dict['StdReport']['LoopDataReport']['LoopData'] = {'fields': {'alltime': [
+                'current.dateTime.raw', 'alltime.start.raw', 'alltime.end.raw',
+                'alltime.length.raw', 'alltime.outTemp.max.raw']}}
+
+            captured: List[Dict[str, Any]] = []
+            real_write = L.LoopProcessor.write_packet_to_file
+
+            def capturing_write(selective_pkt, tmpname, loop_data_dir, filename):
+                # Snapshot before the write, on the processor thread: the
+                # dict is rebuilt per packet, but the report entries are
+                # copied anyway so nothing downstream can edit history.
+                captured.append({k: dict(v) if isinstance(v, dict) else v
+                                 for k, v in selective_pkt.items()})
+                return real_write(selective_pkt, tmpname, loop_data_dir, filename)
+
+            service = L.LoopData(self.FakeEngine(config_dict), config_dict)
+            cfg = service.cfg
+            L.LoopProcessor.write_packet_to_file = staticmethod(capturing_write)
+            try:
+                service.pre_loop(None)
+                thread = service.loop_thread
+                self.assertIsNotNone(thread)
+
+                def archived(ts):
+                    service.new_archive_record(weewx.Event(weewx.NEW_ARCHIVE_RECORD,
+                        record={'dateTime': ts, 'usUnits': weewx.US, 'interval': 5,
+                                'outTemp': 68.0}))
+
+                # Records at packets 40, 80 and 120, delivered from THIS
+                # thread while the processor thread renders: the first
+                # supplies the stamp, the second is later and must not raise
+                # it, the third is earlier and must lower it (a hardware
+                # catchup dispatches the console's memory in driver order).
+                stamps = {40: t - 3600, 80: t - 1800, 120: t - 86400}
+                with contextlib.redirect_stdout(io.StringIO()):
+                    try:
+                        for i in range(200):
+                            service.new_loop(weewx.Event(weewx.NEW_LOOP_PACKET, packet={
+                                'dateTime': t + i, 'usUnits': weewx.US, 'outTemp': 70.0 + i,
+                                'windSpeed': 10.0, 'windDir': 90.0, 'barometer': 30.0}))
+                            if i in stamps:
+                                archived(stamps[i])
+                        deadline = time.time() + 20
+                        while not cfg.queue.empty() and time.time() < deadline:
+                            time.sleep(0.01)
+                        self.assertTrue(cfg.queue.empty())
+                    finally:
+                        service.shutDown()
+                self.assertFalse(thread.is_alive())
+            finally:
+                L.LoopProcessor.write_packet_to_file = staticmethod(real_write)
+
+            self.assertEqual(len(captured), 200)
+
+            # Every file, in order.  A start that ever rises, or a length
+            # that ever disagrees with the end beside it, is the tear.
+            with_span = 0
+            previous_start = None
+            for i, out in enumerate(captured):
+                entry = out['LoopDataReport']
+                present = [k for k in ('alltime.start.raw', 'alltime.end.raw',
+                                       'alltime.length.raw') if k in entry]
+                self.assertIn(len(present), (0, 3),
+                    'packet %d wrote a partial alltime span: %s' % (i, present))
+                if not present:
+                    continue
+                with_span += 1
+                self.assertEqual(entry['alltime.end.raw'], entry['current.dateTime.raw'],
+                    'packet %d: the span ends at the packet in hand' % i)
+                self.assertEqual(entry['alltime.length.raw'],
+                    entry['alltime.end.raw'] - entry['alltime.start.raw'],
+                    'packet %d: length disagrees with the start and end beside it' % i)
+                self.assertIn(entry['alltime.start.raw'], set(stamps.values()),
+                    'packet %d: a start no archive record supplied' % i)
+                if previous_start is not None:
+                    self.assertLessEqual(entry['alltime.start.raw'], previous_start,
+                        'packet %d: the start rose' % i)
+                previous_start = entry['alltime.start.raw']
+
+            # The run really crossed the transition it was built to cross:
+            # files before the first stamp carry no span, later ones do, and
+            # the last start is the earliest record delivered.
+            self.assertNotIn('alltime.start.raw', captured[0]['LoopDataReport'])
+            self.assertGreater(with_span, 0)
+            self.assertLess(with_span, len(captured))
+            self.assertEqual(captured[-1]['LoopDataReport']['alltime.start.raw'], t - 86400)
+            # The alltime observation rode the same files, so the entries
+            # were real renders and not an empty dict written 200 times.
+            self.assertEqual(captured[-1]['LoopDataReport']['alltime.outTemp.max.raw'], 70.0 + 199)
+
+    def test_a_report_of_span_properties_alone_runs_end_to_end(self):
+        """Spec (7.2): a report may declare span properties and NOTHING
+        else, and every one of them must reach the file.  This is the shape
+        a page that only wants to know when its periods began has -- and
+        it is the shape in which nothing else works: with no observation
+        declared anywhere, every period's obstype set is empty,
+        create_period_accum returns None for each, and the packet is pruned
+        to its dateTime and usUnits before it is accumulated.
+
+        test_span_props_need_no_declared_obstypes reaches that state by
+        nulling the accumulators by hand, which proves the render but takes
+        the service's word for the rest.  This runs the real one --
+        __init__ parsing the declaration, pre_loop starting the thread,
+        new_loop building accumulators from the database and rendering --
+        and reads the file the thread wrote.  A crash on the way (a None
+        accumulator dereferenced during the build, a pruned packet with no
+        dateTime to take a span from) shows up here and nowhere else.
+
+        One archive record is written first, so alltime -- the one period
+        whose span comes from the database -- answers too."""
+        L = user.loopdata
+        os.environ['TZ'] = 'America/Los_Angeles'
+        time.tzset()
+        t = 1593630000                                  # 2020-07-01 12:00 PDT
+        first_record = t - 86400
+        fields = ['hour.start.raw', 'day.start.raw', 'day.end.raw', 'day.length.raw',
+                  'week.start.raw', 'week.dateTime.raw', 'month.start.raw',
+                  'year.start.raw', 'rainyear.start.raw', 'alltime.start.raw',
+                  'alltime.end.raw', 'alltime.length.raw']
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp, declare_sample=False)
+            config_dict['StdReport']['LoopDataReport']['LoopData'] = {'fields': {'spans': list(fields)}}
+            dbm = weewx.manager.open_manager_with_config(config_dict, 'wx_binding')
+            try:
+                dbm.addRecord({'dateTime': first_record, 'usUnits': weewx.US, 'interval': 5,
+                               'outTemp': 65.0})
+            finally:
+                dbm.close()
+
+            service = L.LoopData(self.FakeEngine(config_dict), config_dict)
+            cfg = service.cfg
+            # The state this test exists to run in: not one observation is
+            # tracked anywhere, in any period.
+            for period in ('current', 'hour', 'day', 'week', 'month', 'year',
+                           'rainyear', 'alltime'):
+                self.assertEqual(getattr(cfg.obstypes, period), set(), period)
+            self.assertEqual(cfg.obstypes.continuous, {})
+
+            written = os.path.join(cfg.loop_data_dir, cfg.filename)
+            # The accumulators the RENDER was handed, taken on the processor
+            # thread: pre_loop keeps the LoopProcessor to itself, and the
+            # object the render used is the one worth asserting about.
+            seen: List[Any] = []
+            real_generate = L.LoopProcessor.generate_output
+
+            def capturing_generate(in_pkt, cfg_, accums_, renderers, render_failures=None):
+                seen.append(accums_)
+                return real_generate(in_pkt, cfg_, accums_, renderers, render_failures)
+
+            L.LoopProcessor.generate_output = staticmethod(capturing_generate)
+            try:
+                service.pre_loop(None)
+                thread = service.loop_thread
+                with contextlib.redirect_stdout(io.StringIO()):
+                    try:
+                        service.new_loop(weewx.Event(weewx.NEW_LOOP_PACKET, packet={
+                            'dateTime': t, 'usUnits': weewx.US, 'outTemp': 70.0}))
+                        deadline = time.time() + 20
+                        while not cfg.queue.empty() and time.time() < deadline:
+                            time.sleep(0.01)
+                        self.assertTrue(cfg.queue.empty())
+                    finally:
+                        service.shutDown()
+            finally:
+                L.LoopProcessor.generate_output = staticmethod(real_generate)
+            self.assertFalse(thread.is_alive())
+
+            # The real build really did leave the accumulators empty: these
+            # spans were computed with nothing to read them off.
+            self.assertEqual(len(seen), 1)
+            accums = seen[0]
+            for attr in ('hour_accum', 'week_accum', 'month_accum', 'year_accum',
+                         'rainyear_accum', 'alltime_accum'):
+                self.assertIsNone(getattr(accums, attr), attr)
+            self.assertEqual(accums.continuous, {})
+            self.assertEqual(accums.first_good_stamp, first_record)
+
+            with open(written) as f:
+                entry = json.load(f)['LoopDataReport']
+            # Exactly what was declared: every field arrived, and a period
+            # with no accumulator contributed nothing else.
+            self.assertEqual(sorted(entry), sorted(fields))
+            w = weeutil.weeutil
+            self.assertEqual(entry['hour.start.raw'], w.archiveHoursAgoSpan(t).start)
+            self.assertEqual(entry['day.start.raw'], w.archiveDaySpan(t).start)
+            self.assertEqual(entry['day.end.raw'], w.archiveDaySpan(t).stop)
+            self.assertEqual(entry['day.length.raw'], 86400)
+            self.assertEqual(entry['week.start.raw'],
+                w.archiveWeekSpan(t, cfg.week_start).start)
+            self.assertEqual(entry['week.dateTime.raw'], entry['week.start.raw'])
+            self.assertEqual(entry['month.start.raw'], w.archiveMonthSpan(t).start)
+            self.assertEqual(entry['year.start.raw'], w.archiveYearSpan(t).start)
+            self.assertEqual(entry['rainyear.start.raw'],
+                w.archiveRainYearSpan(t, cfg.rainyear_start).start)
+            # alltime runs from the archive's earliest record to the packet.
+            self.assertEqual(entry['alltime.start.raw'], first_record)
+            self.assertEqual(entry['alltime.end.raw'], t)
+            self.assertEqual(entry['alltime.length.raw'], t - first_record)
+
+    def test_span_props_on_the_legacy_fields_line(self):
+        """Spec (7.2): a span property works on the deprecated [[Include]]
+        fields line like any other field -- flat at the top level of the
+        file -- and takes part in the sharing that keeps a legacy line from
+        being rendered twice: a property the target_report also declares is
+        computed once, in that report's entry, and copied flat.
+
+        Worth its own test because sharing is keyed on the field NAME and
+        the report's render_signature, and a span property is the one kind
+        of field that reaches neither an accumulator nor an observation
+        lookup on the way to its value.  A property shared but not copied
+        would simply be missing flat; one copied but not shared would be
+        computed twice per packet, which is what the sharing exists to
+        stop.
+
+        Run end to end, so the flat copy is read out of the file the
+        processor thread wrote rather than out of generate_output's return
+        value."""
+        L = user.loopdata
+        os.environ['TZ'] = 'America/Los_Angeles'
+        time.tzset()
+        t = 1593630000                                  # 2020-07-01 12:00 PDT
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp, declare_sample=False)
+            config_dict['StdReport']['LoopDataReport']['LoopData'] = {'fields': {'spans': [
+                'current.outTemp.raw', 'week.start.raw', 'day.start.raw']}}
+            # week.start.raw is declared by the target report and is shared;
+            # month.start.raw is not, and stays in the legacy context.
+            config_dict['LoopData']['Include'] = {'fields': ['week.start.raw', 'month.start.raw']}
+            config_dict['LoopData']['Formatting'] = {'target_report': 'LoopDataReport'}
+
+            service = L.LoopData(self.FakeEngine(config_dict), config_dict)
+            cfg = service.cfg
+            self.assertEqual(cfg.legacy_shared, {'week.start.raw': 'LoopDataReport'})
+            self.assertEqual(cfg.legacy.specified_fields, ['month.start.raw'])
+            # month is nobody's tracked observation, so the legacy context
+            # renders its span with no accumulator behind it either.
+            self.assertEqual(cfg.obstypes.month, set())
+
+            written = os.path.join(cfg.loop_data_dir, cfg.filename)
+            service.pre_loop(None)
+            thread = service.loop_thread
+            with contextlib.redirect_stdout(io.StringIO()):
+                try:
+                    service.new_loop(weewx.Event(weewx.NEW_LOOP_PACKET, packet={
+                        'dateTime': t, 'usUnits': weewx.US, 'outTemp': 70.0}))
+                    deadline = time.time() + 20
+                    while not cfg.queue.empty() and time.time() < deadline:
+                        time.sleep(0.01)
+                    self.assertTrue(cfg.queue.empty())
+                finally:
+                    service.shutDown()
+            self.assertFalse(thread.is_alive())
+
+            with open(written) as f:
+                out = json.load(f)
+            entry = out['LoopDataReport']
+            w = weeutil.weeutil
+            # The shared property: one value, in both places.
+            self.assertEqual(out['week.start.raw'], entry['week.start.raw'])
+            self.assertEqual(out['week.start.raw'],
+                w.archiveWeekSpan(t, cfg.week_start).start)
+            # The unshared one: flat only, and never in the report's entry --
+            # the report did not declare it.
+            self.assertEqual(out['month.start.raw'], w.archiveMonthSpan(t).start)
+            self.assertNotIn('month.start.raw', entry)
+            # day.start.raw was the report's alone and stays there.
+            self.assertEqual(entry['day.start.raw'], w.archiveDaySpan(t).start)
+            self.assertNotIn('day.start.raw', out)
+            self.assertEqual(sorted(k for k in out if k != 'LoopDataReport'),
+                             ['month.start.raw', 'week.start.raw'])
+
     def test_skip_if_older_than_must_be_at_least_one(self):
         """Spec: a stale-packet cutoff below one second would ship every
         packet however late, so zero and negatives are refused with a
@@ -9810,6 +10902,68 @@ class ProcessPacketTests(unittest.TestCase):
         # Accumulated once per packet, not once per report.
         self.assertEqual(accums.day_accum['outTemp'].count, 2)
 
+    def test_span_props_do_not_vary_by_report_unit_system(self):
+        """Spec (7.2): a span property describes a SPAN, not a measurement,
+        so two reports in different unit systems reading one shared span
+        must render it identically -- while an observation beside it in the
+        same file diverges.
+
+        The reason it holds, and the reason it is worth pinning rather than
+        assumed: group_time is unix_epoch and group_deltatime is second in
+        EVERY WeeWX unit system, so each report's converter is a no-op on
+        the way out of add_span_prop.  A span property routed through the
+        observation machinery instead -- or given a unit taken from the
+        report rather than from SPAN_PROPS -- would diverge here and
+        nowhere else.
+
+        current.outTemp is the control, and the test needs one: without an
+        observation that DOES differ, two identical entries would prove
+        only that the fixture never set up two unit systems at all."""
+        L = user.loopdata.LoopData
+        os.environ['TZ'] = 'America/Los_Angeles'
+        time.tzset()
+        config_dict = configobj.ConfigObj('tests/weewx.conf.us', encoding='utf-8')
+        us_dict = L.get_target_report_dict(config_dict, 'SeasonsReport')
+        metric_dict = L.get_target_report_dict(
+            configobj.ConfigObj('tests/weewx.conf.db-us.report-metric', encoding='utf-8'),
+            'SeasonsReport')
+        span_fields = ['week.start.raw', 'week.end.raw', 'week.length.raw',
+                       'week.length.hour.raw', 'week.length', 'week.start']
+        fields = ['current.outTemp.raw', 'unit.label.outTemp'] + span_fields
+        us = L.build_report_context('USReport', list(fields), us_dict, None, None)
+        metric = L.build_report_context('MetricReport', list(fields), metric_dict, None, None)
+        cfg = ProcessPacketTests._make_config(config_dict, 1, 6, legacy=None, reports=[us, metric])
+        pkt_time = 1593630000                           # 2020-07-01 12:00 PDT
+        accums = ProcessPacketTests._get_accums(cfg, pkt_time)
+        renderers = [user.loopdata.ReportRenderer.for_context(c, cfg) for c in cfg.contexts]
+        out = user.loopdata.LoopProcessor.generate_output(
+            {'dateTime': pkt_time, 'usUnits': 1, 'outTemp': 77.0}, cfg, accums, renderers)
+        self.assertEqual(sorted(out), ['MetricReport', 'USReport'])
+
+        # The control: the two reports really are in different unit systems.
+        self.assertAlmostEqual(out['USReport']['current.outTemp.raw'], 77.0)
+        self.assertAlmostEqual(out['MetricReport']['current.outTemp.raw'], 25.0)
+        self.assertEqual(out['USReport']['unit.label.outTemp'], '°F')
+        self.assertEqual(out['MetricReport']['unit.label.outTemp'], '°C')
+
+        # Every span property, formatted and raw, identical in both entries.
+        # The raw values are identical because of the unit groups above; the
+        # FORMATTED ones additionally need the two fixtures to agree on
+        # [Units][TimeFormats], which they do -- a report may legitimately
+        # format an instant differently, so a failure here is worth reading
+        # before it is called a unit bug.
+        for field in span_fields:
+            self.assertEqual(out['USReport'][field], out['MetricReport'][field], field)
+
+        # And they are the right values, not merely the same wrong one.
+        span = weeutil.weeutil.archiveWeekSpan(pkt_time, cfg.week_start)
+        self.assertEqual(out['USReport']['week.start.raw'], span.start)
+        self.assertEqual(out['USReport']['week.end.raw'], span.stop)
+        self.assertEqual(out['USReport']['week.length.raw'], 604800)
+        # An explicit unit override is unit-system-independent too: a week
+        # is 168 hours in a metric report and in a US one.
+        self.assertAlmostEqual(out['USReport']['week.length.hour.raw'], 168.0)
+
     def test_legacy_flat_beside_report_keys(self):
         """An upgraded station: the [[Include]] fields line renders flat at
         the top level exactly as before, and the declaring reports land
@@ -10196,7 +11350,13 @@ class ProcessPacketTests(unittest.TestCase):
             self.assertEqual(out['day.rain.sum'], out['LoopDataReport']['day.rain.sum'])
             self.assertIn('day.outTemp.min', out)
             self.assertNotIn('day.outTemp.min', out['LoopDataReport'])
-            self.assertEqual(set(service.engine.bound), {weewx.NEW_LOOP_PACKET, weewx.PRE_LOOP})
+            # An exact set, deliberately: a new binding is new work on the
+            # engine thread and must be a decision, not a side effect.
+            # NEW_ARCHIVE_RECORD (7.2) keeps first_good_stamp -- the alltime
+            # span's start -- current on a station whose archive was empty
+            # when the accumulators were built.
+            self.assertEqual(set(service.engine.bound),
+                {weewx.NEW_LOOP_PACKET, weewx.PRE_LOOP, weewx.NEW_ARCHIVE_RECORD})
             # One declaring report: SeasonsReport has no skin.conf here and
             # FTP's skin declares nothing, so neither counts.
             self.assertEqual([ctx.report_name for ctx in cfg.reports], ['LoopDataReport'])

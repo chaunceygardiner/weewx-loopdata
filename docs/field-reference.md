@@ -31,6 +31,13 @@ Every observation field has this shape (brackets mark optional slots):
 period.obstype[.agg_type][.unit][.round(n)][.format_spec]
 ```
 
+A period's own boundaries take the place of the observation, and take no
+aggregate — see [Span properties](#span-properties):
+
+```
+period.span_prop[.unit][.round(n)][.format_spec]
+```
+
 * **period**: `current`, `trend`, `hour`, `day`, `week`, `month`, `year`,
   `rainyear`, `alltime`, `1m`–`1440m`, or `1h`–`24h`.
 * **obstype**: any observation in the loop packet (`outTemp`, `barometer`,
@@ -85,6 +92,85 @@ period.obstype[.agg_type][.unit][.round(n)][.format_spec]
 
 The rolling periods act just like `day`, `week`, `month`, `year`, `rainyear`
 and `alltime`: they take the same aggregates and format specs.
+
+## Span properties
+
+A period is a stretch of time, and its four boundary values are report tags
+in their own right — `$week.start`, `$week.end`, `$week.length` and
+`$week.dateTime`.  LoopData serves them as fields, under the same names:
+
+| Field | Value |
+|---|---|
+| `<period>.start` | The instant the period began. |
+| `<period>.end` | The instant it ends. |
+| `<period>.length` | How long it runs, as a duration. |
+| `<period>.dateTime` | The same as `.start` — WeeWX's alias for it. |
+
+They take no aggregate: a span property is a property of the period itself,
+not of an observation.  The unit override, `round(n)` and every format spec
+apply as usual.  `start`, `end` and `dateTime` are instants and render
+through the period's `[Units][TimeFormats]` entry, exactly as a
+[time-of-event field](#time-of-event-fields) does; `length` is a duration
+and renders as one:
+
+* `week.start.raw` might yield `1788678000`
+* `week.start` might yield `00:00:00 (Sunday)`
+* `week.start.format("%Y-%m-%d")` might yield `2026-09-06`
+* `week.length.raw` might yield `604800`
+* `week.length.long_form()` might yield `7 days, 0 hours, 0 minutes`
+* `week.length.hour.raw` might yield `168.0`
+
+`length` is **elapsed** time, not a calendar constant.  In a zone that
+observes daylight saving, the spring-forward day runs 23 hours (`82800`
+seconds) and its week 167 hours (`601200`), while the fall-back day runs 25
+hours (`90000`) and its week 169 (`608400`).  The `$week.length` report tag
+gives the same, and this is the reason to read the field rather than
+hardcode `604800`: a page dividing elapsed time by a constant week is an
+hour off twice a year.
+
+They are served on `hour`, `day`, `week`, `month`, `year`, `rainyear` and
+`alltime`.  The rolling periods (`1m`–`1440m`, `1h`–`24h`) and `trend` have
+no fixed span — their window slides with every packet — and do not carry
+them.
+
+`alltime` is the one period whose span moves.  It runs from the earliest
+record in the archive to the packet in hand, which is what the `$alltime`
+report tag spans, so `alltime.end` and `alltime.length` advance with every
+packet while the calendar periods' stay put until the period rolls over.
+
+{: .note }
+**On a brand-new station, `alltime`'s span properties appear with the first
+archive record.**  LoopData reads the archive's earliest record from the
+database once, when it builds its accumulators on the first loop packet.  If
+you install WeeWX and LoopData together, the archive is still empty at that
+moment and there is no earliest record to read, so `alltime.start`,
+`alltime.end`, `alltime.length` and `alltime.dateTime` are omitted until the
+station writes its first archive record — one archive interval, five minutes
+by default.  LoopData takes the value from that record itself, so it costs
+no further database access.  Every other field, `alltime` aggregates
+included, works from the first packet.  In practice you are unlikely to see
+the gap at all: WeeWX generates its reports on archive records, so the page
+that would display those fields is first written by the same archive record
+that supplies them.  (On the unusual station whose reports read a different
+`data_binding` than `[StdArchive]` writes, LoopData cannot tell which
+archive a record belongs to, so it keeps to the startup reading and those
+four fields wait for a restart; the log says so at startup.)
+
+{: .note }
+The obvious use is a page that must know whether a period began today —
+whether a "week high" is a real weekly record or just today's high wearing
+a badge, on the first day of a week.  Comparing `week.start.raw` with
+`day.start.raw` answers that on every packet, and keeps answering it
+correctly across midnight, which a value baked into the page at report time
+cannot.
+
+{: .important }
+Because a period's `dateTime` is its start, `<period>.dateTime` with an
+aggregate on it — `day.dateTime.max` and its kin — is not a field.  That
+matches the report tags, where `$day.dateTime` has always been the day's
+start and never the `dateTime` observation.  `current.dateTime` is
+unaffected: `current` is an instant, not a span, so `current.dateTime.raw`
+remains the packet's own timestamp.
 
 ## Examples
 
@@ -283,7 +369,8 @@ loop packet).
 ## What report tags can do that fields cannot
 
 For rendering values, the fields grammar is at parity with report tags: any
-period tag with a standard aggregate, converted to any unit, rounded, and
+period tag with a standard aggregate, a period's own
+[span properties](#span-properties), converted to any unit, rounded, and
 formatted with the full set of formatting calls.  What remains report-only:
 
 * Aggregates computed by xtypes (`$day.heatdeg.sum`, `$year.growdeg.sum`,

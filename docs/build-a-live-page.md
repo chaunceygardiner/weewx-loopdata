@@ -184,3 +184,33 @@ demo from a page you can leave running for months:
 * **Keep rendering errors out of the poll loop.**  If your page draws
   (canvas gauges, charts), catch drawing errors separately from fetch
   errors, so a drawing bug cannot stop the polling.
+* **Let the feed answer "did this period begin today?"**  A page that
+  badges a reading as a week or month high needs to know whether the
+  period is old enough for the badge to mean anything: on the first day of
+  a week, this week's high *is* today's high, and the badge says nothing
+  about the weather.  It is tempting to settle that in Cheetah at report
+  time and bake the answer into the page — but the answer expires at the
+  next midnight, and a page carrying `?pageUpdate=` never reloads to
+  replace it.  Declare the boundaries instead
+  ([span properties](field-reference.html#span-properties)) and let every
+  packet carry them:
+
+  ```
+  [LoopData]
+      [[fields]]
+          spans = day.start.raw, week.start.raw, month.start.raw, year.start.raw
+  ```
+
+  ```js
+  const beganToday = p => data[p + '.start.raw'] >= data['day.start.raw'];
+  ```
+
+  That stays correct across every midnight the tab survives, and the page
+  needs no calendar of its own — no `week_start`, no rain-year rule, no
+  date arithmetic in javascript.  Guard the comparison where the field may
+  be absent: an absent key makes it `false`, which reads as "did not begin
+  today" — `alltime.start.raw` is missing on a station that has not
+  archived yet (see
+  [Span properties](field-reference.html#span-properties)), and on a
+  brand-new station that is exactly when every reading is an all-time
+  record.

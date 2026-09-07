@@ -56,7 +56,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '7.1'
+LOOP_DATA_VERSION = '7.2'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -109,6 +109,7 @@ class CheetahName:
     format_spec: Optional[str] # formatted (formatted value sans label), raw or ordinal_compass (could be on direction), a call spec (format/nolabel/string/long_form), or None
     format_kwargs: Optional[Dict[str, Any]] = None # call-syntax specs only: the call's arguments, positionals bound to the ValueHelper method's parameter names; None for bare specs
     round_ndigits: Optional[int] = None # round(n) transform (grammar-ordered between unit and format_spec): round the value to n digits before the format spec renders it.  None means no round segment, or a bare round()/round -- rounder treats ndigits None as identity, so the distinction never matters.
+    span_prop  : Optional[str] = None # a SPAN_PROPS key (start/end/length/dateTime) when the field is a property of the period's span rather than an observation; None for every other field.  obstype carries the same name, so nothing downstream sees an empty obstype -- but the value never comes from an accumulator, and agg_type is always None.
     def __hash__(self):
         return hash(self.field)
 
@@ -375,6 +376,32 @@ WINDROSE_AGG_TYPES: FrozenSet[str] = frozenset(('sum', 'time', 'banded', 'calm')
 # they render through Formatter.toString with a [Units][TimeFormats] context.
 TIME_UNIT_TYPES: FrozenSet[str] = frozenset(
     ('unix_epoch', 'unix_epoch_ms', 'unix_epoch_ns'))
+
+# The periods with a fixed span, as opposed to the rolling windows
+# (1m-1440m, 1h-24h, trend).  A module constant rather than a local of
+# is_valid_period so that period_span is pinned against the SAME list: the
+# grammar admitting a period that period_span has no span for would omit
+# the field on every packet with only a log.debug, and period_span cannot
+# raise instead -- it is on the render path, where an exception costs the
+# report its whole entry.  test_every_span_period_has_a_span holds them
+# together.  'current' is here because it is a valid period; it is an
+# instant, so it carries no span property.
+VALID_FIXED_PERIODS: FrozenSet[str] = frozenset(
+    ('alltime', 'rainyear', 'year', 'month', 'week', 'current', 'hour', 'day'))
+
+# The span properties WeeWX's TimespanBinder exposes on every period tag --
+# $week.start, $week.end, $week.length and $week.dateTime (an alias for
+# start) -- mapped to the (unit, group) of the value each one holds.  They
+# are properties of the SPAN, not observations: they touch no accumulator
+# and take no aggregate, exactly as the report tags do (a TimespanBinder
+# property shadows __getattr__, so $day.dateTime is the day's start and
+# never the dateTime observation).
+SPAN_PROPS: Dict[str, Tuple[str, str]] = {
+    'start'   : ('unix_epoch', 'group_time'),
+    'end'     : ('unix_epoch', 'group_time'),
+    'dateTime': ('unix_epoch', 'group_time'),
+    'length'  : ('second',     'group_deltatime'),
+}
 
 # The renderers behind FORMAT_SPECS (below).  Each takes the field's
 # CheetahName, the converted value tuple (value, unit_type, group_type), the
@@ -1366,6 +1393,21 @@ class Accumulators:
     continuous           : Dict[str, ContinuousAccum] # e.g., continuous['24h'], or ['trend@10800'] (see trend_key())
     windrose_span        : Dict[Tuple[str, str], WindRoseSpanAccum] = dataclass_field(default_factory=dict) # (windrose_key, period)
     windrose_continuous  : Dict[Tuple[str, str], WindRoseContinuousAccum] = dataclass_field(default_factory=dict) # (windrose_key, period)
+    first_good_stamp     : Optional[int] = None # the archive's earliest record -- the start of the alltime span (LoopData.period_span).  Read from the database when these accumulators are built and thereafter lowered by ArchiveStamp payloads, so a station whose archive was empty at that read picks it up at its first archive record rather than at the next restart.  Like everything else here it belongs to the LoopProcessor thread; the engine thread never touches it.  None until some record has been seen.
+
+@dataclass
+class ArchiveStamp:
+    """The timestamp of an archive record, sent from the engine thread to the
+    LoopProcessor.  The earliest one the archive holds is the start of the
+    alltime span (LoopData.period_span).
+
+    It travels on the QUEUE, like every other thing these two threads say to
+    each other, rather than being written to a field both of them touch.
+    That is what makes it safe: the processor applies it in process_queue,
+    BETWEEN packets, so a render can never see the span's start change
+    underneath it and emit an alltime.start that disagrees with the
+    alltime.length rendered beside it."""
+    timestamp: int
 
 class BarometerTrend(Enum):
     RISING_VERY_RAPIDLY  =  4
@@ -1417,6 +1459,9 @@ class LoopData(StdService):
         self.loop_processor_started = False
         self.loop_thread: Optional[threading.Thread] = None
         self.thread_loss_logged = False
+        # Set again in pre_loop; initialized here because StdArchive catches
+        # up at STARTUP, so new_archive_record can run before PRE_LOOP does.
+        self.accumulator_payload_sent = False
 
         station_dict             = config_dict.get('Station', {})
         std_archive_dict         = config_dict.get('StdArchive', {})
@@ -1430,6 +1475,22 @@ class LoopData(StdService):
         # Get the unit_system as specified by StdConvert->target_unit.
         # Note: this value will be overwritten if the day accumulator has a a unit_system.
         default_binding = config_dict.get('StdReport')['data_binding']
+
+        # NEW_ARCHIVE_RECORD is dispatched by StdArchive for ITS binding, and
+        # the event does not name one.  Everything loopdata reads -- the
+        # accumulators, the day summaries, firstGoodStamp -- comes from the
+        # report binding, so alltime describes THAT archive; a record from
+        # another one could lower first_good_stamp to a time that archive
+        # does not contain.  The two bindings are the same on any ordinary
+        # station, so the check costs one comparison and the handler works
+        # as designed; where they differ it stands down and the stamp comes
+        # from the database read alone.
+        archive_binding = config_dict.get('StdArchive', {}).get('data_binding', 'wx_binding')
+        self.archive_records_are_ours = (archive_binding == default_binding)
+        if not self.archive_records_are_ours:
+            log.info('StdArchive writes binding %s but reports read %s; '
+                     'the alltime span start is read from %s at startup only.'
+                     % (archive_binding, default_binding, default_binding))
         with weewx.manager.DBBinder(config_dict) as db_binder:
             unit_system = db_binder.get_manager(default_binding).std_unit_system
         if unit_system is None:
@@ -1686,6 +1747,7 @@ class LoopData(StdService):
 
         self.bind(weewx.PRE_LOOP, self.pre_loop)
         self.bind(weewx.NEW_LOOP_PACKET, self.new_loop)
+        self.bind(weewx.NEW_ARCHIVE_RECORD, self.new_archive_record)
 
     @staticmethod
     def massage_near_zero(val: float)-> float:
@@ -1732,8 +1794,7 @@ class LoopData(StdService):
 
     @staticmethod
     def is_valid_period(period: str)-> bool:
-        valid_fixed_periods     : List[str] = [ 'alltime', 'rainyear', 'year', 'month', 'week', 'current', 'hour', 'day' ]
-        if period in valid_fixed_periods or LoopData.is_continuous_period(period):
+        if period in VALID_FIXED_PERIODS or LoopData.is_continuous_period(period):
             return True
         return False
 
@@ -2123,6 +2184,11 @@ class LoopData(StdService):
         period_obstypes: Set[str] = set()
         for cname in fields_to_include:
             if cname.period == period:
+                if cname.span_prop is not None:
+                    # A span property is read off the period's TimeSpan, not
+                    # off an accumulator: it needs no obstype tracked and must
+                    # not create one ('start' is not an observation).
+                    continue
                 if cname.obstype == 'windrose':
                     # windrose rides its own accumulators (WindRoseAccum), not
                     # the period accums; only the observations it consumes
@@ -2246,6 +2312,58 @@ class LoopData(StdService):
         if thread.is_alive():
             log.error('Unable to shut down LoopData thread')
 
+    def new_archive_record(self, event):
+        """Tell the LoopProcessor the timestamp of an archive record, so the
+        earliest one the archive holds -- the start of the alltime span --
+        follows the archive instead of being frozen at whatever the database
+        held when the accumulators were built.
+
+        That database read happens once, when the accumulators are built.
+        A station whose archive was still empty at that moment -- weewx and
+        loopdata installed together -- would otherwise serve no
+        alltime span properties until weewxd next started, and the consumer
+        of those fields is worst served on exactly that day: with
+        alltime.start absent, a page comparing it against day.start decides
+        the all-time period did NOT begin today, on the one day when every
+        reading is an all-time record by arithmetic.  The record carries its
+        own timestamp, so this costs no database read.
+
+        The stamp goes on the QUEUE (ArchiveStamp) rather than into a field
+        the processor also reads: process_queue applies it between packets,
+        which is what keeps one loop-data.txt coherent -- an alltime.start
+        can never disagree with the alltime.length written beside it.  The
+        processor keeps the MINIMUM, because with hardware record generation
+        an empty archive makes StdArchive's catchup pull the console's whole
+        memory, one event per record, in whatever order the driver yields
+        them.
+
+        Runs on the ENGINE thread, so it holds no broad exception handler
+        and must not need one: the one value it reads out of the record is
+        checked for absence before use.  event.record itself is taken on
+        trust, as new_loop takes event.packet -- weewx builds the event,
+        and an event of this type with no record would be a weewx bug."""
+        if not self.archive_records_are_ours:
+            # A different binding's archive; see __init__.
+            return
+        if not self.accumulator_payload_sent:
+            # No accumulators yet, so there is nothing to update -- and
+            # nothing is lost: the database read that builds them sees every
+            # record written so far, this one included.  (StdArchive catches
+            # up at STARTUP, ahead of the first loop packet, so this is a
+            # real case, not a defensive one.)
+            return
+        thread = self.loop_thread
+        if thread is None or not thread.is_alive():
+            # Nothing drains the queue -- new_loop logs the loss -- and
+            # queuing anyway would grow memory by one object every archive
+            # interval for the life of weewxd, which is the leak 7.1 fixed
+            # for packets.
+            return
+        record_ts = event.record.get('dateTime')
+        if record_ts is None:
+            return
+        self.cfg.queue.put(ArchiveStamp(to_int(record_ts)))
+
     def new_loop(self, event):
         log.debug('new_loop: event: %s' % event)
         thread = self.loop_thread
@@ -2324,6 +2442,21 @@ class LoopData(StdService):
                 windrose_span_accums, windrose_continuous_accums = \
                     LoopData.create_windrose_accums(self.cfg, dbm, pkt_time)
 
+                # The archive's earliest record: the start of the alltime
+                # span, for alltime.start and friends.  Read here, with the
+                # binder already open, because the LoopProcessor thread has
+                # no database of its own (7.1 closed the connections loopdata
+                # used to hold for the life of weewxd).  None on an archive
+                # with no records -- weewx and loopdata installed together --
+                # in which case new_archive_record supplies it from the first
+                # record written, without a second database read.
+                #
+                # This read is the only writer of the stamp until the
+                # accumulators exist: new_archive_record queues nothing
+                # before the payload below is sent, so a record archived
+                # during startup is picked up here rather than racing it.
+                first_good_stamp = dbm.firstGoodStamp()
+
                 # Inside the with: the payload goes on the queue before the
                 # binder closes, since a close that raised would otherwise
                 # leave it unsent with accumulator_payload_sent already set,
@@ -2338,7 +2471,8 @@ class LoopData(StdService):
                     hour_accum          = hour_accum,
                     continuous          = continuous_accums,
                     windrose_span       = windrose_span_accums,
-                    windrose_continuous = windrose_continuous_accums))
+                    windrose_continuous = windrose_continuous_accums,
+                    first_good_stamp    = first_good_stamp))
         self.cfg.queue.put(event)
 
     @staticmethod
@@ -2798,6 +2932,53 @@ class LoopData(StdService):
         return span_periods, continuous_periods
 
     @staticmethod
+    def period_span(period: str, pkt_time: int, week_start: int, rainyear_start: int,
+            first_good_stamp: Optional[int]) -> Optional[weeutil.weeutil.TimeSpan]:
+        """The period's TimeSpan at pkt_time -- the span a report tag's
+        $<period>.start/.end/.length describe -- or None for a period that
+        has none.
+
+        Computed from the packet's time rather than read off the period's
+        accumulator, and deliberately: an accumulator exists only when the
+        period tracks at least one observation (create_period_accum returns
+        None for an empty obstype set, and a set trimmed to empty leaves one
+        that is never fed and so never rolls over), while a span property
+        must answer whether or not any observation rides along with it.
+
+        alltime is the exception that needs the database: WeeWX's $alltime
+        spans the first archive record to the report time, so loopdata's
+        runs to the packet's time -- its .end and .length move with every
+        packet, where the calendar periods' do not.  The accumulator's own
+        span is no help: it is a fabricated 1970-2525 window chosen to
+        swallow every record, not a claim about the archive."""
+        if period == 'hour':
+            return weeutil.weeutil.archiveHoursAgoSpan(pkt_time)
+        if period == 'day':
+            return weeutil.weeutil.archiveDaySpan(pkt_time)
+        if period == 'week':
+            return weeutil.weeutil.archiveWeekSpan(pkt_time, week_start)
+        if period == 'month':
+            return weeutil.weeutil.archiveMonthSpan(pkt_time)
+        if period == 'year':
+            return weeutil.weeutil.archiveYearSpan(pkt_time)
+        if period == 'rainyear':
+            return weeutil.weeutil.archiveRainYearSpan(pkt_time, rainyear_start)
+        if period == 'alltime':
+            if first_good_stamp is None or first_good_stamp > pkt_time:
+                # A packet stamped before the archive's earliest record --
+                # a console whose clock was reset, or a machine that came up
+                # behind itself.  TimeSpan RAISES on start > stop, and this
+                # is called from the render path, where an exception costs
+                # the whole report its entry in the file (generate_output
+                # catches per report and logs once; the report is omitted
+                # for that packet and retried on the next).
+                # There is no alltime span to report, so say so and let the
+                # caller omit the one field.
+                return None
+            return weeutil.weeutil.TimeSpan(first_good_stamp, pkt_time)
+        return None
+
+    @staticmethod
     def windrose_span_fn(period: str, week_start: int, rainyear_start: int
             ) -> Optional[Callable[[int], weeutil.weeutil.TimeSpan]]:
         """ts -> the period's span, for WindRoseSpanAccum's self-reset; None
@@ -2988,9 +3169,25 @@ class LoopData(StdService):
         obstype = segment[next_seg]
         next_seg += 1
 
+        # A span property (start/end/length/dateTime) stands where an obstype
+        # would, and takes no aggregate: it is a property of the period's
+        # span.  Only the periods that HAVE a span qualify -- 'current' is an
+        # instant and the continuous windows (1m-1440m, 1h-24h, trend) roll
+        # with every packet, so neither has the fixed span these describe.
+        # Everywhere else the name keeps whatever meaning it already had:
+        # dateTime is a real observation, so current.dateTime.raw is the
+        # packet's timestamp and unit.label.dateTime its label, in loopdata
+        # as in WeeWX.  (Under a period that does have a span, the property
+        # WINS, again as in WeeWX -- a TimespanBinder property shadows its
+        # __getattr__, so $day.dateTime is the day's start.)
+        span_prop = None
+        if prefix is None and obstype in SPAN_PROPS and period is not None \
+                and period != 'current' and not LoopData.is_continuous_period(period):
+            span_prop = obstype
+
         agg_type = None
         # all periods, except current and trend, must have an agg_type
-        if period is not None and period != 'current' and period != 'trend':
+        if span_prop is None and period is not None and period != 'current' and period != 'trend':
             if len(segment) <= next_seg:
                 return None
             # AGG_TYPES is the union of the dispatch tables (SCALAR_AGGS et
@@ -3072,7 +3269,8 @@ class LoopData(StdService):
             unit          = unit,
             format_spec   = format_spec,
             format_kwargs = format_kwargs,
-            round_ndigits = round_ndigits)
+            round_ndigits = round_ndigits,
+            span_prop     = span_prop)
 
     # An almanac field segment: an identifier with an optional call suffix
     # holding kwargs (no nested parens), e.g. sun(use_center=1).
@@ -3851,6 +4049,26 @@ class LoopProcessor:
                     self.accumulators: Accumulators = event
                     continue
 
+                if type(event) == ArchiveStamp:
+                    # An archive record the engine thread saw.  Applied HERE,
+                    # between packets, so no render sees the alltime span's
+                    # start move while it is producing that span's fields.
+                    # The minimum, because a hardware catchup on an empty
+                    # archive dispatches the console's whole memory in
+                    # whatever order the driver yields it.
+                    accums: Optional[Accumulators] = getattr(self, 'accumulators', None)
+                    if accums is None:
+                        # The queue is FIFO and the engine sends no stamp
+                        # before the Accumulators payload, so this cannot
+                        # happen -- but this loop dying stops the file for
+                        # good, so it is skipped rather than raised.
+                        log.debug('Archive stamp before accumulators; ignored.')
+                        continue
+                    if accums.first_good_stamp is None \
+                            or event.timestamp < accums.first_good_stamp:
+                        accums.first_good_stamp = event.timestamp
+                    continue
+
                 # This is a loop packet.
                 assert event.event_type == weewx.NEW_LOOP_PACKET
 
@@ -3976,7 +4194,7 @@ class LoopProcessor:
         """One context's fields, rendered off the shared accumulators with
         its own formatter, converter and texts.  pkt is the accumulated
         (converted, pruned) packet; in_pkt the packet as it arrived."""
-        loopdata_pkt = LoopProcessor.create_loopdata_packet(pkt, ctx, accums, cfg.loop_frequency)
+        loopdata_pkt = LoopProcessor.create_loopdata_packet(pkt, ctx, accums, cfg)
 
         # Almanac fields are computed from the (unpruned) incoming packet's
         # time, temperature and pressure, not from accumulators.
@@ -4185,6 +4403,65 @@ class LoopProcessor:
             loopdata_pkt, formatter)
 
     @staticmethod
+    def add_span_prop(cname: CheetahName, pkt: Dict[str, Any], accums: Accumulators,
+            cfg: Configuration, loopdata_pkt: Dict[str, Any],
+            converter: weewx.units.Converter,
+            formatter: weewx.units.Formatter) -> None:
+        """Render a span property (week.start.raw, month.length.long_form(),
+        ...): a value read off the period's TimeSpan rather than out of an
+        accumulator, and so dispatched before every obstype path -- the
+        obstype tests would reject it, since 'start' is not an observation.
+
+        start, end and dateTime are instants and carry the period's
+        [Units][TimeFormats] context, exactly as TimespanBinder gives its
+        ValueHelpers; length is a duration and formats as one.  From there
+        the ordinary unit-override, round and format-spec machinery
+        applies."""
+        assert cname.span_prop is not None
+        assert cname.period is not None
+        span = LoopData.period_span(cname.period, to_int(pkt['dateTime']),
+            cfg.week_start, cfg.rainyear_start, accums.first_good_stamp)
+        if span is None:
+            # Only alltime reaches here -- every other period the grammar
+            # admits has a span -- and only when the archive holds no
+            # records, or holds none as old as this packet (see
+            # period_span).  One field is omitted; the rest of the report
+            # is untouched.
+            if not LoopProcessor.render_missing(cname, loopdata_pkt, formatter):
+                log.debug('No %s span, skipping %s' % (cname.period, cname.field))
+            return
+
+        if cname.span_prop == 'length':
+            src_value: Any = span.stop - span.start
+        elif cname.span_prop == 'end':
+            src_value = span.stop
+        else:
+            # start, and dateTime -- TimespanBinder makes the second an alias
+            # of the first.
+            src_value = span.start
+        src_type, src_group = SPAN_PROPS[cname.span_prop]
+
+        try:
+            if cname.unit is None:
+                value_t = converter.convert((src_value, src_type, src_group))
+            else:
+                # Unit override, e.g. week.length.hour.raw.
+                value_t = weewx.units.convert((src_value, src_type, src_group), cname.unit)
+        except (KeyError, ValueError) as e:
+            # Override incompatible with the property's group (a timestamp
+            # asked for in beaufort).  Skip the field.
+            log.debug('%s: cannot convert %s to %s: %s' % (cname.field, src_type, cname.unit, e))
+            return
+
+        # The time context WeeWX binds for the period's tag; alltime has no
+        # [Units][TimeFormats] entry and rides 'year', as $alltime does (and
+        # as add_period_obstype already maps it).
+        time_context = 'year' if cname.period == 'alltime' else cname.period
+
+        LoopProcessor.render_field(cname, value_t, loopdata_pkt, formatter,
+            time_context=time_context)
+
+    @staticmethod
     def add_period_obstype(cname: CheetahName, period_accum: Union[weewx.accum.Accum, ContinuousAccum],
             loopdata_pkt: Dict[str, Any], converter: weewx.units.Converter,
             formatter: weewx.units.Formatter) -> None:
@@ -4384,7 +4661,7 @@ class LoopProcessor:
 
     @staticmethod
     def create_loopdata_packet(pkt: Dict[str, Any], ctx: ReportContext, accums: Accumulators,
-            loop_frequency: float) -> Dict[str, Any]:
+            cfg: Configuration) -> Dict[str, Any]:
         """One context's fields, rendered off the shared accumulators with
         its own formatter, converter, trend window and band edges."""
 
@@ -4396,6 +4673,13 @@ class LoopProcessor:
                 continue
             if cname.prefix == 'unit':
                 LoopProcessor.add_unit_obstype(cname, loopdata_pkt, ctx.converter, ctx.formatter)
+                continue
+
+            # Span properties come off the period's TimeSpan, before any
+            # routing to an accumulator: the period may have none at all.
+            if cname.span_prop is not None:
+                LoopProcessor.add_span_prop(cname, pkt, accums, cfg, loopdata_pkt,
+                    ctx.converter, ctx.formatter)
                 continue
 
             if cname.obstype == 'windrose':
@@ -4436,7 +4720,7 @@ class LoopProcessor:
                 trend_accum = accums.continuous.get(ctx.trend_key)
                 if trend_accum is not None:
                     LoopProcessor.add_trend_obstype(cname, trend_accum, pkt,
-                        loopdata_pkt, ctx.time_delta, loop_frequency, ctx.baro_trend_descs, ctx.converter, ctx.formatter)
+                        loopdata_pkt, ctx.time_delta, cfg.loop_frequency, ctx.baro_trend_descs, ctx.converter, ctx.formatter)
                 continue
             continuous_accum = accums.continuous.get(cname.period) if cname.period is not None else None
             if continuous_accum is not None:

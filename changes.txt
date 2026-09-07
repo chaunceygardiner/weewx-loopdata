@@ -1,6 +1,59 @@
 loopdata change history
 -----------------------
 
+7.2 2026/09/06
+--------------
+- A period's own boundaries are now fields.  start, end, length and
+  dateTime are report tags on every period ($week.start, $month.length),
+  and loopdata refused all of them.  Declare week.start.raw and every
+  packet carries the instant this week began, so a page can work out for
+  itself whether a period began today instead of being told once, at
+  report time, by an answer that goes stale the moment midnight passes --
+  which is what a kiosk page left up for a fortnight is living with.  All
+  four are served on hour, day, week, month, year, rainyear and alltime,
+  and take the usual unit override, round(n) and format specs.  start,
+  end and dateTime are instants and render through the period's time
+  format; length is a duration and renders as one.  The rolling periods
+  (1m-1440m, 1h-24h) and trend have no fixed span and do not carry them.
+- alltime.start is the time of the earliest record in the archive and
+  alltime.end the time of the packet in hand, which is what the $alltime
+  report tag spans.  alltime.end and alltime.length therefore move with
+  every packet, where the calendar periods' do not.  That earliest record
+  is read from the database once, when the accumulators are built on the
+  first loop packet, and thereafter kept current from the archive records
+  themselves, at no further cost to the database (except where
+  [StdArchive] writes a different data_binding than the reports read, in
+  which case loopdata cannot tell which archive a record belongs to and
+  keeps to the startup reading, saying so in the log).  So a station whose
+  archive was still empty at that moment -- weewx and loopdata installed
+  together -- serves the alltime span properties from its first archive
+  record, five minutes in by default, rather than waiting for a restart.
+  A packet stamped before the archive's earliest record, which a console
+  with a reset clock can produce, has no alltime span at all, so those
+  fields are omitted for that packet.  Neither case affects any other
+  field.
+- A period's dateTime with an aggregate on it -- day.dateTime.max and its
+  kin -- is no longer recognized, since a period's dateTime is now its
+  start.  This is what the report tags have always done: $day.dateTime is
+  the day's start, never the dateTime observation.  current.dateTime.raw
+  is untouched; current is an instant, not a span.  The same holds for
+  the other three names: under a period that has a span, start, end and
+  length are the span's, so an observation named one of them --
+  day.length.max -- is no longer recognized there either.  No standard
+  weewx type carries any of those names.
+- Internal: six tests drive the span properties through the machinery the
+  first round stubbed out -- a period rolling over on a real accumulator,
+  with the observations declared that make it roll at all; an archive
+  record's stamp arriving among loop packets on the live writer thread,
+  with every file written checked rather than the last one left on disk;
+  a report declaring span properties and nothing else, end to end through
+  a real service; the deprecated [[Include]] fields line, where a property
+  the target report also declares is rendered once and copied flat; two
+  reports in different unit systems reading one span; and the two days
+  a year that are not twenty-four hours long.  The report-tag parity test
+  now compares the rendered string as well as the raw instant, which is
+  where a wrong time context shows.
+
 7.1 2026/09/03
 --------------
 - Week, month, year, rain-year and all-time sums, counts and averages no

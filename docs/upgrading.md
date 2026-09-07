@@ -143,6 +143,22 @@ a restart.  Details, and the aggregates the new type adds, are under
 
 ## Worth knowing, but nothing to do
 
+* **7.2** — a period's own boundaries can be declared as fields:
+  `week.start`, `month.end`, `year.length` and `<period>.dateTime`, the
+  four report tags every period already has.  Nothing changes unless you
+  declare them; see
+  [Span properties](field-reference.html#span-properties).  One field
+  form did go away with them: because a period's `dateTime` is now its
+  start, `<period>.dateTime` with an aggregate — `day.dateTime.max` and
+  its kin — is no longer recognized and is logged as an unrecognized
+  field.  That form was never a report tag (`$day.dateTime` has always
+  been the day's start), so a declaration is unlikely to name it;
+  `current.dateTime.raw`, which live pages do use, is untouched.  The
+  same shadowing applies to the other three names: under a period that
+  has a span, `start`, `end` and `length` are the span's, so an
+  observation named one of them — `day.length.max` — is no longer
+  recognized there either.  No standard weewx type carries any of those
+  names, so this reaches only a custom or third-party sensor.
 * **7.0.1** — a *fresh* install now writes eight of the options it puts in
   `weewx.conf` commented out, showing the value that applies: four in
   `[[RsyncSpec]]` (`compress`, `log_success`, `timeout`,
