@@ -237,7 +237,7 @@
 
   // Mirrors the :root custom properties in index.html.tmpl -- canvases
   // cannot read css variables, so the two must be kept in step.  track is
-  // the dial's recessed arc; tick is the quieter grey for minor ticks and
+  // the dial's recessed arc; tick is the quieter gray for minor ticks and
   // the windrose's reference rings; rim is the face disc's own edge, a
   // whisper here because the dials read as instruments without it, not
   // because anything depends on it (the rose matches the dials by
@@ -252,13 +252,13 @@
   // clears 3:1 against the face: the calmest band is the biggest segment of
   // most petals, and it used to disappear into the disc.
   var RAMP = ['#4a739b', '#5d89b2', '#75a3c8', '#90bcdd', '#aed4ef', '#d2ecff'];
-  // Those six are STOPS on a curve, not a fixed set of six colours.  A rose
+  // Those six are STOPS on a curve, not a fixed set of six colors.  A rose
   // banded some other way samples the same curve, so the calmest band is
   // always that floor and the windiest is always the ceiling, however many
   // bands sit between.  Six bands -- the WRPLOT default, and what the
   // sample configuration ships -- return the six stops exactly.  Indexing
   // the list directly wrapped at a seventh band and painted the windiest
-  // band in the calmest band's colour, in the rose and its legend alike.
+  // band in the calmest band's color, in the rose and its legend alike.
   function bandColor(i, n) {
     if (n <= 1 || i <= 0) {
       return RAMP[0];
@@ -609,10 +609,10 @@
     // normally, with CARDINALS blanked, with no petals -- and diffing, so
     // anti-aliased skirts count as ink rather than being thresholded away.
     // Two traps, both of which have produced a wrong answer here: sweep the
-    // petal's whole +/-8.2 degree span, because a glyph with a hollow centre
-    // (N, O) reads far clearer than it is on the cardinal's centre ray
+    // petal's whole +/-8.2 degree span, because a glyph with a hollow center
+    // (N, O) reads far clearer than it is on the cardinal's center ray
     // alone; and do not take the with-minus-without-petals diff as petal
-    // ink, because each segment is stroked 2px in the FACE colour and where
+    // ink, because each segment is stroked 2px in the FACE color and where
     // that covers a reference ring it registers as ~1.5 units of reach that
     // is invisible and eats no clearance.  weewx-liveseasons, which carries
     // this same panel, measures 3.0 to 3.4 across its responsive canvas

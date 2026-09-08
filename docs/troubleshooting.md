@@ -161,7 +161,7 @@ Check `[[LoopFrequency]] seconds`.  It is the weight given to each live
 loop packet in the accumulators, and the only weight that comes from your
 configuration — everything seeded from the database at startup carries the
 archive's own weights.  A wrong value therefore skews time-weighted
-aggregates, and it does so in a particular pattern worth recognising: an
+aggregates, and it does so in a particular pattern worth recognizing: an
 average is off only while the period still holds both seeded and live
 data, so it corrects itself when the period rolls over, whereas `windrun`
 and the windrose time and distance bins scale with the error and stay

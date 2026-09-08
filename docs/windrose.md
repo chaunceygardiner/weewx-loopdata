@@ -22,12 +22,12 @@ tracking both time and distance per cell, plus a directionless "calm" total.
 startup from the archive, so even `alltime.windrose` starts fully primed
 after a restart.
 
-![A windrose drawn by the sample skin: two petals, from the north-northwest and the west-southwest, above a centre reading 30% calm](images/windrose.png)
+![A windrose drawn by the sample skin: two petals, from the north-northwest and the west-southwest, above a center reading 30% calm](images/windrose.png)
 
 The [sample skin](sample-skin.html) drawing `day.windrose.banded` on a real
 morning in Palo Alto, with the default speed bands.  Each petal's length is
 that direction's share of the day, stacked and shaded by speed band, and the
-centre carries the calm total — the 30% here sits in the middle of the
+center carries the calm total — the 30% here sits in the middle of the
 10–40% that is normal on real roses.  Two lobes and a large calm share is
 what a real site looks like; a rose with every direction filled evenly is a
 sign the edges want revisiting, which is what [Choosing your
@@ -116,7 +116,7 @@ Then place the edges by three rules:
 How many bands is up to you — the default six is the WRPLOT convention, not
 a limit.  The sample page's palette holds six shades and samples them for
 however many bands you configure, so seven or eight get seven or eight
-distinct colours, calmest to windiest.  Beyond eight or so the shades start
+distinct colors, calmest to windiest.  Beyond eight or so the shades start
 to be hard to tell apart on a small dial, which is a better reason to stop
 than any rule.
 

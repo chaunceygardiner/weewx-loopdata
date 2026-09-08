@@ -190,10 +190,10 @@ loopdata change history
 - Fixed: a report that declares gauge fields but not the clock group now
   says BAD DATA -- check loop_data_file instead of reading "NaNs ago" and
   "Invalid Date" for ever.  The gauges still draw.
-- Fixed: the sample page's windrose colours stretch to however many speed
+- Fixed: the sample page's windrose colors stretch to however many speed
   bands are configured.  The six shades were indexed one per band, so a
   seventh band wrapped around and painted the windiest band in the calmest
-  band's colour -- in the rose and in its legend alike, so the page did not
+  band's color -- in the rose and in its legend alike, so the page did not
   even look wrong.  They are stops on a curve now, sampled for the band
   count in use; six bands, which is what the default edges and the shipped
   sample configuration both produce, get exactly the six shades they
@@ -227,7 +227,7 @@ loopdata change history
   cleanup that existed ran on the loop-processor thread, which weectl
   report run never starts even though report_services builds the service.
 - The windrose manual page gains a picture of one: the sample skin's rose on
-  a real morning, with the default bands, captioned so that the calm centre
+  a real morning, with the default bands, captioned so that the calm center
   and the two-lobed shape illustrate the advice on choosing edges that
   follows it.
 - Manual corrections: the windrose page's advice on the top band edge said
@@ -450,7 +450,7 @@ loopdata change history
   windows -- is seeded from what is already in the database, at the
   weights the archive gives it.  So a wrong value skews the ratio
   between the seeded part of a period and the live part rather than
-  cancelling out of the average, and the manual works an example
+  canceling out of the average, and the manual works an example
   through: a station emitting every two seconds but configured for four
   counts its evening twice over, and day.outTemp.avg reads 16.0 where
   it should read 17.5.  The skew is bounded by the period's own length
@@ -485,7 +485,7 @@ loopdata change history
   default loop_data_dir = . .  skin.conf shipped ../loop-data.txt --
   dead text, since weewx.conf's own entry overrides it -- and the
   manual documented that value and explained it wrongly.  No install
-  changes behaviour; a reader of either file is no longer misled.
+  changes behavior; a reader of either file is no longer misled.
 
 6.11.1 2026/08/14
 -----------------
