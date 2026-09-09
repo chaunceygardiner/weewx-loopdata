@@ -227,11 +227,12 @@ on the next upgrade — `weewx.conf` is not.
   LIVE/OFFLINE/NO DATA/BAD DATA indicator, the expiration timer, and the
   canvas gauge and windrose rendering.
 
-The palette lives in two places that must be kept in step: the `:root`
-custom properties in `index.html.tmpl` for the html, and the `C` and `RAMP`
-literals in `realtime_updater.inc` for the canvases, which cannot read css
-variables.  Retune it freely — the windrose and the dials share a face
-radius, so they read as one size whatever you do to the colors.
+The palette lives in one place, the `:root` custom properties in
+`index.html.tmpl`.  A canvas cannot read a css variable, but the javascript
+drawing on it can, so `realtime_updater.inc` reads the properties rather
+than repeating them — the exception being the windrose's `RAMP`, described
+below.  Retune it freely — the windrose and the dials share a face radius,
+so they read as one size whatever you do to the colors.
 
 `RAMP`'s six shades are stops on a curve rather than one color per band:
 `bandColor` samples them for however many speed bands your

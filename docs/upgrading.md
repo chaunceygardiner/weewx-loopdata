@@ -192,8 +192,8 @@ a restart.  Details, and the aggregates the new type adds, are under
   observation named one of them — `day.length.max` — is no longer
   recognized there either.  No standard weewx type carries any of those
   names, so this reaches only a custom or third-party sensor.
-* **7.0.1** — a *fresh* install now writes eight of the options it puts in
-  `weewx.conf` commented out, showing the value that applies: four in
+* **7.0.1** — a *fresh* install began writing eight of the options it puts
+  in `weewx.conf` commented out, showing the value that applies: four in
   `[[RsyncSpec]]` (`compress`, `log_success`, `timeout`,
   `skip_if_older_than`) and four in the sample report's `[Extras]`
   (`loop_data_file`, `expiration_time`, and examples for
@@ -247,9 +247,9 @@ a restart.  Details, and the aggregates the new type adds, are under
   readouts, a visible recessed track on every dial, a windrose whose calmest
   band no longer disappears into the disc.  Nothing to configure — if you
   installed the sample skin, the next report cycle looks different.  A skin
-  you copied and customized keeps whatever palette you gave it; the values
-  live in `:root` in `index.html.tmpl` and in the `C` and `RAMP` literals in
-  `realtime_updater.inc`, which must be kept in step.
+  you copied and customized keeps whatever palette you gave it; where those
+  values live now is under [Retuning the
+  colors](sample-skin.html#retuning-the-colors).
 * **6.10** — almanac fields work again on WeeWX earlier than 5.3.  If yours
   stopped writing `loop-data.txt` and left a `TypeError` traceback in the
   log, this release is the fix; see

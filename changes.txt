@@ -1,8 +1,8 @@
 loopdata change history
 -----------------------
 
-7.3 (in progress)
------------------
+7.3 2026/09/09
+--------------
 - ACTION REQUIRED IF YOU WANT THE DARK PAGE ON EVERY SCREEN: the sample
   report now follows the viewer's own system theme by default, and a
   browser with no preference set reports LIGHT rather than "no
