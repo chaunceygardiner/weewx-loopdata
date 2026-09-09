@@ -21,6 +21,12 @@ loopdata change history
   anything unrecognized is treated as auto.  The page also declares its
   color-scheme now, so the browser's own scrollbars and focus rings
   follow the theme instead of staying light on a dark page.
+- The sample page's gauges sit on rounded panels, and every row of the
+  grid now reserves the height of the windrose's legend rather than only
+  the row the windrose is in.  THIS ONE MOVES THE DARK PAGE TOO: the
+  bottom row of gauges sits about twenty pixels lower than it did in
+  7.2, so that the dials in each row line up with each other rather than
+  the first row standing taller than the rest.
 - Internal: the panel's palette is now written ONCE, as the css custom
   properties in index.html.tmpl.  realtime_updater.inc reads them
   rather than carrying a second copy of every color, so a theme is a
