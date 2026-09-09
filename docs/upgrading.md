@@ -37,6 +37,39 @@ weewx.conf (`[[[Texts]]]` entries, skin `[Extras]` overrides and
 
 ## Action required
 
+### 7.3 — the sample report follows the viewer's system theme
+
+Affects you only if you use the sample report (`LoopDataReport`).  If you
+only produce `loop-data.txt` for a page of your own, nothing changes.
+
+The sample page now has a light theme as well as the dark one it has
+always had, and by default it picks between them from the setting on the
+computer of whoever is looking at it.  **A browser with no preference set
+reports *light*, not "no preference"** — that value was dropped from the
+standard — so a machine where nobody has chosen a theme now gets the
+light page where it used to get the dark one.
+
+To pin the dark page for everyone regardless of their setting, add
+`theme = dark` to the report's `[[[Extras]]]`:
+
+```
+[StdReport]
+    [[LoopDataReport]]
+        [[[Extras]]]
+            theme = dark
+```
+
+**Then restart weewxd.**  The report engine reads `weewx.conf` once, at
+startup, and re-reads only `skin.conf` and the language file on each
+report cycle, so a running weewxd will not pick this up however long you
+wait.  A fresh 7.3 install writes the line commented out, as
+`#theme = auto`, ready to uncomment; an upgrade has no such line, so add
+it.
+
+`theme = light` pins the light page the same way.  `auto`, the default,
+follows the viewer.  See [the sample skin's Themes
+section](sample-skin.html#themes) for the palette and how to retune it.
+
 ### 7.0 — reports declare their own fields
 
 Affects you only if you wrote a live page of your own that reads

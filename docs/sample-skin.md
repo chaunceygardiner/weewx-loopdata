@@ -125,6 +125,10 @@ and those still win — edit them there:
   Set it to `0` and the page never expires — the same thing `?pageUpdate=`
   buys a kiosk, without the URL.  A negative, or anything that is not a
   number, means the default.
+* `theme` — which theme the page wears: `auto` (the default), `dark` or
+  `light`.  Anything else is treated as `auto`.  See
+  [Themes](#themes) below, which is also where to look if your page
+  turned light when you upgraded.
 * `page_update_pwd` — loading the page as `?pageUpdate=<page_update_pwd>`
   exempts it from expiration (for a kiosk display).  Note the URL parameter
   is `pageUpdate`, while the option that sets its expected value is
@@ -151,6 +155,68 @@ install fetched `gtag.js` with an empty id on every page view, and anyone
 who set an id but left `analytics_host` empty had the page compare its
 hostname against `""` — never true — and report nothing.  Both now test
 the value, as described above.
+
+## Themes
+
+The page ships two: **dark**, navy dials on near-black, which is what this
+skin has always looked like, and **light**, deep navy instruments on warm
+paper.  `theme` in the report's `[Extras]` chooses between them.
+
+**`auto` is the default, and it follows the viewer, not the station.**  The
+browser reports whatever the person looking at the page has set on their
+own computer — the macOS or Windows appearance setting, Android or iOS
+night mode, often on a schedule that turns over at sunset — and the page
+follows it.  Two people looking at the same page at the same moment can
+see different themes, and a viewer who changes the setting while the page
+is open sees it change under them without a reload.
+
+### If your page turned light when you upgraded
+
+That is `auto` doing its job, and one line puts it back.  **A browser with
+no preference set reports *light*, not "no preference"** — that value was
+removed from the standard — so a machine where nobody has chosen a theme
+gets the light page.  To pin the dark page for everyone regardless of
+their setting, put this in the report's stanza in `weewx.conf`:
+
+```
+[StdReport]
+    [[LoopDataReport]]
+        [[[Extras]]]
+            theme = dark
+```
+
+A fresh install writes that line commented out, as `#theme = auto`;
+uncomment it and change the value.  An install from before this release
+has no such line at all — add it.  **Then restart weewxd.**  WeeWX's
+report engine reads `weewx.conf` once, at startup, and re-reads only
+`skin.conf` and the language file on each report cycle — so a running
+weewxd will not notice this edit, however long you wait.  (`weectl report
+run` does read it fresh, which is why the change shows there.)  Your
+browser may also need a reload past its cache.
+
+`theme = light` pins the light page the same way, for a station that wants
+it regardless of who is looking.
+
+### Retuning the colors
+
+The palette is a set of CSS custom properties at the top of
+`index.html.tmpl`, and since 7.3 that is the only place those colors are
+written: `realtime_updater.inc` reads the properties rather than repeating
+them, so changing one there changes both the page and the canvases.  The
+one exception is the windrose's six speed-band shades, which are still the
+`RAMP` array in `realtime_updater.inc` — they are drawn on the dial face,
+which is dark in both themes, so they do not change with the theme.  The dark
+values sit on `:root` and the light ones are named `--light-*` beside
+them, applied by a `prefers-color-scheme` media query and by the
+`[data-theme]` attribute the `theme` option sets.
+
+The shipped numbers were measured, not picked: each gauge's range band
+clears its track by 3:1, which is what makes an arc read at a glance, and
+the six windrose shades in `RAMP` hold their separation against the dial
+face.  If
+you retune, keep those relationships or the dials get harder to read at
+the size they are actually drawn.  Note also that a skin edit is replaced
+on the next upgrade — `weewx.conf` is not.
 
 ## Files to crib from
 

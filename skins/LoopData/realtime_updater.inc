@@ -235,18 +235,60 @@
   // readout, and unit.label fields pick the dial scales, so the panel obeys
   // the target report's units and formatting like any other loopdata page.
 
-  // Mirrors the :root custom properties in index.html.tmpl -- canvases
-  // cannot read css variables, so the two must be kept in step.  track is
-  // the dial's recessed arc; tick is the quieter gray for minor ticks and
-  // the windrose's reference rings; rim is the face disc's own edge, a
-  // whisper here because the dials read as instruments without it, not
+  // The palette, READ from index.html.tmpl's :root custom properties
+  // rather than repeated here.  A canvas cannot read a css variable, but
+  // this can, and that is what makes a theme a css-only concern: the
+  // media query and the [data-theme] pin both land here for free.
+  // Through 7.2 this was a second copy of the values, kept in step by a
+  // test; both the copy and the test are gone.
+  //
+  // track is the dial's recessed arc; tick is the quieter gray for minor
+  // ticks and the windrose's reference rings; rim is the face disc's own
+  // edge, a whisper because the dials read as instruments without it, not
   // because anything depends on it (the rose matches the dials by
-  // geometry now -- same face radius -- so a louder rim is a free choice).
-  var C = {
-    face: '#121a26', track: '#5c718f', tick: '#3a4a63', rim: '#1e2a3a',
-    ink: '#ffffff', muted: '#c6d2e2',
-    amber: '#ffb92e', steel: '#9cceff', steelDim: '#8db0d6'
-  };
+  // geometry -- same face radius -- so a louder rim is a free choice).
+  //
+  // Filled in place, never reassigned, because every draw function closes
+  // over this object.  ink and muted come from the CARD pair: canvas text
+  // is drawn inside the disc, on the card, not on the page ground -- in
+  // the light theme those are different colors.
+  var C = {};
+  function refreshPalette() {
+    var s = getComputedStyle(document.documentElement);
+    function v(name) {
+      return s.getPropertyValue(name).trim();
+    }
+    C.face = v('--face');
+    C.track = v('--track');
+    C.tick = v('--tick');
+    C.rim = v('--rim');
+    C.ink = v('--card-ink');
+    C.muted = v('--card-muted');
+    C.amber = v('--amber');
+    C.steel = v('--steel');
+    C.steelDim = v('--steel-dim');
+    // The needle's glow is the amber again, at 55%.  It used to be a
+    // third hardcoded copy of the color, which a themed --amber would
+    // have left behind: the lamp would glow in the other theme's amber.
+    // Derived here so there is exactly one place the amber is written.
+    C.amberGlow = 'rgba(' + rgbOf(C.amber) + ', 0.55)';
+  }
+
+  // '#rrggbb' or '#rgb' to '255, 185, 46'.  A custom property could
+  // hold any css color, but the palette is written in hex and a test
+  // pins that; anything else falls back to the amber's own value so a
+  // hand-edited skin cannot lose the needle.
+  function rgbOf(hex) {
+    var h = String(hex).trim().replace('#', '');
+    if (h.length === 3) {
+      h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    }
+    if (!/^[0-9a-fA-F]{6}$/.test(h)) {
+      return '255, 185, 46';
+    }
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16),
+            parseInt(h.slice(4, 6), 16)].join(', ');
+  }
   var SANS = 'system-ui, -apple-system, sans-serif';
   // Sequential ramp for the windrose speed bands, dim to bright.  The floor
   // clears 3:1 against the face: the calmest band is the biggest segment of
@@ -315,6 +357,22 @@
   // in a 240-unit coordinate system so geometry and fonts scale together.
   var LOGICAL = 240;
   var ctxs = null;
+  var lastResult = null;
+
+  // A viewer flipping their system theme while the page is open.  The css
+  // half changes instantly; without this the canvases would keep the old
+  // palette until the next poll -- up to refresh_rate seconds of a page
+  // that is half one theme and half the other.  addEventListener on a
+  // MediaQueryList is guarded because Safari only grew it in 14.
+  var COLOR_SCHEME = window.matchMedia
+      ? window.matchMedia('(prefers-color-scheme: light)') : null;
+  if (COLOR_SCHEME !== null && COLOR_SCHEME.addEventListener) {
+    COLOR_SCHEME.addEventListener('change', function () {
+      if (lastResult !== null) {
+        updateGauges(lastResult);
+      }
+    });
+  }
   function context(id) {
     var canvas = document.getElementById(id);
     if (canvas === null || !canvas.getContext) {
@@ -466,7 +524,7 @@
     if (cfg.value !== undefined) {
       var na = dialAngle(cfg, cfg.value);
       ctx.save();
-      ctx.shadowColor = 'rgba(255, 185, 46, 0.55)';
+      ctx.shadowColor = C.amberGlow;
       ctx.shadowBlur = 6;
       ctx.beginPath();
       ctx.moveTo(cx - 14 * Math.cos(na), cy - 14 * Math.sin(na));
@@ -532,7 +590,7 @@
       var a = compassAngle(deg);
       ctx.save();
       if (glow) {
-        ctx.shadowColor = 'rgba(255, 185, 46, 0.55)';
+        ctx.shadowColor = C.amberGlow;
         ctx.shadowBlur = 6;
       }
       ctx.beginPath();
@@ -729,6 +787,10 @@
   }
 
   function updateGauges(result) {
+    // Cheap, and it means a theme change is picked up by the next poll
+    // even if the change event below never fires.
+    lastResult = result;
+    refreshPalette();
     // If layout has changed the displayed size since the backing stores
     // were built (late layout, rotation), rebuild them at the new size.
     // A canvas in a hidden cell measures 0 and was built at the fallback

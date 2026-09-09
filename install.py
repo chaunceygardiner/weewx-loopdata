@@ -171,6 +171,19 @@ CONFIG = """
             # starts it again.  Zero keeps polling for ever.
             #expiration_time = 24
 
+            # Which theme the page wears.  auto follows the viewer's own
+            # system setting, so the same page is dark for someone whose
+            # desktop is dark and light for someone whose is not.  dark
+            # and light pin it instead, for a station that wants one
+            # regardless of who is looking -- a wall panel, say.
+            # Anything else is treated as auto.
+            #
+            # NOTE that a browser with no preference set reports LIGHT,
+            # not "no preference", so auto gives such a viewer the light
+            # page.  To keep the dark page this skin has always had,
+            # uncomment the line below and set it to dark.
+            #theme = auto
+
             # EXAMPLE, not a default: fill in your own google analytics
             # measurement id and uncomment to have the page report to it.
             # Left out, as it is here, the page loads nothing from google
@@ -267,7 +280,7 @@ def loader():
 class LoopDataInstaller(ExtensionInstaller):
     def __init__(self):
         super(LoopDataInstaller, self).__init__(
-            version = "7.2",
+            version = "7.3",
             name = 'loopdata',
             description = 'Loop statistics for real time reporting.',
             author = "John A Kline",

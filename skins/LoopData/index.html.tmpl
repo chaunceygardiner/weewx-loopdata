@@ -4,7 +4,19 @@
 #errorCatcher Echo
 #encoding UTF-8
 <!DOCTYPE html>
+## The theme.  auto (the default) leaves the page to the css, where a
+## media query follows the viewer's own system setting; dark and light
+## pin it, for a station that wants one regardless of who is looking.
+## .get, not has_key: the installer writes this option commented, and an
+## [Extras] option that is present but empty would still satisfy has_key.
+## Anything unrecognized falls back to auto, in keeping with every other
+## option here.
+#set $theme = str($Extras.get('theme', 'auto')).strip().lower()
+#if $theme in ('dark', 'light')
+<html lang="$lang" data-theme="$theme">
+#else
 <html lang="$lang">
+#end if
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -16,11 +28,36 @@
     #end if
     <meta name="description" content="$gettext('Up to date weather readings for {location}.').format(location=$station.location)">
     <style>
-      /* The panel's palette, mirrored by the C object in
-         realtime_updater.inc (the canvases cannot read these).  --rim is
-         the dial face's own edge, kept a whisper because the track ring
-         already reads as the instrument's rim; nothing depends on it. */
+      /* The panel's palette, and since 7.3 the SINGLE source of truth for
+         it: realtime_updater.inc reads these with getComputedStyle rather
+         than carrying a copy of the values, so a theme is a css change and
+         nothing else.  A canvas cannot read a custom property, but the
+         javascript that draws on it can.
+
+         --rim is the dial face's own edge, kept a whisper because the track
+         ring already reads as the instrument's rim; nothing depends on it.
+         --card sits behind each canvas: transparent in the dark theme,
+         where the ground and the face are within 1.2:1 of each other and a
+         gauge needs nothing behind it, and a panel tile in the light theme,
+         where it is what the caption at the disc's rim sits on.
+
+         --ink and --muted are the PAGE's text, on the ground; --card-ink
+         and --card-muted are what the canvases draw with, on the card.
+         They are equal in the dark theme and differ in light, which is the
+         whole reason they are two pairs rather than one.
+
+         THREE STATES, and the order matters.  :root carries dark, so a
+         browser that reports nothing still gets today's page.  The media
+         query supplies light for a viewer whose system asks for light --
+         unless the page has been pinned to dark.  The [data-theme] rules
+         let [Extras] theme pin either one outright.  The light VALUES are
+         written once, as --light-*, so the two places that select them
+         cannot drift apart in value; a test pins that they select the same
+         set. */
       :root {
+        /* So the browser's own chrome -- scrollbars, focus rings, form
+           controls -- follows the theme rather than staying light. */
+        color-scheme: dark;
         --ground: #000206;
         --face: #121a26;
         --track: #5c718f;
@@ -32,6 +69,81 @@
         --amber: #ffb92e;
         --steel: #9cceff;
         --steel-dim: #8db0d6;
+        --card: transparent;
+        --card-ink: #ffffff;
+        --card-muted: #c6d2e2;
+        /* The status indicator is the ONLY page text painted amber, and
+           it sits on the ground rather than on a dial face.  --amber is
+           tuned against the face; on the light theme's paper it falls to
+           1.67:1 and LIVE, OFFLINE, BAD DATA and CLICK-ME all disappear
+           -- CLICK-ME being the control that restarts an expired page.
+           So the indicator gets its own on-ground value. */
+        --live: #ffb92e;
+        /* The legend's inset from its card.  Zero in the dark theme,
+           where --card is transparent and there is no card to inset
+           from: a padded legend there would make the rose's grid cell
+           taller and move every gauge below it, which is a layout
+           change nobody asked for. */
+        --legend-pad: 0;
+
+        /* The light theme's values -- deep navy instruments on warm
+           paper.  Named here, applied below. */
+        --light-ground: #ece2d0;
+        --light-face: #132133;
+        --light-track: #56708f;
+        --light-tick: #35486a;
+        --light-rim: #060c14;
+        --light-ink: #1c2b3d;
+        --light-muted: #6d6354;
+        --light-heading: #22364e;
+        --light-amber: #f0a02a;
+        --light-steel: #9cceff;
+        --light-steel-dim: #8db0d6;
+        --light-card: #0e1a29;
+        --light-card-ink: #fbf6ec;
+        --light-card-muted: #bcc9d9;
+        --light-live: #815009;
+        --light-legend-pad: 6px 10px;
+      }
+      @media (prefers-color-scheme: light) {
+        :root:not([data-theme="dark"]) {
+          color-scheme: light;
+          --ground: var(--light-ground);
+          --face: var(--light-face);
+          --track: var(--light-track);
+          --tick: var(--light-tick);
+          --rim: var(--light-rim);
+          --ink: var(--light-ink);
+          --muted: var(--light-muted);
+          --heading: var(--light-heading);
+          --amber: var(--light-amber);
+          --steel: var(--light-steel);
+          --steel-dim: var(--light-steel-dim);
+          --card: var(--light-card);
+          --card-ink: var(--light-card-ink);
+          --card-muted: var(--light-card-muted);
+          --live: var(--light-live);
+          --legend-pad: var(--light-legend-pad);
+        }
+      }
+      :root[data-theme="light"] {
+        color-scheme: light;
+        --ground: var(--light-ground);
+        --face: var(--light-face);
+        --track: var(--light-track);
+        --tick: var(--light-tick);
+        --rim: var(--light-rim);
+        --ink: var(--light-ink);
+        --muted: var(--light-muted);
+        --heading: var(--light-heading);
+        --amber: var(--light-amber);
+        --steel: var(--light-steel);
+        --steel-dim: var(--light-steel-dim);
+        --card: var(--light-card);
+        --card-ink: var(--light-card-ink);
+        --card-muted: var(--light-card-muted);
+        --live: var(--light-live);
+        --legend-pad: var(--light-legend-pad);
       }
       html, body { background: var(--ground); }
       body {
@@ -53,11 +165,19 @@
       .stamp { font-size: 12px; color: var(--muted); }
       .live {
         font-size: 12px; font-weight: 600; letter-spacing: 0.14em;
-        color: var(--amber); text-align: right; cursor: default;
+        color: var(--live); text-align: right; cursor: default;
       }
       .gauges {
         display: grid; grid-template-columns: repeat(4, 1fr);
         gap: 36px 16px; justify-items: stretch; align-items: start;
+        /* Every row as tall as the tallest, so the windrose's legend is
+           reserved on ALL of them rather than only the row it sits in.
+           Without this the rose's cell is 22px taller than the three
+           gauges beside it (34px in the light theme, where the legend
+           has a card and an inset), which reads as the first row being
+           misaligned with the rest.  1fr rather than a measured height:
+           it still holds if the canvas size or the legend ever moves. */
+        grid-auto-rows: 1fr;
       }
       @media (max-width: 1080px) { .gauges { grid-template-columns: repeat(3, 1fr); } }
       @media (max-width: 800px) { .gauges { grid-template-columns: repeat(2, 1fr); } }
@@ -77,12 +197,34 @@
       canvas {
         display: block; width: 100%; max-width: 480px;
         height: auto;
+        /* 10px, fixed, and not a token: it is the panel radius the
+           author's other skin uses for every panel it has -- the
+           celestial box, the seismic drum, the radar frames -- so a
+           gauge tile here wears the same corner rather than a new one.
+           Deliberately not scaled with the box: a radius that grows
+           stops reading as the same corner.
+           It shows in the light theme only, where --card is a tile; in
+           dark --card is transparent and there is nothing to round.
+           border-radius affects no layout, so the grid is untouched. */
+        background: var(--card);
+        border-radius: 10px;
       }
       .legend {
         display: flex; flex-wrap: wrap; gap: 4px 10px; justify-content: center;
-        font-size: clamp(10.5px, 0.8vw, 15px); color: var(--muted);
+        font-size: clamp(10.5px, 0.8vw, 15px); color: var(--card-muted);
         max-width: 400px;
+        /* On the card, with the rose it explains.  The chips are the
+           windrose's own band colors, which are chosen to clear the DIAL
+           FACE -- against the light theme's paper ground the palest three
+           fall to 1.2:1 and vanish.  Transparent in the dark theme, where
+           --card is transparent and this changes nothing. */
+        background: var(--card);
+        padding: var(--legend-pad);
       }
+      /* Until the first poll fills it -- and for ever on a report that
+         declares no windrose group -- the legend is empty markup.  With a
+         card behind it that would draw as a small bare tile. */
+      .legend:empty { display: none; }
       .legend span { display: flex; align-items: center; gap: 5px; }
       .legend i {
         width: clamp(10px, 0.8vw, 15px); height: clamp(10px, 0.8vw, 15px);

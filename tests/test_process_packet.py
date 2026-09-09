@@ -8553,18 +8553,19 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(sorted(fmt_keys - t_keys), [], 'fmt key never fed into T')
         self.assertEqual(sorted(t_keys - fmt_keys), [], 'T entry no fmt call reads')
 
-    # Roles the html needs but no canvas draws: the page ground, and the
-    # gray 6.11 split out of --muted for the gauge titles.
-    PALETTE_CSS_ONLY = {'ground', 'heading'}
+    def test_skin_theme_tokens_are_complete(self):
+        """The palette is css, and both themes must cover all of it.
 
-    def test_skin_palette_kept_in_step(self):
-        # The panel's palette is declared twice -- as :root custom
-        # properties for the html, and as the C object for the canvases,
-        # which cannot read css variables -- so nothing but a test stops
-        # the two from drifting.  Pin them both ways: every canvas color
-        # must have a css declaration with the same value, and the css
-        # must declare exactly the canvas roles plus the html-only ones,
-        # so adding a color to one side alone fails here.
+        Since 7.3 realtime_updater.inc READS the custom properties
+        instead of repeating them, so the old drift this replaces --
+        two lists of colors falling out of step -- cannot happen.  The
+        drift that CAN happen now is quieter: add a token to :root and
+        forget it in the light theme and the light page silently keeps
+        the dark value, which looks like a design choice rather than a
+        bug.  So every token must be themed, the two places that select
+        the light values must select the SAME set, and the javascript
+        must not read a token nobody declares.
+        """
         with open(os.path.join(self.I18N_SKIN_DIR, 'index.html.tmpl'),
                   encoding='utf-8') as f:
             template = f.read()
@@ -8572,43 +8573,159 @@ class ProcessPacketTests(unittest.TestCase):
                   encoding='utf-8') as f:
             include = f.read()
 
-        root = re.search(r':root\s*\{(.*?)\}', template, re.DOTALL)
+        root = re.search(r':root\s*\{(.*?)\n      \}', template, re.DOTALL)
         self.assertIsNotNone(root, 'no :root block in index.html.tmpl')
-        css = dict(re.findall(r'--([\w-]+)\s*:\s*(#[0-9a-fA-F]{3,8})\s*;',
-                              root.group(1)))
-        self.assertTrue(css)
+        declared = re.findall(r'--([\w-]+)\s*:', root.group(1))
+        palette = {n for n in declared if not n.startswith('light-')}
+        values = {n[len('light-'):] for n in declared if n.startswith('light-')}
+        self.assertTrue(palette, 'no palette tokens in :root')
 
-        block = re.search(r'\bvar C = \{(.*?)\};', include, re.DOTALL)
-        self.assertIsNotNone(block, 'no C palette object in realtime_updater.inc')
-        canvas = dict(re.findall(r"(\w+)\s*:\s*'(#[0-9a-fA-F]{3,8})'",
-                                 block.group(1)))
-        self.assertTrue(canvas)
+        # Every token has a light counterpart and vice versa.  Names, not
+        # values: the values are deliberately different.
+        self.assertEqual(sorted(palette - values), [],
+                         'a palette token has no --light- value')
+        self.assertEqual(sorted(values - palette), [],
+                         'a --light- value themes a token that does not exist')
 
-        # camelCase on the canvas side, kebab-case in css (steelDim/steel-dim).
-        def css_name(key: str) -> str:
-            return re.sub(r'([a-z])([A-Z])', r'\1-\2', key).lower()
+        # The two selectors that apply the light theme.  A media query for
+        # a viewer whose system asks for it, and the [data-theme] pin.
+        media = re.search(
+            r'@media \(prefers-color-scheme: light\)\s*\{\s*'
+            r':root:not\(\[data-theme="dark"\]\)\s*\{(.*?)\n        \}',
+            template, re.DOTALL)
+        self.assertIsNotNone(media, 'no prefers-color-scheme block')
+        pinned = re.search(r':root\[data-theme="light"\]\s*\{(.*?)\n      \}',
+                           template, re.DOTALL)
+        self.assertIsNotNone(pinned, 'no [data-theme="light"] block')
 
-        for key, value in canvas.items():
-            name = css_name(key)
-            self.assertIn(name, css, 'C.%s has no --%s declaration' % (key, name))
-            self.assertEqual(css[name].lower(), value.lower(),
-                             '--%s and C.%s disagree' % (name, key))
-        self.assertEqual(
-            sorted(set(css) - {css_name(k) for k in canvas}),
-            sorted(self.PALETTE_CSS_ONLY),
-            'css declares a color no canvas draws (or an html-only role went away)')
+        def applied(block):
+            return dict(re.findall(r'--([\w-]+)\s*:\s*var\(--light-([\w-]+)\)\s*;',
+                                   block))
+        self.assertEqual(applied(media.group(1)), applied(pinned.group(1)),
+                         'the media query and the [data-theme] pin apply '
+                         'different tokens; a viewer following their system '
+                         'would get a different page from one pinned by config')
+        self.assertEqual(sorted(applied(media.group(1))), sorted(palette),
+                         'the light theme does not cover every palette token; '
+                         'the ones missing silently keep their dark value')
+        for token, value in applied(media.group(1)).items():
+            self.assertEqual(token, value,
+                             '--%s takes its light value from --light-%s'
+                             % (token, value))
 
-        # The needle's glow is a third copy of the amber, spelled rgba;
-        # it has to track --amber or the lamp glow stops matching the lamp.
-        glows = set(re.findall(r'shadowColor\s*=\s*\'rgba\(([^)]+)\)\'', include))
-        self.assertTrue(glows)
-        amber = canvas['amber'].lstrip('#')
-        expected = tuple(int(amber[i:i + 2], 16) for i in (0, 2, 4))
-        for glow in glows:
-            channels = [p.strip() for p in glow.split(',')]
-            self.assertEqual(tuple(int(c) for c in channels[:3]), expected,
-                             'needle glow rgba(%s) is not C.amber %s'
-                             % (glow, canvas['amber']))
+        # Nothing the javascript reads may be undeclared, and the reads
+        # are the only place the canvas learns a color.
+        read = set(re.findall(r"v\('--([\w-]+)'\)", include))
+        self.assertTrue(read, 'realtime_updater.inc reads no css tokens')
+        self.assertEqual(sorted(read - palette), [],
+                         'the canvas reads a token :root does not declare')
+
+        # No color literal may survive anywhere in the include, with one
+        # declared exception.  The needle's glow was a third copy of the
+        # amber and would have stayed the dark theme's amber on a light
+        # page; an earlier version of this check only looked at lines
+        # beginning 'ctx' or 'C.', which a one-line refactor into a
+        # variable -- var glow = 'rgba(...)'; ctx.shadowColor = glow --
+        # would have walked straight past.
+        #
+        # RAMP is the exception and is deliberate: the windrose shades
+        # are drawn on the dial face, which is dark in both themes, so
+        # they do not vary and are not custom properties.  It is cut out
+        # by name rather than by a pattern, so a SECOND array of colors
+        # would still fail.
+        body = re.sub(r'var RAMP = \[[^\]]*\];', '', include)
+        strays = [line.strip() for line in body.split('\n')
+                  if re.search(r"'#[0-9a-fA-F]{3,8}'", line)
+                  or re.search(r"'rgba?\([0-9]", line)]
+        # The digits matter: 'rgba(' on its own is the CONSTRUCTION of the
+        # glow from the themed amber, which is the fix, not the fault.
+        self.assertEqual(strays, [],
+                         'a color literal is left in the drawing code; it '
+                         'cannot follow the theme')
+
+        # Every C key the drawing code reads must be assigned by
+        # refreshPalette.  An unassigned one is undefined, and assigning
+        # undefined to fillStyle is SILENTLY IGNORED -- the shape draws in
+        # whatever color was set last, which looks like a palette choice
+        # rather than a bug.
+        assigned = set(re.findall(r'\bC\.(\w+)\s*=', include))
+        used = set(re.findall(r'\bC\.(\w+)\b', include)) - assigned
+        self.assertEqual(sorted(used - assigned), [],
+                         'the drawing code reads a C key refreshPalette '
+                         'never assigns; it would draw as undefined')
+        self.assertTrue(assigned, 'refreshPalette assigns nothing')
+
+    # Which surface each color is used ON, and the floor it must clear
+    # there.  4.5 for text, 3.0 for a graphic a reading depends on.
+    #
+    # This table exists because of a real defect: --amber is tuned against
+    # the dial FACE, and .live -- the LIVE / OFFLINE / BAD DATA / CLICK-ME
+    # indicator -- is the one page text painted with it, on the GROUND.
+    # In the light theme that measured 1.67:1 and the indicator vanished,
+    # CLICK-ME with it, which is the control that restarts an expired
+    # page.  The token pairs are what a theme actually has to get right.
+    CONTRAST_FLOORS = (
+        ('ink', 'ground', 4.5), ('muted', 'ground', 4.5),
+        ('heading', 'ground', 4.5), ('live', 'ground', 4.5),
+        ('card-ink', 'card', 4.5), ('card-muted', 'card', 4.5),
+        ('track', 'face', 3.0), ('steel', 'track', 3.0),
+        ('amber', 'face', 3.0),
+    )
+
+    @staticmethod
+    def _contrast(a, b):
+        def channel(c):
+            c = c / 255
+            return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+        def lum(h):
+            h = h.lstrip('#')
+            return sum(w * channel(int(h[i:i + 2], 16)) for w, i
+                       in zip((0.2126, 0.7152, 0.0722), (0, 2, 4)))
+        first, second = lum(a), lum(b)
+        hi, lo = max(first, second), min(first, second)
+        return (hi + 0.05) / (lo + 0.05)
+
+    def test_skin_theme_contrast_floors(self):
+        """Every themed color must clear the surface it is used on.
+
+        The token-coverage test above sees that a theme defines every
+        color.  It cannot see that a color is READABLE, and the two
+        failures this release had were both of that kind and both the
+        same shape: a value tuned against the dial face, used on the page
+        ground instead.  The status indicator measured 1.67:1 that way,
+        and the windrose legend chips 1.05:1.
+
+        Sabotage it by moving any --light-* value a few steps toward its
+        own background.
+        """
+        with open(os.path.join(self.I18N_SKIN_DIR, 'index.html.tmpl'),
+                  encoding='utf-8') as f:
+            template = f.read()
+        root = re.search(r':root\s*\{(.*?)\n      \}', template, re.DOTALL)
+        self.assertIsNotNone(root, 'no :root block in index.html.tmpl')
+        values = dict(re.findall(r'--([\w-]+)\s*:\s*(#[0-9a-fA-F]{6})\s*;',
+                                 root.group(1)))
+        themes = {
+            'dark': {k: v for k, v in values.items()
+                     if not k.startswith('light-')},
+            'light': {k[len('light-'):]: v for k, v in values.items()
+                      if k.startswith('light-')},
+        }
+        # The dark theme's card is transparent, so its canvas text sits on
+        # the face.  Say so rather than skipping the pair.
+        themes['dark']['card'] = themes['dark']['face']
+
+        bad = []
+        for name, palette in sorted(themes.items()):
+            for fore, back, floor in self.CONTRAST_FLOORS:
+                self.assertIn(fore, palette, '%s theme has no --%s' % (name, fore))
+                self.assertIn(back, palette, '%s theme has no --%s' % (name, back))
+                got = self._contrast(palette[fore], palette[back])
+                if got < floor:
+                    bad.append('%s: --%s on --%s is %.2f:1, wants %.1f'
+                               % (name, fore, back, got, floor))
+        self.assertEqual(bad, [], 'a themed color cannot be read where it '
+                                  'is used:\n' + '\n'.join(bad))
 
     def test_i18n_lang_files_consistent(self):
         # Every shipped lang file must parse, translate only keys en.conf
@@ -9520,6 +9637,7 @@ class ProcessPacketTests(unittest.TestCase):
         'Extras': {
             'loop_data_file': 'loop-data.txt',
             'expiration_time': '24',
+            'theme': 'auto',
             'googleAnalyticsId': 'G-XXXXXXXXXX',
             'analytics_host': 'www.example.com',
         },

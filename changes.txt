@@ -1,6 +1,34 @@
 loopdata change history
 -----------------------
 
+7.3 (in progress)
+-----------------
+- ACTION REQUIRED IF YOU WANT THE DARK PAGE ON EVERY SCREEN: the sample
+  report now follows the viewer's own system theme by default, and a
+  browser with no preference set reports LIGHT rather than "no
+  preference" -- so a machine where nobody has chosen a theme now gets
+  the light page where it used to get the dark one.  To pin the dark
+  page for everyone regardless of their setting, add theme = dark to
+  the report's [[[Extras]]] in weewx.conf.  A fresh install writes the
+  option commented out; an existing install has no such line and needs
+  one added.  The manual's "Themes" section spells it out.
+- The sample report has a light theme -- deep navy instruments on warm
+  paper -- and picks between it and the dark one from the viewer's
+  system setting.  Two people looking at the same page can see
+  different themes, and a viewer who changes their setting while the
+  page is open sees it change without a reload.  theme = auto (the
+  default), dark or light in the report's [[[Extras]]] decides;
+  anything unrecognized is treated as auto.  The page also declares its
+  color-scheme now, so the browser's own scrollbars and focus rings
+  follow the theme instead of staying light on a dark page.
+- Internal: the panel's palette is now written ONCE, as the css custom
+  properties in index.html.tmpl.  realtime_updater.inc reads them
+  rather than carrying a second copy of every color, so a theme is a
+  css change and nothing else, and the test that kept the two lists in
+  step is gone with the duplication it existed for.  The needle's glow,
+  which was a third copy of the amber spelled rgba(), is derived from
+  it.
+
 7.2 2026/09/06
 --------------
 - A period's own boundaries are now fields.  start, end, length and

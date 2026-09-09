@@ -25,6 +25,12 @@ solar radiation, air quality) hide themselves automatically:
 
 ![LoopDataReport](LoopDataReport.png)
 
+The same page for a viewer whose computer is set to light mode.  Since 7.3
+the report follows whoever is looking at it; `theme` in the report's
+`[Extras]` pins one instead.
+
+![LoopDataReport in the light theme](LoopDataReport-light.png)
+
 Here is the whole idea in one example.  Say your report template shows a
 current condition, a daily aggregate and an almanac time:
 
@@ -103,7 +109,8 @@ translations, and the recipe for building your own live page.
 * **Station fields** — `$station` tags including a restart-correct live
   uptime.
 * **A sample instrument panel** that works out of the box, in nine lang files
-  (eight translations plus the English reference dictionary).
+  (eight translations plus the English reference dictionary), in a dark and a
+  light theme that follow whoever is looking at the page.
 * **No third-party Python packages**, and none of the per-packet work on the
   WeeWX engine thread.
 
