@@ -13,6 +13,16 @@ nav_order: 6
 The recipe for using LoopData in your own skin, demonstrated in full by the
 included [sample skin](sample-skin.html) (`skins/LoopData`):
 
+{: .note }
+**Using the SteelSeries Weather Gauges?**  Wiring them to LoopData is
+straightforward — every value the gauges read is a field you can declare
+here — but the javascript that maps one to the other is yours to write and
+yours to maintain.  If you are not a javascript programmer, use Gary
+Roderick's *Realtime gauge-data* extension instead: it writes the
+`gauge-data.txt` the gauges expect, with no javascript from you.  Gary has
+left GitHub and taken his repository with him; a copy of the last version is
+at [hoetzgit/weewx-realtime_gauge-data](https://github.com/hoetzgit/weewx-realtime_gauge-data).
+
 ## 1. Declare the fields your page needs
 
 In your skin's `skin.conf`, declare every field the page needs, in named
