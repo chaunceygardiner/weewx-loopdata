@@ -42,6 +42,15 @@ info it carries — `hardware`, `location`, `station_url`, `webpath`,
 `longitude_f`.  If a `$station` tag works in a Cheetah template, it works
 here.
 
+One of them carries a month name: `rain_year_str`, the abbreviated month
+the rain year starts in.  Which language that is written in comes from the
+report's locale, not from its lang file — a German report shows `Okt` —
+and, as everywhere else, `lang` has to be a locale name the machine knows
+before any of that happens.  See [Month names and decimal
+points](i18n.html#month-names-and-decimal-points).  (Before 7.4 it took
+whatever locale weewxd itself started under, whichever report asked for
+it.)
+
 ## The point: a restart-correct live uptime
 
 The point of station fields is `uptime` and `os_uptime`: they are recomputed

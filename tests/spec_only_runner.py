@@ -173,6 +173,22 @@ SPEC_TESTS = [
     'test_queue_loop_writes_the_file',
     'test_create_period_accum_counts_today_once',
     'test_skip_if_older_than_must_be_at_least_one',
+    'test_render_locale_strftime_matches_the_c_library',
+    'test_render_locale_captured_something',
+    'test_localize_number_moves_only_the_numbers_point',
+    'test_a_report_renders_under_its_own_locale_not_the_process_one',
+    'test_formatted_carries_the_reports_decimal_point',
+    'test_formatted_localizes_without_any_locale_installed',
+    'test_render_signature_separates_two_locales',
+    'test_weewx_formats_values_the_way_loopdata_assumes',
+    'test_an_unknown_lang_renders_as_weewx_would',
+    'test_station_rain_year_str_follows_the_report',
+    'test_number_rendering_matches_weewx_for_every_conversion',
+    'test_report_formatter_carries_every_formatter_attribute',
+    'test_formatted_and_the_formatter_agree_on_what_a_time_is',
+    'test_long_form_matches_the_base_formatter',
+    'test_long_form_carries_the_reports_decimal_point',
+    'test_a_value_that_is_not_a_tuple_reaches_the_base_formatter',
 ]
 
 suite = unittest.TestSuite([T.ProcessPacketTests(name) for name in SPEC_TESTS])

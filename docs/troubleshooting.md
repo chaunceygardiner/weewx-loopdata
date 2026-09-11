@@ -153,6 +153,14 @@ English — on an otherwise translated page, check the value side:
 * **The report's stanza must set `lang`** (or inherit it from
   `[StdReport] [[Defaults]]`).
 * **Restart weewxd** — a report's texts are read once at startup.
+* **Month names and the decimal point are a separate matter.**  Those
+  come from the machine's locale rather than from a lang file, and `lang =
+  de` is not a locale name — so a fully German page can still say `June`
+  and `12.3`, on the report's own pages just as much as in
+  `loop-data.txt`.  See [Month names and decimal
+  points](i18n.html#month-names-and-decimal-points).  Values rendered in
+  the wrong language altogether, changing from one packet to the next,
+  was a defect fixed in 7.4.
 * **This needs loopdata 6.4 or later.**
 
 ## Aggregate values look slightly off
@@ -204,6 +212,8 @@ write; the errors all mean something you can act on.
 | `Ignoring malformed station field: <field>` | Same, for a [station field](station-fields.html). |
 | `Ignoring non-numeric windrose_bands: <spec>` | A `windrose_bands` edge isn't a number.  The default bands are used. |
 | `Ignoring windrose_bands (need ascending, non-negative edges): <spec>` | The edges are out of order or negative.  The default bands are used. |
+| `LoopData does not recognize how this WeeWX formats values; times and numbers will render under the locale weewxd runs, not the locale of the report.` | Written at startup.  LoopData renders each report's times and numbers under that report's own locale, so that a month name and a decimal point match the report's own pages; it does that by taking over one piece of WeeWX's formatting, and this WeeWX's does not look the way LoopData expects.  Nothing is lost — every field is still written, and times and numbers simply follow whichever locale weewxd itself runs under, as they did before 7.4.  Only a station whose reports set a `lang` that resolves to a different locale than weewxd's own sees any difference.  Please report it, naming your WeeWX version. |
+| `rsync_data: Caught exception <class>: <error>` | An rsync of `loop-data.txt` to the remote failed; the class and message say why.  Occasional timeouts are normal and are covered, with what to do about them, under [Syncing to a remote server](rsync.html#about-those-rsync-errors-in-the-log).  Constant failures mean the remote, the path or the ssh credentials — the local file is written either way. |
 | `round requires a WeeWX with weeutil.weeutil.rounder` | A field used `round(n)` on a WeeWX too old to support it.  Drop the `round(n)`, or upgrade WeeWX. |
 | `LoopData thread is not running; loop packets are ignored from here on and the loop-data file will not update again.` | The thread that writes the file died on an earlier packet, or never started — its traceback, or the `Error in LoopData setup` line, is above this one in the log and is the thing to fix.  weewxd itself keeps running, so a page simply freezes at its last values.  Logged once; restart weewxd after fixing the cause. |
 | `Unable to shut down LoopData thread` | Written while weewxd was stopping, or rebuilding its engine after a driver error: the writer thread did not finish within twenty seconds, usually because it was in the middle of an rsync to a remote that was not answering.  The stop or restart goes ahead without it.  The one consequence is that a LoopData temp file may be left in `loop_data_dir`; it is harmless and can be deleted. |

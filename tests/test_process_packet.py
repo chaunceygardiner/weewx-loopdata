@@ -36,6 +36,7 @@ import importlib
 import importlib.util
 import io
 import json
+import locale
 import logging
 import math
 import os
@@ -44,18 +45,21 @@ import queue
 import random
 import re
 import shutil
+import decimal
+import string
 import subprocess
 import threading
 import tempfile
 import time
 import unittest
 
-from datetime import date
+from datetime import date, datetime
 
 import weewx
 import weewx.accum
 import weewx.almanac
 import weewx.defaults
+import weewx.reportengine
 import weewx.manager
 import weewx.station
 import weewx.units
@@ -76,6 +80,15 @@ import cc3000_cross_midnight_packets
 import ip100_packets
 import simulator_packets
 import vantagepro2_packets
+
+# Rendering reads a locale.  A report with no lang renders under weewxd's
+# ENVIRONMENT locale -- that is what reportengine's set_locale('') selects,
+# and loopdata now captures the same thing per report -- so the expected
+# strings in this file would otherwise depend on the LANG of whoever runs
+# the suite.  Pin it, exactly as TZ is pinned throughout.  A test that cares
+# about a particular locale sets its own (see with_locale).
+os.environ['LC_ALL'] = 'C'
+os.environ['LANG'] = 'C'
 
 log = logging.getLogger(__name__)
 
@@ -7833,7 +7846,7 @@ class ProcessPacketTests(unittest.TestCase):
         ctx = user.loopdata.LoopData.build_report_context(
             None, list(specified_fields), target_report_dict, None, None)
         assert type(ctx.converter) == weewx.units.Converter
-        assert type(ctx.formatter) == weewx.units.Formatter
+        assert type(ctx.formatter) == user.loopdata.ReportFormatter
         # The test names the trend window; the skin dict's is overridden
         # (trend_key follows, being derived from it).
         ctx.time_delta = time_delta
@@ -9453,8 +9466,13 @@ class ProcessPacketTests(unittest.TestCase):
         """level -> the literal log messages loopdata.py can emit."""
         source = cls.repo_text('bin', 'user', 'loopdata.py')
         found: Dict[str, List[str]] = {}
-        for level, msg in re.findall(
-                r"log\.(error|warning|info)\(\s*'([^']+)'", source):
+        # BOTH quote styles.  A message written with double quotes -- which
+        # is what an apostrophe in the text invites -- was invisible here, so
+        # it could never fail the documentation check below.  That was not
+        # hypothetical: rsync_data's error had been written that way and went
+        # undocumented for as long as the table has existed.
+        for level, _quote, msg in re.findall(
+                r"""log\.(error|warning|info)\(\s*(['"])((?:(?!\2).)+)\2""", source):
             found.setdefault(level, []).append(msg)
         # Landmarks + a plausible count: the extractor must keep finding the
         # fatal ones, which are the whole point of the table.
@@ -10322,6 +10340,659 @@ class ProcessPacketTests(unittest.TestCase):
             self.assertNotIn('day.start.raw', out)
             self.assertEqual(sorted(k for k in out if k != 'LoopDataReport'),
                              ['month.start.raw', 'week.start.raw'])
+
+    # ------------------------------------------------------------------
+    # The report's locale
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    @contextlib.contextmanager
+    def process_locale(name: str):
+        """Hold the PROCESS locale for the body and put it back.  Used to
+        build an oracle (what strftime says with the locale really set) and
+        to stand in for a report generating while a packet renders."""
+        saved = locale.setlocale(locale.LC_ALL)
+        try:
+            locale.setlocale(locale.LC_ALL, name)
+            yield
+        finally:
+            locale.setlocale(locale.LC_ALL, saved)
+
+    @staticmethod
+    def usable_locales() -> List[str]:
+        """The locales this host actually has compiled, beyond C.  A fixed
+        order, so a failure names the same one on a re-run."""
+        found: List[str] = []
+        for name in ('de_DE.utf8', 'fr_FR.utf8', 'es_ES.utf8',
+                     'nl_NL.utf8', 'en_US.utf8'):
+            try:
+                with ProcessPacketTests.process_locale(name):
+                    found.append(name)
+            except locale.Error:
+                pass
+        return found
+
+    def test_render_locale_strftime_matches_the_c_library(self):
+        """Spec: RenderLocale.strftime renders a format string exactly as
+        time.strftime would with that locale set.  That is the whole claim
+        -- the point of capturing tables per report is to render a report's
+        times WITHOUT setting the process locale to the report's, so the
+        tables have to be indistinguishable from the real thing.
+
+        The oracle is the C library itself.  A test that only compared
+        German output against German output would pass with the tables
+        empty; this one fails the moment a directive is substituted
+        differently from how strftime substitutes it, including the
+        composite %c/%x/%X and the literal-percent and modifier cases that
+        a naive scanner gets wrong."""
+        L = user.loopdata
+        names = self.usable_locales()
+        if not names:
+            self.skipTest('no locale beyond C is compiled on this host')
+        # EVERY directive, not a list someone thought of.  The hand-written
+        # list this replaced was the reason two defects survived a review:
+        # %P and %Eb were simply not in it, and an oracle only covers what
+        # it is handed.  So the space itself is swept -- every ASCII letter
+        # as a conversion, each bare, behind both modifiers, and under each
+        # flag and a field width -- plus the literal and percent-escape
+        # cases a scanner gets wrong.
+        letters = string.ascii_letters
+        formats = ['%' + modifier + letter
+                   for modifier in ('', 'O', 'E') for letter in letters]
+        flags = ('-', '_', '0', '^', '#', '10', '-10', '010', '2', '020')
+        formats += ['%' + flag + letter
+                    for flag in flags for letter in 'aAbBhpPcxXr']
+        # Flag AND modifier together.  Neither sweep above generates this
+        # corner, and both of the last review's findings lived in it:
+        # strftime applies the flags to the literal it falls back to for a
+        # modified form it does not support, so '%^2Ea' is '%^2EA' and
+        # '%-10Ed' is padded.
+        formats += ['%' + flag + modifier + letter
+                    for flag in flags for modifier in ('O', 'E')
+                    for letter in 'aAbBdHy']
+        # A modifier in front of something that is not a conversion at all.
+        # strftime emits the whole thing literally; stripping the modifier
+        # to '%!' was a divergence a letters-only sweep could not see.
+        formats += ['%' + modifier + ch
+                    for modifier in ('O', 'E') for ch in '!-_^#. :/0%']
+        formats += [
+            '%x %X',                 # WeeWX's own default TimeFormats 'current'
+            '%d-%b-%Y %H:%M',        # weewx.units.DEFAULT_TIME_FORMAT
+            '%A %B %-d, %Y', '%a %b %e %I:%M %p',
+            '%H:%M:%S', 'no directives here',
+            '100%% sure it is %A',   # a literal percent just before a name
+            '%%A',                   # ... and one that must NOT become a name
+            '%', '%%', '%%%A', '%O', '%E',   # truncated and doubled edges
+        ]
+        assert len(formats) > 250, len(formats)   # landmark: the sweep is real
+        times = [datetime(2025, m, d, h, 34, 56).timetuple()
+                 for m in range(1, 13) for d in (3, 21) for h in (9, 15)]
+        assert len(times) == 48, len(times)      # landmark: the loop is real
+        # Every month, weekday and half of the day is covered by the times
+        # above; one of them is enough for the per-directive sweep, and all
+        # of them for the formats that compose several directives.
+        sweep_times = times[:1] + times[6:7] + times[25:26]
+        checked = 0
+        for name in names:
+            L._RENDER_LOCALE_CACHE.pop(name, None)
+            render_locale = L.RenderLocale.capture(name)
+            for fmt in formats:
+                for tm in (sweep_times if fmt.startswith('%') and len(fmt) <= 3
+                           else times):
+                    with self.process_locale(name):
+                        expected = time.strftime(fmt, tm)
+                    # Rendered with the process locale back at the suite's
+                    # C, which is the entire point of the exercise.
+                    self.assertEqual(render_locale.strftime(fmt, tm), expected,
+                                     '%s: %r at %s' % (name, fmt, time.asctime(tm)))
+                    checked += 1
+        assert checked >= 2000, checked          # landmark: nothing was skipped
+
+    def test_render_locale_captured_something(self):
+        """Spec: the oracle above compares two renderings and would pass
+        with every table empty if the fallback happened to be right, so the
+        tables themselves are pinned here: a real locale's names are its
+        own, and they are not C's."""
+        L = user.loopdata
+        if 'de_DE.utf8' not in self.usable_locales():
+            self.skipTest('needs de_DE.utf8')
+        L._RENDER_LOCALE_CACHE.pop('de_DE.utf8', None)
+        german = L.RenderLocale.capture('de_DE.utf8')
+        self.assertEqual(german.names['B'][5], 'Juni')
+        self.assertEqual(german.names['A'][5], 'Samstag')    # tm_wday 5, Saturday
+        self.assertEqual(german.decimal_point, ',')
+        # The alternative form is a table of its own, because a locale's
+        # standalone month name is not always its in-a-date one.  German
+        # writes Januar for both, so this pins that %OB was captured at all
+        # rather than left for the process locale to answer.
+        self.assertEqual(german.names['OB'][5], 'Juni')
+        # %x is where the DATE ORDER lives, and WeeWX's default TimeFormats
+        # for 'current' is '%x %X' -- so this is the entry that decides
+        # whether a German station reads 21.06.2025 or 06/21/25.
+        self.assertIn('x', german.composites)
+        self.assertNotEqual(german.composites['x'], L.RenderLocale.capture('C').composites.get('x'))
+
+    def test_a_report_renders_under_its_own_locale_not_the_process_one(self):
+        """Spec: the defect this closes.  WeeWX renders a report inside
+        reportengine.set_locale, which sets the PROCESS locale for as long
+        as that report's generators run, while the LoopProcessor thread
+        renders every loop packet.  So the same field used to render one
+        way for a packet that landed while some report was generating and
+        another way for the packet after it.  A captured locale must be
+        immune to whatever the process happens to hold at the moment of the
+        render."""
+        L = user.loopdata
+        names = self.usable_locales()
+        if 'de_DE.utf8' not in names or 'fr_FR.utf8' not in names:
+            self.skipTest('needs both de_DE.utf8 and fr_FR.utf8')
+        L._RENDER_LOCALE_CACHE.pop('de_DE.utf8', None)
+        german = L.RenderLocale.capture('de_DE.utf8')
+        tm = datetime(2025, 6, 21, 15, 0, 0).timetuple()
+        # Derived from the German language, not from loopdata's own output.
+        for holding in ('C', 'fr_FR.utf8', 'de_DE.utf8', 'en_US.utf8'):
+            if holding != 'C' and holding not in names:
+                continue
+            with self.process_locale(holding):
+                self.assertEqual(german.strftime('%A, %-d. %B %Y', tm),
+                                 'Samstag, 21. Juni 2025', holding)
+
+    def test_report_formatter_carries_every_formatter_attribute(self):
+        """Spec: ReportFormatter is built from WeeWX's own Formatter by
+        COPYING its attributes, not by re-passing the five its constructor
+        takes today.  WeeWX has added one before -- deltatime_format_dict --
+        and a call naming five would drop a sixth silently, leaving every
+        field that depends on it rendering on a default with nothing
+        logged."""
+        L = user.loopdata
+        config_dict = configobj.ConfigObj('tests/weewx.conf.metric', encoding='utf-8')
+        skin_dict = L.LoopData.get_target_report_dict(config_dict, 'SeasonsReport')
+        base = weewx.units.Formatter.fromSkinDict(skin_dict)
+        ours = L.ReportFormatter.from_skin_dict(skin_dict, L.RenderLocale.capture('C'))
+
+        assert len(vars(base)) >= 5, sorted(vars(base))   # landmark: real object
+        for key, value in vars(base).items():
+            self.assertIn(key, vars(ours), key)
+            self.assertEqual(getattr(ours, key), value, key)
+
+        # And the consequence, not just the shape: a rendering that reads an
+        # attribute rather than being handed one.  long_form with no format
+        # argument takes it from deltatime_format_dict.
+        vt = weewx.units.ValueTuple(7350, 'second', 'group_deltatime')
+        for context in sorted(base.deltatime_format_dict):
+            self.assertEqual(ours.long_form(vt, context),
+                             base.long_form(vt, context), context)
+
+    def test_formatted_and_the_formatter_agree_on_what_a_time_is(self):
+        """Spec: .formatted and the formatter must not disagree about which
+        units hold a point in time.  They did -- .formatted tested the epoch
+        units alone while the formatter also knew the Dublin julian day --
+        so a local_djd field's .formatted came out as a bare 45828.416667
+        where the report beside it showed a date."""
+        L = user.loopdata
+        config_dict = configobj.ConfigObj('tests/weewx.conf.metric', encoding='utf-8')
+        skin_dict = L.LoopData.get_target_report_dict(config_dict, 'SeasonsReport')
+        formatter = L.ReportFormatter.from_skin_dict(skin_dict, L.RenderLocale.capture('C'))
+
+        assert 'local_djd' in L.TIME_UNITS, sorted(L.TIME_UNITS)
+        assert len(L.TIME_UNITS) >= 4, sorted(L.TIME_UNITS)
+        epoch = 1750558260
+        values = {'unix_epoch': epoch, 'unix_epoch_ms': epoch * 1000,
+                  'unix_epoch_ns': epoch * 1000000000,
+                  'local_djd': 45828.416666666664}
+        self.assertEqual(set(values), set(L.TIME_UNITS),
+                         'a time unit was added without a value here')
+        for unit, value in sorted(values.items()):
+            value_t = (value, unit, 'group_time')
+            self.assertTrue(formatter.is_time(value_t), unit)
+            pkt: Dict[str, Any] = {}
+            cname = L.LoopData.parse_cname('current.dateTime.formatted')
+            L._render_formatted(cname, value_t, pkt, formatter, 'current', False)
+            # A date, not a number -- and the same one the formatter gives.
+            self.assertEqual(pkt['current.dateTime.formatted'],
+                             formatter.toString(value_t, context='current',
+                                                addLabel=False), unit)
+            self.assertIn('/', pkt['current.dateTime.formatted'])
+
+    def test_number_rendering_matches_weewx_for_every_conversion(self):
+        """Spec: the strftime oracle's twin, for numbers.  loopdata renders
+        with WeeWX's localization switched OFF and puts the report's decimal
+        point in itself, so it has to make the same decision
+        locale.format_string makes about WHICH conversions are localized at
+        all.  Guessing that got %s wrong: WeeWX leaves %s exactly as plain
+        formatting left it, so a German report's page shows 12.345 while
+        loopdata was writing 12,345 beside it.
+
+        So the conversion space is SWEPT rather than sampled -- every
+        conversion character, bare and with a precision and a width --
+        against WeeWX itself with the locale actually set.  A hand-written
+        list is what let %s through; an oracle covers only what it is
+        handed."""
+        L = user.loopdata
+        if 'de_DE.utf8' not in self.usable_locales():
+            self.skipTest('needs de_DE.utf8')
+        config_dict = configobj.ConfigObj('tests/weewx.conf.metric', encoding='utf-8')
+        skin_dict = L.LoopData.get_target_report_dict(config_dict, 'SeasonsReport')
+        base = weewx.units.Formatter.fromSkinDict(skin_dict)
+        ours = L.ReportFormatter.from_skin_dict(
+            skin_dict, L.RenderLocale.capture('de_DE.utf8'))
+        self.assertEqual(ours.render_locale.decimal_point, ',')
+
+        # WeeWX rejects a handful of conversions that plain % formatting
+        # accepts, so the two disagree about whether there is a value at
+        # all.  Measured: %a is the whole of it -- Python's ascii()
+        # conversion, which locale.format_string refuses.  Pinned by name
+        # rather than waved through, so a Python or WeeWX that changes the
+        # set says so here.
+        weewx_rejects_but_python_accepts = {'a'}
+
+        # Every numeric TYPE a loop packet can carry, not only int and
+        # float.  A guard naming those two excluded bool and Decimal and
+        # sent them back under the process locale -- and '%f' on a boolean
+        # really does produce a decimal point ('1.000000'), which was the
+        # reasoning that excluded it.
+        values = [0, 1, -1, 12.345, -0.5, 1234567.891, 0.0001, 0.0,
+                  True, False, decimal.Decimal('1.5'), decimal.Decimal('-20')]
+        checked = 0
+        localized = 0
+        both_valued = 0
+        surprises = set()
+        for conv in string.ascii_letters:
+            for spec in ('', '.3', '10.2', '-8.1', '08.2', '#.2', '#', '#10.4'):
+                fmt = '%' + spec + conv
+                for value in values:
+                    vt = weewx.units.ValueTuple(value, 'degree_C', 'group_temperature')
+                    try:
+                        with self.process_locale('de_DE.utf8'):
+                            expected = base.toString(vt, useThisFormat=fmt, addLabel=False)
+                        raised = False
+                    except Exception:
+                        expected, raised = None, True
+                    # Rendered with the process locale back at the suite's C.
+                    try:
+                        got = ours.toString(vt, useThisFormat=fmt, addLabel=False)
+                        ours_raised = False
+                    except Exception:
+                        got, ours_raised = None, True
+                    checked += 1
+                    if not raised and not ours_raised:
+                        # The claim that matters: where WeeWX produces a
+                        # value, loopdata produces the SAME one.
+                        self.assertEqual(got, expected, (fmt, value))
+                        both_valued += 1
+                        if ',' in expected:
+                            localized += 1
+                    elif raised and not ours_raised:
+                        if conv not in weewx_rejects_but_python_accepts:
+                            surprises.add(fmt)
+                    elif ours_raised and not raised:
+                        self.fail('loopdata refuses %r on %r, WeeWX renders %r'
+                                  % (fmt, value, expected))
+        self.assertEqual(surprises, set(),
+                         'loopdata renders conversions WeeWX rejects: %s'
+                         % sorted(surprises))
+        assert checked >= 3000, checked      # landmark: the sweep is real
+        assert both_valued >= 300, both_valued
+        # ... and not vacuous: a decimal comma really did appear.
+        assert localized >= 50, localized
+
+    def test_long_form_matches_the_base_formatter(self):
+        """Spec: ReportFormatter repeats WeeWX's long-form delta-time
+        composition, so that it can format with plain % and put the
+        report's own decimal point in rather than letting
+        locale.format_string read the process locale.  Repeating that
+        arithmetic is the price; THIS is the guard against it drifting.
+
+        The comparison runs against the base class's own output, so a WeeWX
+        that changes what goes in the dictionary -- adds a week, folds days
+        into hours differently, pluralizes a label another way -- fails here
+        loudly instead of letting loopdata quietly disagree with the page
+        beside it.  It drives the public method, which no
+        longer short-circuits to the base class for a period decimal point:
+        that short circuit ended in locale.format_string, and so
+        reintroduced this release's own defect for every English station."""
+        L = user.loopdata
+        config_dict = configobj.ConfigObj('tests/weewx.conf.metric', encoding='utf-8')
+        skin_dict = L.LoopData.get_target_report_dict(config_dict, 'SeasonsReport')
+        base = weewx.units.Formatter.fromSkinDict(skin_dict)
+        ours = L.ReportFormatter.from_skin_dict(skin_dict, L.RenderLocale.capture('C'))
+
+        contexts = sorted(base.deltatime_format_dict)
+        assert len(contexts) >= 4, contexts          # landmark: real formats
+        durations = [0, 1, 2, 59, 60, 61, 119, 3599, 3600, 3601, 7200,
+                     86399, 86400, 86401, 90061, 172800, 1234567, -7200]
+        checked = 0
+        for context in contexts:
+            label_format = base.deltatime_format_dict[context]
+            for secs in durations:
+                vt = weewx.units.ValueTuple(secs, 'second', 'group_deltatime')
+                self.assertEqual(
+                    ours.delta_time_to_string(vt, label_format, None),
+                    base.delta_time_to_string(vt, label_format, None),
+                    '%s / %ss' % (context, secs))
+                checked += 1
+        assert checked >= 70, checked                # landmark: nothing skipped
+
+        # The no-value renderings hold no number and stay the base class's,
+        # None_string and all.
+        for none_string in (None, 'nothing yet', 17):
+            for vt in (None, weewx.units.ValueTuple(None, 'second', 'group_deltatime')):
+                self.assertEqual(
+                    ours.delta_time_to_string(vt, contexts and
+                        base.deltatime_format_dict[contexts[0]], none_string),
+                    base.delta_time_to_string(vt,
+                        base.deltatime_format_dict[contexts[0]], none_string))
+
+    def test_long_form_carries_the_reports_decimal_point(self):
+        """Spec: the defect the override above exists to close.  A
+        [[DeltaTimeFormats]] entry with a float conversion used to render
+        its decimal point from whatever locale the process held at that
+        instant -- '2.0' or '2,0' for the same field, packet to packet,
+        depending on whether a report happened to be generating."""
+        L = user.loopdata
+        config_dict = configobj.ConfigObj('tests/weewx.conf.metric', encoding='utf-8')
+        skin_dict = L.LoopData.get_target_report_dict(config_dict, 'SeasonsReport')
+        skin_dict.setdefault('Units', {}).setdefault('DeltaTimeFormats', {})['current'] = \
+            '%(hour).1f%(hour_label)s and %(minute).2f%(minute_label)s'
+        ours = L.ReportFormatter.from_skin_dict(
+            skin_dict, L.RenderLocale(name='test', names={}, composites={},
+                                      decimal_point=','))
+        # 7350s is 2 hours, 2 minutes, 30 seconds -- the parts are whole
+        # counts, so the decimal places come from the format, not from the
+        # arithmetic.
+        vt = weewx.units.ValueTuple(7350, 'second', 'group_deltatime')
+        rendered = ours.long_form(vt, 'current')
+        # BOTH conversions localized, and only the conversions: the literal
+        # ' and ' between them is untouched, and so are the labels.
+        self.assertEqual(rendered, '2,0 hours and 2,00 minutes')
+        self.assertNotIn('.', rendered)
+        # The process locale is the suite's C, so this cannot have passed
+        # by the process happening to be comma-decimal.
+        self.assertEqual(locale.localeconv()['decimal_point'], '.')
+
+        # A literal percent stays one, and a format WeeWX itself rejects is
+        # left to WeeWX to reject rather than quietly rendered here.
+        skin_dict['Units']['DeltaTimeFormats']['current'] = '%(hour).1f%% done'
+        pct = L.ReportFormatter.from_skin_dict(
+            skin_dict, L.RenderLocale(name='test', names={}, composites={},
+                                      decimal_point=','))
+        self.assertEqual(pct.long_form(vt, 'current'), '2,0% done')
+        skin_dict['Units']['DeltaTimeFormats']['current'] = '%(nosuchkey)d'
+        bad = L.ReportFormatter.from_skin_dict(
+            skin_dict, L.RenderLocale(name='test', names={}, composites={},
+                                      decimal_point=','))
+        with self.assertRaises(KeyError):
+            bad.long_form(vt, 'current')
+
+    def test_station_rain_year_str_follows_the_report(self):
+        """Spec: $station renders lazily through the formatter, with one
+        exception -- weewx.station.Station's constructor computes
+        rain_year_str with strftime('%b') EAGERLY, so its month name is
+        fixed by whatever locale is set when the object is built.  WeeWX
+        builds its own $station inside the report's set_locale, so
+        loopdata's must be built there too, or a German report's page says
+        Okt while loop-data.txt says Oct."""
+        L = user.loopdata
+        if 'de_DE.utf8' not in self.usable_locales():
+            self.skipTest('needs de_DE.utf8')
+        config_dict = configobj.ConfigObj('tests/weewx.conf.metric', encoding='utf-8')
+        skin_dict = L.LoopData.get_target_report_dict(config_dict, 'SeasonsReport')
+        skin_dict['lang'] = 'de_DE.utf8'
+        # A rain year starting in October, so the month name is one that
+        # actually differs between English and German.
+        stn_info = weewx.station.StationInfo(altitude=['700', 'foot'],
+            latitude='37.4', longitude='-122.1', location='Palo Alto, California',
+            station_type='Vantage', week_start='6', rain_year_start='10')
+        ctx = L.LoopData.build_report_context(
+            None, ['station.rain_year_str'], skin_dict, None, stn_info)
+        self.assertIsNotNone(ctx.station)
+
+        # What the REPORT shows: WeeWX's own Station, built the way
+        # cheetahgenerator builds it -- inside set_locale.
+        with weewx.reportengine.set_locale('de_DE.utf8'):
+            expected = weewx.station.Station(
+                stn_info, ctx.formatter, ctx.converter, skin_dict).rain_year_str
+        self.assertEqual(expected, 'Okt')          # derived from German
+        # The process locale is the suite's C, so nothing below can pass
+        # because the process happened to be German.
+        self.assertEqual(locale.setlocale(locale.LC_TIME), 'C')
+        self.assertEqual(ctx.station.rain_year_str, expected)
+
+        evaluator = L.StationFieldEvaluator(ctx.station_fields, ctx.station)
+        pkt: Dict[str, Any] = {}
+        evaluator.insert_fields(pkt)
+        self.assertEqual(pkt['station.rain_year_str'], 'Okt')
+
+    def test_a_value_that_is_not_a_tuple_reaches_the_base_formatter(self):
+        """Spec: Formatter.toString deliberately passes an UnknownObsType
+        through to be rendered as a string, and the base class decides what
+        None means.  The override must not get between them: it subscripts
+        the value tuple, and a TypeError on the render path costs a report
+        its whole entry for that packet.  Third-party AlmanacTypes are
+        handed this formatter, so the case is not loopdata's to rule out."""
+        L = user.loopdata
+        config_dict = configobj.ConfigObj('tests/weewx.conf.metric', encoding='utf-8')
+        skin_dict = L.LoopData.get_target_report_dict(config_dict, 'SeasonsReport')
+        ours = L.ReportFormatter.from_skin_dict(skin_dict, L.RenderLocale.capture('C'))
+        base = weewx.units.Formatter.fromSkinDict(skin_dict)
+
+        unknown = weewx.units.UnknownObsType('nosuch')
+        self.assertEqual(ours.toString(unknown), base.toString(unknown))
+        self.assertIn('nosuch', ours.toString(unknown))
+
+        # None raises on the base formatter too, so the override must raise
+        # the SAME way rather than being "fixed" into disagreeing with it.
+        for formatter in (base, ours):
+            with self.assertRaises(TypeError):
+                formatter.toString(None)
+
+    def test_formatted_localizes_without_any_locale_installed(self):
+        """Spec: the same claim as
+        test_formatted_carries_the_reports_decimal_point -- .formatted
+        carries the report's decimal point -- but pinned on a host that has
+        no German locale compiled, where that test can only skip.
+
+        The locale is supplied directly rather than read from the system,
+        so this runs everywhere and the fix is never left uncovered by an
+        accident of which locales a machine happens to have.  What it gives
+        up is the comparison against WeeWX's own ValueHelper; the other
+        test is what pins the two together."""
+        L = user.loopdata
+        config_dict = configobj.ConfigObj('tests/weewx.conf.metric', encoding='utf-8')
+        skin_dict = L.LoopData.get_target_report_dict(config_dict, 'SeasonsReport')
+        formatter = L.ReportFormatter.from_skin_dict(
+            skin_dict, L.RenderLocale(name='test', names={}, composites={},
+                                      decimal_point=','))
+        temp_t = (12.345, 'degree_C', 'group_temperature')
+        pkt: Dict[str, Any] = {}
+        for field in ('current.outTemp',
+                      'current.outTemp.formatted',
+                      'current.outTemp.format(add_label=False)',
+                      'current.outTemp.raw'):
+            cname = L.LoopData.parse_cname(field)
+            self.assertIsNotNone(cname, field)
+            L.LoopProcessor.render_field(cname, temp_t, pkt, formatter)
+        # .formatted and .format(add_label=False) are the same call in a
+        # report.  They must be the same string here, and both must carry
+        # the comma -- .formatted was the one that did not.
+        self.assertEqual(pkt['current.outTemp.formatted'], '12,3')
+        self.assertEqual(pkt['current.outTemp.format(add_label=False)'], '12,3')
+        self.assertTrue(pkt['current.outTemp'].startswith('12,3'),
+                        pkt['current.outTemp'])
+        # .raw never goes near the formatter: it is a json number, not a
+        # string, and a decimal comma in one would not even be json.
+        self.assertEqual(pkt['current.outTemp.raw'], 12.345)
+        self.assertIn('"current.outTemp.raw": 12.345', json.dumps(pkt))
+
+    def test_formatted_carries_the_reports_decimal_point(self):
+        """Spec: a report tag's .formatted IS toString(addLabel=False),
+        which localizes the decimal point, and loopdata's .formatted must
+        be the same string.  It used to skip localization altogether, so a
+        German station's own page said 12,3 while .formatted beside it in
+        loop-data.txt said 12.3 -- the same number, in the same file, for
+        the same packet.
+
+        Everything here is pinned against WeeWX's own ValueHelper rather
+        than against a string typed out here, because 'what the report
+        would render' is the claim being made."""
+        L = user.loopdata
+        if 'de_DE.utf8' not in self.usable_locales():
+            self.skipTest('needs de_DE.utf8')
+        config_dict = configobj.ConfigObj('tests/weewx.conf.metric', encoding='utf-8')
+        skin_dict = L.LoopData.get_target_report_dict(config_dict, 'SeasonsReport')
+        skin_dict['lang'] = 'de_DE.utf8'
+        L._RENDER_LOCALE_CACHE.pop('de_DE.utf8', None)
+        ctx = L.LoopData.build_report_context(
+            None, ['current.outTemp', 'current.outTemp.formatted',
+                   'current.dateTime'], skin_dict, None, None)
+
+        ts = int(datetime(2025, 6, 21, 15, 0, 0).timestamp())
+        temp_t = (12.345, 'degree_C', 'group_temperature')
+        time_t = (ts, 'unix_epoch', 'group_time')
+
+        # What the REPORT produces: WeeWX's own tags, with the locale really
+        # set, which is what reportengine does for a lang'd report.
+        plain = weewx.units.Formatter.fromSkinDict(skin_dict)
+        with self.process_locale('de_DE.utf8'):
+            vh = weewx.units.ValueHelper(weewx.units.ValueTuple(*temp_t), 'current', plain)
+            expected_bare      = vh.toString()
+            expected_formatted = vh.formatted
+            expected_time = weewx.units.ValueHelper(
+                weewx.units.ValueTuple(*time_t), 'current', plain).toString()
+        # The claim is only interesting if German is not what C would say.
+        self.assertIn(',', expected_formatted)
+
+        # The process locale is the suite's C throughout the rendering
+        # below, so nothing here can pass by the process happening to be
+        # German.
+        self.assertEqual(locale.localeconv()['decimal_point'], '.')
+
+        pkt: Dict[str, Any] = {}
+        for field in ('current.outTemp', 'current.outTemp.formatted', 'current.dateTime'):
+            cname = L.LoopData.parse_cname(field)
+            self.assertIsNotNone(cname, field)
+            L.LoopProcessor.render_field(
+                cname, time_t if field == 'current.dateTime' else temp_t,
+                pkt, ctx.formatter)
+        self.assertEqual(pkt['current.outTemp'], expected_bare)
+        self.assertEqual(pkt['current.outTemp.formatted'], expected_formatted)
+        self.assertEqual(pkt['current.dateTime'], expected_time)
+
+        # A complex value has no single format string: WeeWX composes it
+        # out of two further renderings, one per part, so the decimal point
+        # has to arrive through that recursion.  Switching localization off
+        # for the whole switches it off for the parts too -- the base class
+        # passes the flag down -- and the points come back as periods.
+        complex_t = (complex(12.345, 6.789), 'degree_C', 'group_temperature')
+        with self.process_locale('de_DE.utf8'):
+            expected_complex = weewx.units.ValueHelper(
+                weewx.units.ValueTuple(*complex_t), 'current', plain).toString()
+        # '(12,3, 6,8)\N{DEGREE SIGN}C' -- both parts localized, and the
+        # comma that separates them is WeeWX's own punctuation.
+        self.assertIn('12,3', expected_complex)
+        self.assertIn('6,8', expected_complex)
+        self.assertEqual(
+            weewx.units.ValueHelper(weewx.units.ValueTuple(*complex_t),
+                                    'current', ctx.formatter).toString(),
+            expected_complex)
+
+        # The almanac and station fields evaluate real ValueHelpers built
+        # with this formatter -- a rendered time deep in an attribute chain,
+        # which is what weewx-celestial declares -- so the ValueHelper path
+        # has to carry the report's locale too, not only loopdata's own
+        # renderers.
+        self.assertEqual(
+            str(weewx.units.ValueHelper(weewx.units.ValueTuple(*time_t),
+                                        'current', ctx.formatter)),
+            expected_time)
+
+    def test_localize_number_moves_only_the_numbers_point(self):
+        """Spec: the report's decimal point goes into the number the format
+        string produced, and into nothing else.  A unit format is free to
+        carry a literal period -- an inch mark, a dotted abbreviation -- and
+        a blanket replacement would corrupt it; a format with no decimal at
+        all must come back untouched, and so must a value there was nothing
+        to format."""
+        L = user.loopdata
+        comma = L.RenderLocale(name='test', names={}, composites={},
+                               decimal_point=',')
+        for fmt_str, value, rendered, expected in (
+                ('%.1f',     12.345, '12.3 \N{DEGREE SIGN}C', '12,3 \N{DEGREE SIGN}C'),
+                ('%.0f',     12.345, '12 \N{DEGREE SIGN}C',   '12 \N{DEGREE SIGN}C'),
+                ('%d',       12,     '12',                   '12'),
+                ('%.1f in.', 0.25,   '0.2 in.',              '0,2 in.'),
+                ('v.%.2f',   1.5,    'v.1.50',               'v.1,50'),
+                # The '#' flag keeps a TRAILING point, with no digit after
+                # it -- WeeWX localizes that too.
+                ('%#.2G',    12.345, '12.',                  '12,'),
+                ('%#.0f',    7.0,    '7.',                   '7,'),
+                # A literal that is ITSELF a number: the conversion's own
+                # output is what moves, not the first decimal point in the
+                # rendering.
+                ('1.5m above %.1f', 12.345, '1.5m above 12.3', '1.5m above 12,3'),
+                ('%.1f%% of 2.5',   12.345, '12.3% of 2.5',    '12,3% of 2.5'),
+                ('%.1f',     None,   '   N/A',               '   N/A'),
+                ('%s',       'calm', 'calm',                 'calm')):
+            self.assertEqual(comma.localize_number(rendered, fmt_str, value),
+                             expected, (fmt_str, value))
+        # A locale whose point is already a period changes nothing, which is
+        # every English station and is the path almost every packet takes.
+        period = L.RenderLocale(name='test', names={}, composites={},
+                                decimal_point='.')
+        self.assertEqual(period.localize_number('12.3', '%.1f', 12.345), '12.3')
+
+    def test_render_signature_separates_two_locales(self):
+        """Spec: the signature decides when one report's rendering may
+        stand in for another's.  The month names and the decimal point come
+        from the locale and from none of the sections the signature reads,
+        so two reports alike but for a lang that resolves differently must
+        not be treated as twins -- while two genuinely identical ones still
+        must."""
+        L = user.loopdata
+        names = self.usable_locales()
+        if 'de_DE.utf8' not in names or 'fr_FR.utf8' not in names:
+            self.skipTest('needs both de_DE.utf8 and fr_FR.utf8')
+        config_dict = configobj.ConfigObj('tests/weewx.conf.metric', encoding='utf-8')
+        base = L.LoopData.get_target_report_dict(config_dict, 'SeasonsReport')
+
+        def signature(lang: Optional[str]) -> str:
+            skin_dict = weeutil.config.deep_copy(base)
+            if lang is not None:
+                skin_dict['lang'] = lang
+            return L.LoopData.render_signature(skin_dict, [1.0, 2.0])
+
+        self.assertEqual(signature('de_DE.utf8'), signature('de_DE.utf8'))
+        self.assertNotEqual(signature('de_DE.utf8'), signature('fr_FR.utf8'))
+
+    def test_weewx_formats_values_the_way_loopdata_assumes(self):
+        """Spec: ReportFormatter takes over a private WeeWX method, so what
+        it assumes about that method is checked here -- loudly, in the
+        suite -- rather than discovered at a station, where the fallback
+        quietly hands every report weewxd's locale instead of its own."""
+        self.assertTrue(
+            user.loopdata.ReportFormatter.base_signature_is_known(),
+            'weewx.units.Formatter._to_string has moved; ReportFormatter '
+            'needs revisiting, and until it is every report renders under '
+            'weewxd\'s locale')
+
+    def test_an_unknown_lang_renders_as_weewx_would(self):
+        """Spec: WeeWX passes lang straight to setlocale, and the lang
+        codes every shipped language file uses -- de, fr, nl, es -- are not
+        names glibc knows, so set_locale raises and falls back to weewxd's
+        own locale.  loopdata captures what RESOLVED rather than what was
+        asked for, so it stays in step with the report in that case too:
+        the German report says June, and so does loopdata."""
+        L = user.loopdata
+        tm = datetime(2025, 6, 21, 15, 0, 0).timetuple()
+        for lang in ('de', 'fr', 'nl', 'es', 'not-a-locale-at-all', ''):
+            L._RENDER_LOCALE_CACHE.pop(lang, None)
+            captured = L.RenderLocale.capture(lang)
+            with weewx.reportengine.set_locale(lang):
+                expected = time.strftime('%A %B %x', tm)
+            self.assertEqual(captured.strftime('%A %B %x', tm), expected, lang)
+        # And the suite pins LC_ALL=C, so that fallback is C here -- which
+        # is what makes the assertion above a real comparison rather than
+        # German against German.
+        self.assertEqual(L.RenderLocale.capture('de').strftime('%B', tm), 'June')
 
     def test_skip_if_older_than_must_be_at_least_one(self):
         """Spec: a stale-packet cutoff below one second would ship every

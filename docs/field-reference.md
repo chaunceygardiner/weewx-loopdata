@@ -67,7 +67,10 @@ period.span_prop[.unit][.round(n)][.format_spec]
     (e.g., `64.7°F`).
   * `.raw`: converted per the report, but not formatted (e.g., `64.711`).
   * `.formatted`: converted and formatted per the report, no label (e.g.,
-    `64.7`).
+    `64.7`) — including the report's own decimal point, so a report in a
+    language that writes `12,3` gets `12,3`.  (Before 7.4 this one
+    rendering skipped that, and said `12.3` where the report's own pages
+    said `12,3`.)  `.raw` is a json number and is never affected.
   * `.ordinal_compass`: for directional observations, the value as text
     (e.g., `SW`).
   * `.format(...)` / `.nolabel(...)` / `.string(...)` / `.long_form(...)`:
@@ -247,6 +250,12 @@ periods (`1m`–`1440m`, `1h`–`24h`) use the `current` format.  For example:
 
 To take full control of the rendering, use a formatting call with a strftime
 format: `day.outTemp.maxtime.format("%H:%M")`.
+
+`%x`, `%X`, `%A` and `%b` are answered by the *locale*, not by the format
+string: what `%x` puts first, and whether `%A` reads `Saturday` or
+`Samstag`, depends on the report's `lang` — and on `lang` being a name the
+machine knows, which `de` is not.  See [Month names and decimal
+points](i18n.html#month-names-and-decimal-points).
 
 ## Overriding the unit of a field
 

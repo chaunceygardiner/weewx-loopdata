@@ -1,6 +1,36 @@
 loopdata change history
 -----------------------
 
+7.4 2026/09/10
+--------------
+- Times and numbers now render in the language of the report that
+  declared them, as everything else already did.  A month or weekday
+  name -- 21. Juni, samedi -- and the decimal point in a formatted
+  number come from the locale, and WeeWX keeps the locale in one
+  process-wide setting that it changes for the duration of each report
+  it generates.  LoopData writes its file on every loop packet, in a
+  thread of its own, so it was reading whatever that setting happened
+  to hold: a packet that landed while some report was being generated
+  took that report's language and the next packet took weewxd's, and
+  the same field could come out two ways one packet apart.  Each
+  report's locale is now read once, at startup, and kept with its
+  formatter and converter, so every value a report declares is rendered
+  in that report's own language whatever else weewxd is doing.  This
+  covers station.rain_year_str too, which WeeWX fixes when it builds
+  the station rather than when the field is read.  A
+  station whose reports do not set lang, or whose lang is not a locale
+  name the machine has installed, sees no change at all.
+- A formatted number now carries the report's decimal point, as the
+  report's own pages always have.  On a station running in a language
+  that writes 12,3 rather than 12.3, a field's .formatted was the one
+  rendering that skipped this, so the page said 12,3 and .formatted
+  beside it in loop-data.txt said 12.3 -- the same number, in the same
+  file, for the same packet.  Unformatted .raw values are untouched:
+  they are json numbers, and always were.
+- Internal: two errors LoopData can log were missing from the manual's
+  table of log messages, one of them because the test that keeps that
+  table honest could not see a message written with double quotes.
+
 7.3 2026/09/09
 --------------
 - ACTION REQUIRED IF YOU WANT THE DARK PAGE ON EVERY SCREEN: the sample

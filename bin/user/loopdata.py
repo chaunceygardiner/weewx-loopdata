@@ -14,12 +14,14 @@ import ast
 import inspect
 import itertools
 import json
+import locale
 import logging
 import math
 import os
 import pathlib
 import queue
 import re
+import string
 import sys
 import tempfile
 import threading
@@ -56,7 +58,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '7.3'
+LOOP_DATA_VERSION = '7.4'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -202,7 +204,7 @@ class ReportContext:
     fields_to_include : Set[CheetahName]
     almanac_fields    : List[AlmanacField]
     station_fields    : List[StationField]
-    formatter         : weewx.units.Formatter
+    formatter         : 'ReportFormatter' # the report's Formatter, rendering under its own locale
     converter         : weewx.units.Converter
     baro_trend_descs  : Any # Dict[BarometerTrend, str], in the report's language
     almanac_texts     : Dict[str, Any] # the report's [Almanac] section (moon_phases, ...)
@@ -369,13 +371,733 @@ AGG_TYPES: FrozenSet[str] = (
 WINDROSE_AGG_TYPES: FrozenSet[str] = frozenset(('sum', 'time', 'banded', 'calm'))
 
 # ===============================================================================
-#                          Format-spec renderers
+#                            The report's locale
 # ===============================================================================
 
-# Unit types that hold a point in time.  Times have no numeric format string;
-# they render through Formatter.toString with a [Units][TimeFormats] context.
-TIME_UNIT_TYPES: FrozenSet[str] = frozenset(
-    ('unix_epoch', 'unix_epoch_ms', 'unix_epoch_ns'))
+# Unit types that hold a point in time, mapped to what divides one into
+# seconds.  Times have no numeric format string; they render through the
+# formatter with a [Units][TimeFormats] context.
+TIME_UNIT_TYPES: Dict[str, float] = {
+    'unix_epoch': 1.0, 'unix_epoch_ms': 1000.0, 'unix_epoch_ns': 1000000.0}
+
+# EVERY unit type that holds a point in time: the epoch units above, plus
+# the Dublin julian day, which WeeWX also renders through a date format but
+# converts differently.  _render_formatted and ReportFormatter.is_time both
+# work from this one set, so the two cannot disagree about what a time is.
+# They did: _render_formatted tested the epoch units alone, so a local_djd
+# field's .formatted came out as a bare 45828.416667 where the report beside
+# it showed 06/21/25 21:59:59.
+TIME_UNITS: FrozenSet[str] = frozenset(TIME_UNIT_TYPES) | frozenset(('local_djd',))
+
+# The strftime directives the locale answers with a NAME, each with the
+# tm field that picks which of its names to use.  Captured once per report
+# (RenderLocale.capture) and substituted at render time, so nothing on the
+# render path reads the process locale.
+#
+# The substitution is exact rather than an approximation: strftime resolves a
+# directive from the directive and the time alone, never from the characters
+# around it, so the name captured from a bare '%B' is the name that
+# '%-d. %B %Y' would have produced.  Measured under de_DE and fr_FR before
+# this was written.
+_LOCALE_NAME_INDEX: Dict[str, Callable[[time.struct_time], int]] = {
+    'a': lambda tm: tm.tm_wday,
+    'A': lambda tm: tm.tm_wday,
+    'b': lambda tm: tm.tm_mon - 1,
+    'h': lambda tm: tm.tm_mon - 1,     # a synonym for %b
+    'B': lambda tm: tm.tm_mon - 1,
+    'p': lambda tm: 1 if tm.tm_hour >= 12 else 0,
+    'P': lambda tm: 1 if tm.tm_hour >= 12 else 0,   # glibc's lower-case am/pm
+}
+
+# The directives the locale answers with a FORMAT STRING rather than a name:
+# %c, %x, %X and %r expand to whatever that locale calls a date and time, a
+# date, a time and a 12-hour time.  nl_langinfo supplies the expansion, which
+# is then scanned again for the names inside it (glibc's German D_T_FMT is
+# '%a %d %b %Y %T %Z').  These are not an afterthought.  WeeWX's own default
+# [[TimeFormats]] make 'current' '%x %X', so handling only the name
+# directives would leave the DATE ORDER -- 06/21/25 against 21.06.2025 --
+# resolving against the process locale.
+#
+# Each carries the POSIX form to use when the locale leaves the item EMPTY,
+# which is a real answer rather than a missing one: glibc's German has no
+# T_FMT_AMPM, and its strftime then falls back to exactly these -- '%r' in a
+# German report comes out '09:34:56 ' with an empty %p, not '09:34:56 AM'.
+# Treating empty as absent, and passing the directive through to
+# time.strftime, hands it straight back to the process locale, which is the
+# defect this whole section exists to close.
+_LOCALE_COMPOSITE_DIRECTIVES: Dict[str, Tuple[str, str]] = {
+    'c': ('D_T_FMT',    '%a %b %e %H:%M:%S %Y'),
+    'x': ('D_FMT',      '%m/%d/%y'),
+    'X': ('T_FMT',      '%H:%M:%S'),
+    'r': ('T_FMT_AMPM', '%I:%M:%S %p'),
+}
+
+# The conversion characters whose output can hold a decimal point, and so
+# the only ones a decimal point may be put into.  WeeWX localizes through
+# locale.format_string, which localizes a NUMERIC conversion and leaves %s,
+# %r and %a exactly as plain % formatting left them -- measured, because
+# getting this wrong is invisible in English: a German report's page renders
+# 12.345 for %s, and a comma there would be loopdata inventing one the
+# report never shows.
+_NUMERIC_CONVERSIONS: FrozenSet[str] = frozenset('diouxXeEfFgG')
+
+# lang -> the locale captured for it.  Capturing takes WeeWX's LOCALE_LOCK,
+# which report generation holds for as long as a report's generators run, so
+# it is done once per distinct lang and never on the render path.  Sound to
+# keep for the life of the process: what a lang resolves to depends on the
+# platform's locale database and on weewxd's environment, and neither moves.
+_RENDER_LOCALE_CACHE: Dict[str, 'RenderLocale'] = {}
+
+# Whether the one error ReportFormatter can raise at startup has been said.
+# It is a fact about the WeeWX in the process, not about any one report.
+_locale_support_logged = False
+
+
+def _note_locale_unsupported() -> None:
+    global _locale_support_logged
+    _locale_support_logged = True
+
+
+@dataclass(frozen=True)
+class RenderLocale:
+    """The locale-dependent halves of rendering, captured once per report.
+
+    WeeWX renders a report inside weewx.reportengine.set_locale(lang), which
+    sets the PROCESS locale -- one global for the whole of weewxd -- for as
+    long as that report's generators run.  The LoopProcessor thread renders
+    every loop packet, so it can do neither of the things that would let it
+    agree with the report:
+
+      - It cannot take WeeWX's LOCALE_LOCK per packet.  A [[FTP]] or
+        [[RSYNC]] report is a report like any other, and reportengine wraps
+        a report's whole generator_list in set_locale, so that lock is held
+        for the length of a network transfer.  The feed would stall for as
+        long as an upload runs.
+      - It cannot read the process locale either, because what it would read
+        depends on which report happens to be generating at that instant.
+        That is a race, not a constant offset: the same field renders two
+        ways between consecutive packets.
+
+    So the locale joins the formatter, the converter, the texts and the
+    station as a per-report OBJECT, captured once at service init and
+    consulted on the render path in place of the global.  That is the
+    invariant the rest of this file already keeps.  A time field's month and
+    weekday names, and a number's decimal point, were the inputs that had
+    escaped it.
+    """
+    # What setlocale actually resolved, which is NOT the report's lang.
+    # WeeWX passes lang straight to setlocale, and the lang codes every
+    # shipped language file uses -- de, fr, nl, es -- are not names glibc
+    # knows, so they raise, set_locale falls back to weewxd's own locale,
+    # and the German report renders "June".  Capturing what RESOLVED rather
+    # than what was asked for is what keeps loopdata in step with the report
+    # in both cases.
+    name          : str
+    # Directive -> its names in this locale, indexed per _LOCALE_NAME_INDEX.
+    # Keyed by the directive AS WRITTEN, so the glibc alternative forms are
+    # separate entries: '%OB' is a locale's standalone month name, which is
+    # not always its '%B' (German writes Januar for both; a Slavic language
+    # does not), and handing %OB to time.strftime would answer it from the
+    # process locale -- the very thing this class exists to stop.
+    names         : Dict[str, Tuple[str, ...]]
+    composites    : Dict[str, str]     # directive -> the locale's own format string
+    decimal_point : str
+    # The modified forms ('Oa', 'Ec', ...) this platform does NOT support.
+    # strftime answers one it does not know with the directive's own
+    # literal text, and that IS the answer -- the report's page shows '%Oa'
+    # too -- so those must be reproduced rather than helpfully turned into
+    # the plain form.  Probed across the whole space rather than hand-listed
+    # from the manual page, which is how %Oa, %Oc and %Eb were each got
+    # wrong in turn.  Last, and defaulted, so that a test or a caller
+    # wanting a locale that only carries a decimal point can still write
+    # one in a line.
+    unsupported   : FrozenSet[str] = frozenset()
+
+    # A format string is scanned this many times at most.  A composite
+    # directive expands into a format string that is itself scanned, so one
+    # pass is not enough; the bound is what stops a locale whose %x expanded
+    # to something containing %x from looping for ever.
+    _MAX_EXPANSIONS = 4
+
+    # The decimal point is the only thing WeeWX's number formatting takes
+    # from the locale.  locale.format_string groups digits only for a format
+    # that asks with an apostrophe flag, and no WeeWX format does.
+    #
+    # Nothing is required to FOLLOW the point.  The '#' flag keeps a
+    # trailing one -- '%#.2G' on 12.345 is '12.', which WeeWX localizes to
+    # '12,' -- and a pattern demanding a digit on both sides left exactly
+    # that case under the process locale.  Requiring a digit before it is
+    # enough, because this is only ever applied to the output of ONE
+    # conversion, where a point after a digit can be nothing else.
+    _NUMBER_POINT_RE = re.compile(r'(?<=\d)\.')
+
+    # One %-conversion in a unit format string.  Group 1 is '%' for the
+    # '%%' escape, which is a literal percent and not a conversion at all;
+    # group 2 is the conversion character.  The decimal point goes into
+    # what the conversion produced and nowhere else: a format may carry a
+    # number in its own literal text ('1.5m above %.1f'), and rewriting the
+    # first digit-point-digit in the whole rendering would move the literal
+    # and leave the value alone.
+    _CONVERSION_RE = re.compile(
+        r'%(?:(%)|[-+ #0]*[0-9]*(?:\.[0-9]+)?[hlL]?([a-zA-Z]))')
+
+    # One strftime directive: a percent, then glibc's optional flags, an
+    # optional field width, an optional E or O alternative-form modifier,
+    # and the conversion character.  Scanning with this rather than by hand
+    # is what keeps a flagged or padded name directive -- '%^B', '%-10A' --
+    # from being mistaken for a literal and handed back to the process
+    # locale.  DOTALL so a newline can be the conversion character and be
+    # passed through rather than ending the match.
+    _DIRECTIVE_RE = re.compile(r'%([-_0^#]*)(\d*)([EO]?)(.)', re.DOTALL)
+
+    @staticmethod
+    def capture(lang: str) -> 'RenderLocale':
+        """The locale a report named by lang renders under.
+
+        Read through WeeWX's own set_locale, so that what is captured is
+        exactly what the report engine will later render under -- its
+        fallback to weewxd's locale included.  This takes LOCALE_LOCK, so it
+        must run where holding it is free: the engine thread at service
+        init, before the LoopProcessor thread exists.
+        """
+        cached: Optional['RenderLocale'] = _RENDER_LOCALE_CACHE.get(lang)
+        if cached is not None:
+            return cached
+        set_locale = getattr(weewx.reportengine, 'set_locale', None)
+        try:
+            if set_locale is None:
+                # A WeeWX with no per-report locale at all: report
+                # generation runs under weewxd's own, so reading it here is
+                # what keeps loopdata in step.
+                captured = RenderLocale._read(locale.setlocale(locale.LC_ALL))
+            else:
+                with set_locale(lang) as resolved:
+                    captured = RenderLocale._read(resolved)
+        except Exception as e:
+            # This runs on the engine thread, from __init__, so a SIGTERM
+            # arriving mid-capture must not be swallowed here.
+            reraise_if_terminate(e)
+            # Otherwise never fatal: a locale that cannot be read costs the
+            # report its month names, not its whole feed.
+            log.info('Could not read the locale for lang %r: %s.  '
+                     'Times and numbers will render as they always have.' % (lang, e))
+            captured = RenderLocale.neutral()
+        _RENDER_LOCALE_CACHE[lang] = captured
+        return captured
+
+    @staticmethod
+    def neutral() -> 'RenderLocale':
+        """A locale that changes nothing: every directive is passed through
+        to time.strftime and the decimal point is a period.  What a failed
+        capture falls back to, and what the tests use where the locale is
+        beside the point."""
+        return RenderLocale(name='', names={}, composites={}, decimal_point='.')
+
+    @staticmethod
+    def _read(resolved: Any) -> 'RenderLocale':
+        """Read the tables from the locale that is set RIGHT NOW.  Called
+        only from capture, inside the lock."""
+        # Real dates, so tm_wday and tm_yday agree with tm_mon and tm_mday:
+        # a platform whose strftime recomputes a field rather than trusting
+        # the struct cannot be caught out by a hand-built one.  2001-01-01
+        # was a Monday, which is tm_wday 0.
+        months = [date(2001, m, 15).timetuple() for m in range(1, 13)]
+        days   = [(date(2001, 1, 1) + timedelta(days=i)).timetuple() for i in range(7)]
+        hours  = [datetime(2001, 1, 1, h).timetuple() for h in (0, 12)]
+        # Which modified forms this platform supports at all.  Support is a
+        # property of the directive, not of the time, so one probe answers
+        # for each.
+        unsupported = frozenset(
+            modifier + letter
+            for modifier in ('O', 'E') for letter in string.ascii_letters
+            if time.strftime('%' + modifier + letter, months[0])
+                == '%' + modifier + letter)
+        probes = {'a': days, 'A': days, 'b': months, 'h': months,
+                  'B': months, 'p': hours, 'P': hours}
+        names: Dict[str, Tuple[str, ...]] = {}
+        for letter, tms in probes.items():
+            names[letter] = tuple(time.strftime('%' + letter, tm) for tm in tms)
+            # A supported alternative form is a table of its own: a locale's
+            # standalone month name is not always its in-a-date one.
+            for modifier in ('O', 'E'):
+                if modifier + letter in unsupported:
+                    continue
+                names[modifier + letter] = tuple(
+                    time.strftime('%' + modifier + letter, tm) for tm in tms)
+        composites: Dict[str, str] = {}
+        for directive, (item, posix_form) in _LOCALE_COMPOSITE_DIRECTIVES.items():
+            expansion = RenderLocale._langinfo(item)
+            if expansion is not None:
+                composites[directive] = expansion or posix_form
+        return RenderLocale(
+            name          = str(resolved),
+            names         = names,
+            composites    = composites,
+            unsupported   = unsupported,
+            decimal_point = locale.localeconv().get('decimal_point') or '.')
+
+    @staticmethod
+    def _langinfo(item: str) -> Optional[str]:
+        """The locale's own format string for a composite directive.
+
+        The empty string is returned as the empty string, because a locale
+        that leaves the item empty has answered (see the table above); None
+        means the platform cannot be asked at all -- no nl_langinfo, which
+        is Windows -- and only then is the directive left for time.strftime
+        to render under the process locale, which is what happened before
+        any of this existed rather than a wrong answer invented here."""
+        nl_langinfo = getattr(locale, 'nl_langinfo', None)
+        key = getattr(locale, item, None)
+        if nl_langinfo is None or key is None:
+            return None
+        try:
+            return nl_langinfo(key)
+        except (ValueError, OSError):
+            return None
+
+    def strftime(self, fmt: str, tm: time.struct_time, depth: int = 0) -> str:
+        """time.strftime for THIS report's locale.
+
+        Every directive the locale answers is replaced with what this
+        report's locale says, and the residue -- the directives that mean
+        the same thing everywhere (%Y, %H, %-d, %T) -- is handed to
+        time.strftime, which cannot get them wrong.
+
+        depth counts re-entry from _substitute, which renders a composite
+        in place when it carries a flag."""
+        for _ in range(RenderLocale._MAX_EXPANSIONS):
+            fmt, expanded_a_composite = self._substitute(fmt, tm, depth)
+            if not expanded_a_composite:
+                break
+        return time.strftime(fmt, tm)
+
+    def _substitute(self, fmt: str, tm: time.struct_time,
+            depth: int = 0) -> Tuple[str, bool]:
+        """One scan of fmt: names replaced by their text, composites by the
+        locale's format string for them.  Returns the result and whether
+        anything was put in that needs another scan."""
+        out: List[str] = []
+        rescan = False
+        i = 0
+        while i < len(fmt):
+            if fmt[i] != '%':
+                out.append(fmt[i])
+                i += 1
+                continue
+            match = RenderLocale._DIRECTIVE_RE.match(fmt, i)
+            if match is None:
+                # A percent with nothing after it at all.  Left exactly as
+                # it was written, as strftime leaves it.
+                out.append(fmt[i:])
+                break
+            flags, width, modifier, conv = match.groups()
+            # '%%' is a literal percent: conv is '%', which is neither a
+            # name nor a composite, so it falls to the passthrough below and
+            # the second percent is consumed with the first.  A directive
+            # can therefore never be read out of the back half of one.
+            name = self._name_for(modifier + conv, tm)
+            if name is not None:
+                # A captured name is literal text.  Any percent inside one
+                # would otherwise be read as a directive by the
+                # time.strftime that finishes the job.
+                out.append(RenderLocale._apply_flags(
+                    name, flags, width, conv).replace('%', '%%'))
+            elif modifier + conv in self.unsupported:
+                # A modified form this platform does not know.  strftime
+                # answers it with the directive's OWN characters -- '%Oa'
+                # comes out '%Oa', never 'Fr' -- so it is handed straight
+                # through, unescaped, and the strftime that finishes the job
+                # produces it.
+                #
+                # That is safe precisely because such an answer holds no
+                # locale-dependent text: it is the format string's own
+                # characters, so the process locale cannot reach into it.  And
+                # it is better than reproducing it here, because strftime
+                # also applies the flags to that literal in ways with no
+                # discernible rule -- measured on glibc, '%^Ea' gives
+                # '%^EA' and '%10Ea' pads, but '%#Ea' is unchanged while
+                # '%#Eb' gives '%#EB'.  Encoding two data points of that as
+                # though it were a rule would be a guess that breaks on the
+                # next C library; letting the C library answer cannot be.
+                out.append(match.group(0))
+            elif modifier + conv in self.composites or conv in self.composites:
+                # A composite: %c, %x, %X or %r, whose expansion the locale
+                # supplies.  Where the modified form has none of its own the
+                # plain one answers -- %Ex in a locale with no era is its %x
+                # -- which is safe here because an unsupported modifier was
+                # already dealt with above.
+                expansion = self.composites.get(modifier + conv) \
+                    or self.composites[conv]
+                if flags or width:
+                    # A flag applies to everything the composite renders, so
+                    # the expansion is rendered HERE and the flag put on the
+                    # resulting text.  Splicing the format string instead
+                    # would drop the flag: '%^c' has to come out FR 03 JAN,
+                    # not Fr 03 Jan.
+                    #
+                    # This nests, and the bound is not decoration: en_US's
+                    # %X expands to '%r' and its %c to '%a %d %b %Y %r %Z',
+                    # so a composite's expansion really can name another
+                    # one.  Past the bound the flag is given up and the
+                    # expansion goes back through the ordinary path, which
+                    # is a lost flag rather than a lost stack.
+                    if depth >= RenderLocale._MAX_EXPANSIONS:
+                        out.append(expansion)
+                        rescan = True
+                    else:
+                        out.append(RenderLocale._apply_flags(
+                            self.strftime(expansion, tm, depth + 1),
+                            flags, width, conv).replace('%', '%%'))
+                else:
+                    out.append(expansion)
+                    rescan = True
+            elif modifier and conv.isalpha():
+                # Everything else behind a modifier: the alternative
+                # NUMERALS (%Od) and the era forms (%Ey), which a handful of
+                # probe times cannot tabulate.  Drop the modifier and let
+                # the plain directive answer -- which is what strftime
+                # itself does in a locale that has no alternative form, and
+                # which keeps the answer in the REPORT's locale.  Passing
+                # %Od through would hand it to whichever locale the process
+                # happens to hold, the defect this class exists to close.
+                # What is lost is a locale's own digits or era; it renders
+                # in plain ones.
+                out.append('%' + flags + width + conv)
+            else:
+                # Nothing the locale answers: %Y, %H, %-d, %T, %% and the
+                # rest.  strftime cannot get these wrong.
+                out.append(match.group(0))
+            i = match.end()
+        return ''.join(out), rescan
+
+    @staticmethod
+    def _apply_flags(text: str, flags: str, width: str, conv: str) -> str:
+        """A rendered directive with its flags applied, as strftime applies
+        them.  Without this a flagged directive would have to be handed to
+        time.strftime, which would answer it from the process locale, and
+        '%^B' is a real thing to write in a TimeFormats entry.
+
+        Every rule below is MEASURED against the C library, across C, de_DE
+        and fr_FR and for both halves of the day, rather than read off the
+        manual page -- which is not specific enough to settle any of them.
+        Reading it got the '#' case, the '-' case and the zero pad wrong in
+        turn, and a hand-written sample list then hid three more:
+
+          '^'  upper-cases, including the whole of a composite ('%^c'), but
+               NOT %P, whose names are lower case by definition.
+          '#'  is 'the opposite case', which means upper for the day and
+               month names, lower for %p (whose names are upper already),
+               and NOTHING AT ALL for %P or for a composite -- '%#c' comes
+               out exactly as '%c' does.
+          width pads on the left, with zeros if '0' was given and spaces
+               otherwise, and '-' does NOT suppress it here the way it does
+               on a number: '%-10A' comes out '   Freitag', as '%10A' does.
+        """
+        if '^' in flags:
+            if conv != 'P':
+                text = text.upper()
+        elif '#' in flags:
+            if conv == 'p':
+                text = text.lower()
+            elif conv in _LOCALE_NAME_INDEX and conv != 'P':
+                text = text.upper()
+        if width:
+            text = text.rjust(int(width), '0' if '0' in flags else ' ')
+        return text
+
+    def _name_for(self, directive: str, tm: time.struct_time) -> Optional[str]:
+        """The locale's text for a name directive at this time, or None if
+        this is not a name directive or nothing was captured for it.  The
+        directive is as written, so 'OB' and 'B' are looked up apart."""
+        table = self.names.get(directive)
+        if table is None:
+            return None
+        index = _LOCALE_NAME_INDEX[directive[-1]](tm)
+        if index < 0 or index >= len(table):
+            return None
+        return table[index]
+
+    def localize_number(self, rendered: str, fmt_str: Optional[str], value: Any) -> str:
+        """Put this report's decimal point into an already-rendered value.
+
+        The rendering is done with WeeWX's localization turned OFF, which is
+        what makes it deterministic: the number arrives with a period
+        wherever the process locale happens to be, and the report's own
+        decimal point goes in here.  Only the CONVERSION'S OWN
+        output is replaced, located by where the conversion sits in the
+        format string rather than by hunting for the first decimal point in
+        the result, so a literal beside it is never touched -- whether it
+        trails ('%.1f in.'), leads ('v.%.2f'), or is itself a number
+        ('1.5m above %.1f')."""
+        if self.decimal_point == '.' or fmt_str is None:
+            return rendered
+        # No type guard here.  Which values may take a decimal point is
+        # decided by the CONVERSION, just below, exactly as WeeWX decides
+        # it -- and a guard naming int and float was how bool and Decimal
+        # came to be left under the process locale.  A value the format
+        # cannot render raises and is handed back untouched.
+        conversion = next((m for m in RenderLocale._CONVERSION_RE.finditer(fmt_str)
+                           if m.group(1) is None), None)
+        if conversion is None or conversion.group(2) not in _NUMERIC_CONVERSIONS:
+            # No conversion, or one WeeWX would not have localized either.
+            return rendered
+        try:
+            plain = fmt_str % value
+        except Exception:
+            return rendered
+        # The conversion's output runs from the end of the literal text
+        # before it to the start of the literal text after it.
+        start = len(fmt_str[:conversion.start()].replace('%%', '%'))
+        end   = len(plain) - len(fmt_str[conversion.end():].replace('%%', '%'))
+        if start >= end:
+            return rendered
+        number = plain[start:end]
+        localized = RenderLocale._NUMBER_POINT_RE.sub(self.decimal_point, number, count=1)
+        if localized == number:
+            return rendered
+        return rendered.replace(plain, plain[:start] + localized + plain[end:], 1)
+
+
+class ReportFormatter(weewx.units.Formatter):
+    """A report's Formatter, rendering under the report's own locale.
+
+    weewx.units.Formatter reaches for the process locale in three places.
+    Two are in the one method every ordinary rendering funnels through,
+    _to_string: time.strftime for a time and locale.format_string for a
+    number.  The third is delta_time_to_string, which composes a long-form
+    duration -- '2 hours, 14 minutes' -- and is reached from long_form,
+    a shipped formatting call.  All three are taken over here and answered
+    from the report's RenderLocale.
+
+    Subclassing, rather than fixing this at loopdata's own call sites, is
+    what covers the almanac and station fields: those evaluate real
+    ValueHelpers built with this formatter, so a rendered time deep in an
+    attribute chain -- almanac.<sat>.next_visible_pass.rise -- goes through
+    here too.  Everything else the base class does (which format string,
+    which label, the Polar and complex compositions, and whatever WeeWX adds
+    next) is left to the base class, which is why this delegates rather than
+    reimplements.
+    """
+
+    # The parameters of the private method being taken over.  Checked once,
+    # at construction, rather than discovered by a TypeError on the render
+    # path -- where an exception costs a report its whole entry for that
+    # packet.  The override also accepts **kwargs, so a WeeWX that ADDS a
+    # parameter keeps working untouched; this catches a rename or a reorder,
+    # which would silently mean something else.
+    _BASE_TO_STRING_PARAMS: Tuple[str, ...] = (
+        'val_t', 'context', 'addLabel', 'useThisFormat', 'None_string', 'localize')
+
+    def __init__(self, render_locale: RenderLocale, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.render_locale = render_locale
+        self.locale_aware = ReportFormatter.base_signature_is_known()
+
+    @staticmethod
+    def base_signature_is_known() -> bool:
+        try:
+            params = tuple(inspect.signature(
+                weewx.units.Formatter._to_string).parameters)
+        except (AttributeError, ValueError, TypeError):
+            return False
+        return params[1:] == ReportFormatter._BASE_TO_STRING_PARAMS
+
+    @staticmethod
+    def from_skin_dict(skin_dict: Dict[str, Any],
+            render_locale: RenderLocale) -> 'ReportFormatter':
+        """Built from WeeWX's own extraction, so the six [Units] subsections
+        are read in one place and cannot drift from what a report reads."""
+        base = weewx.units.Formatter.fromSkinDict(skin_dict)
+        formatter = ReportFormatter(render_locale)
+        # COPIED, not re-passed to the constructor a parameter at a time.
+        # WeeWX has added a Formatter attribute before -- deltatime_format_dict
+        # is one -- and a call naming the five it takes today would silently
+        # drop a sixth, leaving every field that depends on it rendering on a
+        # default with nothing logged.  Ours are set after, so they cannot be
+        # clobbered by a future attribute that happens to share a name.
+        formatter.__dict__.update(vars(base))
+        formatter.render_locale = render_locale
+        formatter.locale_aware = ReportFormatter.base_signature_is_known()
+        if not formatter.locale_aware and not _locale_support_logged:
+            # Once, not once per report: it says nothing about the report,
+            # and a station with seven of them would get seven copies.
+            _note_locale_unsupported()
+            log.error('LoopData does not recognize how this WeeWX formats '
+                      'values; times and numbers will render under the locale '
+                      'weewxd runs, not the locale of the report.')
+        return formatter
+
+    def _to_string(self, val_t: Any, context: str = 'current', addLabel: bool = True,
+            useThisFormat: Optional[str] = None, None_string: Optional[str] = None,
+            localize: bool = True, **kwargs: Any) -> Any:
+        if not self.locale_aware or not isinstance(val_t, tuple):
+            # Not a value tuple: None, or an UnknownObsType, which
+            # Formatter.toString deliberately passes through to be rendered
+            # as a string.  Whatever the base class makes of those it must
+            # go on making -- subscripting one here raises a TypeError, and
+            # an exception on the render path costs a report its whole entry
+            # for that packet.
+            return super()._to_string(val_t, context, addLabel, useThisFormat,
+                                      None_string, localize, **kwargs)
+        tm = self._localtime(val_t)
+        if tm is not None:
+            # A time.  WeeWX would strftime it against the process locale,
+            # which is where the month and weekday names come from.  Times
+            # never carry a label, so this is the whole rendering.
+            fmt = useThisFormat if useThisFormat is not None \
+                else self.time_format_dict.get(context, weewx.units.DEFAULT_TIME_FORMAT)
+            return self.render_locale.strftime(fmt, tm)
+        # A complex or Polar value has no single format string: the base
+        # class composes it out of further calls to THIS method, one per
+        # part.  Those are the ONLY values that keep WeeWX's localization
+        # switched on -- each part then localizes itself on the way through,
+        # and turning it off here would turn it off for the parts too, since
+        # the base class passes the flag down.
+        #
+        # Everything else is formatted by one conversion and gets the
+        # report's decimal point below, whatever its Python type.  This used
+        # to test for int and float and deliberately exclude bool, on the
+        # reasoning that a boolean has no decimal point -- which is false
+        # for '%f', and put an ENGLISH report's value back under the process
+        # locale: '1.000000' normally and '1,000000' while a German report
+        # was generating.  A Decimal was outside it too.  Naming what must
+        # be excluded is safe in a way that naming what is included is not.
+        polar = getattr(weewx.units, 'Polar', None)
+        is_composite = isinstance(val_t[0], complex) or (
+            polar is not None and isinstance(val_t[0], polar))
+        rendered = super()._to_string(val_t, context, addLabel, useThisFormat,
+                                      None_string,
+                                      localize=localize if is_composite else False,
+                                      **kwargs)
+        if not localize or is_composite:
+            return rendered
+        fmt_str = useThisFormat if useThisFormat is not None \
+            else self.get_format_string(val_t[1])
+        return self.render_locale.localize_number(rendered, fmt_str, val_t[0])
+
+    # The intervals WeeWX breaks a duration into, longest first, and the
+    # one conversion form a [[DeltaTimeFormats]] entry may use.
+    _DELTA_INTERVALS: Tuple[Tuple[str, int], ...] = (
+        ('day', 86400), ('hour', 3600), ('minute', 60), ('second', 1))
+    # The same shape as RenderLocale._CONVERSION_RE, for the mapping-key
+    # conversions a [[DeltaTimeFormats]] entry is written with.  It must go
+    # on matching EVERY conversion, numeric or not -- an unmatched one would
+    # be left in the literal text and never substituted at all -- so which
+    # ones may take a decimal point is decided separately, by
+    # _NUMERIC_CONVERSIONS, exactly as it is for a unit format.
+    _MAPPING_CONVERSION_RE = re.compile(
+        r'%(?:(%)|\([^)]*\)[-+ #0]*[0-9]*(?:\.[0-9]+)?[hlL]?([a-zA-Z]))')
+
+    def delta_time_to_string(self, val_t: Any, label_format: str,
+            None_string: Optional[str] = None) -> Any:
+        """WeeWX's long-form duration, composed under the report's locale.
+
+        WeeWX ends this by handing the whole format string to
+        locale.format_string, which reads the process locale -- the third
+        place it does so, and the one _to_string cannot reach, because
+        long_form goes straight here.  It bites only a [[DeltaTimeFormats]]
+        entry written with a float conversion, since the values are whole
+        numbers and an integer conversion produces no decimal point at all;
+        but that is exactly the defect this release is about, and a comment
+        claiming it could not happen was worse than the defect.
+
+        So the composition is repeated below and formatted with plain %.
+        Repeating WeeWX's arithmetic is the price, and
+        test_long_form_matches_the_base_formatter is the guard against it
+        drifting: it holds this against the base class's own output, which
+        fails loudly if WeeWX ever changes what goes in the dictionary.
+
+        There is deliberately NO short circuit for a report whose decimal
+        point is already a period.  One was here, and it reintroduced the
+        very defect this release exists to close, for the majority of
+        stations rather than the minority: delegating to the base class
+        means ending in locale.format_string, so an English report rendered
+        '2.0 hours' normally and '2,0 hours' for any packet that happened to
+        land while a German report was generating.  The cheap path is not
+        worth a wrong answer."""
+        if not self.locale_aware:
+            return super().delta_time_to_string(val_t, label_format, None_string)
+        try:
+            return self._delta_time_localized(val_t, label_format, None_string)
+        except Exception as e:
+            # Never worse than WeeWX.  Anything this cannot compose goes
+            # back to the base class, which then raises or renders exactly
+            # as it always did.
+            log.debug('long_form(%r): %s' % (label_format, e))
+            return super().delta_time_to_string(val_t, label_format, None_string)
+
+    def _delta_time_localized(self, val_t: Any, label_format: str,
+            None_string: Optional[str]) -> Any:
+        """The body of the above, so a test can reach the composition
+        without a comma-decimal locale to switch it on."""
+        if val_t is None or val_t[0] is None:
+            # The no-value renderings (None_string, the NONE format) hold no
+            # number, so the base class keeps them.
+            return super().delta_time_to_string(val_t, label_format, None_string)
+        secs = abs(weewx.units.convert(val_t, 'second')[0])
+        etime_dict: Dict[str, Any] = {}
+        for label, interval in ReportFormatter._DELTA_INTERVALS:
+            amt = int(secs // interval)
+            etime_dict[label] = amt
+            etime_dict[label + '_label'] = self.get_label_string(label, not amt == 1)
+            secs %= interval
+        if 'day' not in label_format:
+            # WeeWX folds the days into the hours when the format does not
+            # ask for days.
+            etime_dict['hour'] += 24 * etime_dict['day']
+        # Formatted once whole, purely so that a format WeeWX would reject
+        # raises here too, out of the same % machinery, rather than being
+        # quietly rendered by the piecewise composition that follows.
+        label_format % etime_dict
+        return self._compose(label_format, etime_dict)
+
+    def _compose(self, label_format: str, mapping: Dict[str, Any]) -> str:
+        """label_format % mapping, with the report's decimal point put into
+        each conversion's OWN output.  The same anchoring as
+        RenderLocale.localize_number -- located by where the conversion sits
+        in the format string rather than by hunting the result -- generalized
+        to a format that holds more than one of them."""
+        out: List[str] = []
+        pos = 0
+        for match in ReportFormatter._MAPPING_CONVERSION_RE.finditer(label_format):
+            out.append(label_format[pos:match.start()])
+            if match.group(1) is not None:
+                out.append('%')
+            else:
+                piece = match.group(0) % mapping
+                if match.group(2) in _NUMERIC_CONVERSIONS:
+                    piece = RenderLocale._NUMBER_POINT_RE.sub(
+                        self.render_locale.decimal_point, piece, count=1)
+                out.append(piece)
+            pos = match.end()
+        out.append(label_format[pos:])
+        return ''.join(out)
+
+    def is_time(self, val_t: Any) -> bool:
+        """Whether this value tuple holds a point in time, by UNIT rather
+        than by value -- a time with no value is still a time, and renders
+        as the report's no-value string.  _render_formatted asks this
+        instead of testing a set of its own, so the two cannot disagree
+        about what a time is."""
+        return val_t[1] in TIME_UNITS
+
+    def _localtime(self, val_t: Any) -> Optional[time.struct_time]:
+        """The struct_time a time-valued tuple denotes, or None if this is
+        not a time.  Mirrors WeeWX's own two time paths: an epoch in
+        seconds, milliseconds or nanoseconds, and a Dublin julian day."""
+        if val_t[0] is None:
+            return None
+        if val_t[1] in TIME_UNIT_TYPES:
+            return time.localtime(val_t[0] / TIME_UNIT_TYPES[val_t[1]])
+        if val_t[1] == 'local_djd':
+            dublin_to_epoch = getattr(weewx.units, 'dublin_to_epoch', None)
+            if dublin_to_epoch is not None:
+                return time.gmtime(dublin_to_epoch(val_t[0]))
+        return None
+
+# ===============================================================================
+#                          Format-spec renderers
+# ===============================================================================
 
 # The periods with a fixed span, as opposed to the rolling windows
 # (1m-1440m, 1h-24h, trend).  A module constant rather than a local of
@@ -411,15 +1133,15 @@ SPAN_PROPS: Dict[str, Tuple[str, str]] = {
 # formatting error, logs and writes nothing, omitting the field.
 
 def _render_ordinal_compass(cname: CheetahName, value_t: Tuple[Any, Any, Any],
-        loopdata_pkt: Dict[str, Any], formatter: weewx.units.Formatter,
+        loopdata_pkt: Dict[str, Any], formatter: ReportFormatter,
         time_context: str, is_delta: bool) -> None:
     loopdata_pkt[cname.field] = formatter.to_ordinal_compass(value_t)
 
 def _render_formatted(cname: CheetahName, value_t: Tuple[Any, Any, Any],
-        loopdata_pkt: Dict[str, Any], formatter: weewx.units.Formatter,
+        loopdata_pkt: Dict[str, Any], formatter: ReportFormatter,
         time_context: str, is_delta: bool) -> None:
     value, unit_type, _ = value_t
-    if not is_delta and unit_type in TIME_UNIT_TYPES:
+    if not is_delta and formatter.is_time(value_t):
         # Times have no numeric format string; render via the time context,
         # as a report tag's .formatted does (times never carry a label, so
         # this equals the unadorned rendering).
@@ -428,17 +1150,26 @@ def _render_formatted(cname: CheetahName, value_t: Tuple[Any, Any, Any],
         return
     fmt_str = formatter.get_format_string(unit_type)
     try:
-        loopdata_pkt[cname.field] = fmt_str % value
+        rendered = fmt_str % value
     except Exception as e:
         log.debug('%s: %s, %s, %s' % (e, cname.field, fmt_str, value))
+        return
+    # The report's decimal point.  A report tag's .formatted is
+    # toString(addLabel=False), which localizes it; this renders the number
+    # itself (the time branch above is the only one that needs a context),
+    # so the same step is taken here rather than inherited.  Without it a
+    # German report's own page says 12,3 while .formatted beside it in
+    # loop-data.txt says 12.3.
+    loopdata_pkt[cname.field] = formatter.render_locale.localize_number(
+        rendered, fmt_str, value)
 
 def _render_raw(cname: CheetahName, value_t: Tuple[Any, Any, Any],
-        loopdata_pkt: Dict[str, Any], formatter: weewx.units.Formatter,
+        loopdata_pkt: Dict[str, Any], formatter: ReportFormatter,
         time_context: str, is_delta: bool) -> None:
     loopdata_pkt[cname.field] = value_t[0]
 
 def _render_default(cname: CheetahName, value_t: Tuple[Any, Any, Any],
-        loopdata_pkt: Dict[str, Any], formatter: weewx.units.Formatter,
+        loopdata_pkt: Dict[str, Any], formatter: ReportFormatter,
         time_context: str, is_delta: bool) -> None:
     """The no-format_spec rendering: WeeWX's formatted-with-label string."""
     if type(value_t[0]) == str:
@@ -455,7 +1186,7 @@ def _render_default(cname: CheetahName, value_t: Tuple[Any, Any, Any],
 # sets (FORMAT_SPEC_NAMES below; parse_almanac_field uses this table directly)
 # are derived from it, so a spec cannot parse unless a renderer implements it.
 FORMAT_SPECS: Dict[str, Callable[[CheetahName, Tuple[Any, Any, Any],
-        Dict[str, Any], weewx.units.Formatter, str, bool], None]] = {
+        Dict[str, Any], ReportFormatter, str, bool], None]] = {
     'ordinal_compass': _render_ordinal_compass,
     'formatted':       _render_formatted,
     'raw':             _render_raw,
@@ -483,7 +1214,7 @@ FORMAT_SPEC_NAMES: FrozenSet[str] = (
 class CallFormatSpec:
     params  : Tuple[str, ...]
     required: int
-    render  : Callable[[weewx.units.Formatter, Tuple[Any, Any, Any], str,
+    render  : Callable[[ReportFormatter, Tuple[Any, Any, Any], str,
                         Dict[str, Any]], str]
 
 CALL_FORMAT_SPECS: Dict[str, CallFormatSpec] = {
@@ -511,7 +1242,7 @@ CALL_FORMAT_SPECS: Dict[str, CallFormatSpec] = {
 }
 
 def _render_call_spec(cname: CheetahName, value_t: Tuple[Any, Any, Any],
-        loopdata_pkt: Dict[str, Any], formatter: weewx.units.Formatter,
+        loopdata_pkt: Dict[str, Any], formatter: ReportFormatter,
         time_context: str, is_delta: bool) -> None:
     """The renderer for every call-syntax spec: look the spec up in
     CALL_FORMAT_SPECS and apply the field's bound kwargs.  As with the other
@@ -1989,7 +2720,14 @@ class LoopData(StdService):
                 continue    # already logged, with the reason, by its parser
             log.warning('Ignoring unrecognized field %s (%s)' % (field, label))
 
-        formatter = weewx.units.Formatter.fromSkinDict(skin_dict)
+        # The locale joins the formatter and the converter as a per-report
+        # object: WeeWX resolves a time field's month and weekday names, and
+        # a number's decimal point, against the PROCESS locale, which the
+        # LoopProcessor thread cannot read without racing report generation
+        # (see RenderLocale).
+        lang = str(skin_dict.get('lang', ''))
+        render_locale = RenderLocale.capture(lang)
+        formatter = ReportFormatter.from_skin_dict(skin_dict, render_locale)
         converter = weewx.units.Converter.fromSkinDict(skin_dict)
 
         # [possibly localized] strings for trend.barometer.desc: the English
@@ -2020,7 +2758,8 @@ class LoopData(StdService):
             converter         = converter,
             baro_trend_descs  = baro_trend_descs,
             almanac_texts     = dict(skin_dict.get('Almanac', {})),
-            station           = weewx.station.Station(stn_info, formatter, converter, skin_dict)
+            station           = LoopData.station_under_locale(
+                                    stn_info, formatter, converter, skin_dict, lang)
                                 if len(station_fields) > 0 and stn_info is not None else None,
             time_delta        = time_delta,
             windrose_bands    = windrose_bands,
@@ -2029,12 +2768,39 @@ class LoopData(StdService):
             source_report     = source_report if source_report is not None else report_name)
 
     @staticmethod
+    def station_under_locale(stn_info: Any, formatter: 'ReportFormatter',
+            converter: Any, skin_dict: Dict[str, Any], lang: str) -> Any:
+        """The report's $station, built under the report's own locale.
+
+        Everything else about a station field renders lazily, through the
+        formatter, and so follows the report wherever it is evaluated.  One
+        attribute does not: weewx.station.Station's constructor computes
+        rain_year_str with strftime('%b') eagerly, so its month name is
+        decided by whatever locale is set at the moment the object is
+        built.  WeeWX builds ITS $station inside the report's set_locale
+        (cheetahgenerator), so building this one outside would put Okt on a
+        German report's own page and Oct in loop-data.txt -- this release's
+        defect exactly, one constructor to the left of the formatter.
+
+        Engine thread, service init, and the capture for this lang has
+        already been taken and released, so nothing of ours contends."""
+        set_locale = getattr(weewx.reportengine, 'set_locale', None)
+        if set_locale is None:
+            return weewx.station.Station(stn_info, formatter, converter, skin_dict)
+        with set_locale(lang):
+            return weewx.station.Station(stn_info, formatter, converter, skin_dict)
+
+    @staticmethod
     def render_signature(skin_dict: Dict[str, Any], windrose_bands: List[float]) -> str:
         """Everything about a report that decides how a value comes out:
         its unit groups, string formats, labels, time formats, ordinates
         and trend window ([Units]), its hemispheres and observation labels
         ([Labels]), its translations ([Texts]), its almanac names
-        ([Almanac]), and its windrose band edges.  Two contexts with the
+        ([Almanac]), its windrose band edges, and the LOCALE its lang
+        resolves to -- the month and weekday names a time field carries and
+        the decimal point a number carries come from there, not from any of
+        the sections, so two reports that differ only in lang do not render
+        alike and must not stand in for one another.  Two contexts with the
         same signature render every field identically, which is what lets
         one stand in for the other -- so a field the deprecated fields
         line shares with ANY report that renders it the same way is
@@ -2048,6 +2814,8 @@ class LoopData(StdService):
         sections = {section: normalize(skin_dict.get(section, {}))
                     for section in ('Units', 'Labels', 'Texts', 'Almanac')}
         return json.dumps({'sections': sections,
+                           'locale': RenderLocale.capture(
+                               str(skin_dict.get('lang', ''))).name,
                            'windrose_bands': [float(edge) for edge in windrose_bands]},
                           sort_keys=True)
 
@@ -4314,7 +5082,7 @@ class LoopProcessor:
     @staticmethod
     def add_unit_obstype(cname: CheetahName, loopdata_pkt: Dict[str, Any],
             converter: weewx.units.Converter,
-            formatter: weewx.units.Formatter) -> None:
+            formatter: ReportFormatter) -> None:
 
         if cname.prefix2 == 'label':
             # agg_type not allowed
@@ -4327,7 +5095,7 @@ class LoopProcessor:
 
     @staticmethod
     def render_field(cname: CheetahName, value_t: Tuple[Any, Any, Any],
-            loopdata_pkt: Dict[str, Any], formatter: weewx.units.Formatter,
+            loopdata_pkt: Dict[str, Any], formatter: ReportFormatter,
             time_context: str = 'current', is_delta: bool = False) -> None:
         """Render a converted value tuple into loopdata_pkt[cname.field] per
         the field's format_spec, dispatching through FORMAT_SPECS -- or, for
@@ -4351,7 +5119,7 @@ class LoopProcessor:
         if is_delta and format_spec == 'ordinal_compass':
             format_spec = None
         renderer: Optional[Callable[[CheetahName, Tuple[Any, Any, Any],
-            Dict[str, Any], weewx.units.Formatter, str, bool], None]] = None
+            Dict[str, Any], ReportFormatter, str, bool], None]] = None
         if format_spec is not None:
             if cname.format_kwargs is not None:
                 renderer = _render_call_spec
@@ -4363,7 +5131,7 @@ class LoopProcessor:
 
     @staticmethod
     def render_missing(cname: CheetahName, loopdata_pkt: Dict[str, Any],
-            formatter: weewx.units.Formatter, is_delta: bool = False) -> bool:
+            formatter: ReportFormatter, is_delta: bool = False) -> bool:
         """Missing-data hook: a field whose format spec carries explicit None
         handling (spec_emits_none) is emitted as its None rendering -- what
         the report tag would show -- instead of being omitted; returns True
@@ -4378,7 +5146,7 @@ class LoopProcessor:
     @staticmethod
     def add_current_obstype(cname: CheetahName, pkt: Dict[str, Any],
             loopdata_pkt: Dict[str, Any], converter: weewx.units.Converter,
-            formatter: weewx.units.Formatter) -> None:
+            formatter: ReportFormatter) -> None:
 
         if cname.obstype not in pkt:
             if not LoopProcessor.render_missing(cname, loopdata_pkt, formatter):
@@ -4406,7 +5174,7 @@ class LoopProcessor:
     def add_span_prop(cname: CheetahName, pkt: Dict[str, Any], accums: Accumulators,
             cfg: Configuration, loopdata_pkt: Dict[str, Any],
             converter: weewx.units.Converter,
-            formatter: weewx.units.Formatter) -> None:
+            formatter: ReportFormatter) -> None:
         """Render a span property (week.start.raw, month.length.long_form(),
         ...): a value read off the period's TimeSpan rather than out of an
         accumulator, and so dispatched before every obstype path -- the
@@ -4464,7 +5232,7 @@ class LoopProcessor:
     @staticmethod
     def add_period_obstype(cname: CheetahName, period_accum: Union[weewx.accum.Accum, ContinuousAccum],
             loopdata_pkt: Dict[str, Any], converter: weewx.units.Converter,
-            formatter: weewx.units.Formatter) -> None:
+            formatter: ReportFormatter) -> None:
         if cname.obstype not in period_accum:
             if not LoopProcessor.render_missing(cname, loopdata_pkt, formatter):
                 log.debug('No %s stats for %s, skipping %s' % (cname.period, cname.obstype, cname.field))
@@ -4545,7 +5313,7 @@ class LoopProcessor:
     @staticmethod
     def add_windrose_obstype(cname: CheetahName, accums: Accumulators,
             loopdata_pkt: Dict[str, Any], converter: weewx.units.Converter,
-            formatter: weewx.units.Formatter, windrose_key: str) -> None:
+            formatter: ReportFormatter, windrose_key: str) -> None:
         """Render a windrose field: a projection of the period's
         WindRoseAccum.  .calm is a scalar (seconds); .time a 16-array of
         seconds; .banded the 16xN seconds matrix; .sum a 16-array of distances
@@ -4606,7 +5374,7 @@ class LoopProcessor:
     def add_trend_obstype(cname: CheetahName, accum: ContinuousAccum,
             pkt: Dict[str, Any], loopdata_pkt: Dict[str, Any], time_delta: int,
             loop_frequency: float, baro_trend_descs, converter: weewx.units.Converter,
-            formatter: weewx.units.Formatter) -> None:
+            formatter: ReportFormatter) -> None:
 
         if cname.obstype not in accum:
             if not LoopProcessor.render_missing(cname, loopdata_pkt, formatter, is_delta=True):
