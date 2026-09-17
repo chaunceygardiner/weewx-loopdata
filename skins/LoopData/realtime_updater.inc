@@ -672,9 +672,9 @@
     // alone; and do not take the with-minus-without-petals diff as petal
     // ink, because each segment is stroked 2px in the FACE color and where
     // that covers a reference ring it registers as ~1.5 units of reach that
-    // is invisible and eats no clearance.  weewx-liveseasons, which carries
-    // this same panel, measures 3.0 to 3.4 across its responsive canvas
-    // sizes; canvas size moves the figure only slightly.  Measured off the rendered canvas, not
+    // is invisible and eats no clearance.  The same panel measures 3.0 to
+    // 3.4 across a range of responsive canvas sizes, so canvas size moves
+    // the figure only slightly.  Measured off the rendered canvas, not
     // estimated; re-measure before moving either radius, and note the
     // ordinates come from the TARGET report, so a custom one can serve any
     // glyph it likes.

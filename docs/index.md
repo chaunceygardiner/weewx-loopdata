@@ -120,7 +120,7 @@ all there is to it.
 
 ## See it in action
 
-* The "LiveSeasons" skin at
+* The "Tempestas" skin at
   [www.paloaltoweather.com](https://www.paloaltoweather.com/) is
   loopdata-driven throughout, including its celestial tabs:
   [weewx-celestial](https://github.com/chaunceygardiner/weewx-celestial)'s

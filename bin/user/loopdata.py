@@ -58,7 +58,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '7.4'
+LOOP_DATA_VERSION = '7.4.1'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -858,6 +858,26 @@ class RenderLocale:
         return rendered.replace(plain, plain[:start] + localized + plain[end:], 1)
 
 
+def weewx_default_time_format() -> str:
+    """The format WeeWX renders a time with when the report's
+    [[TimeFormats]] has no entry for the context.
+
+    WeeWX 5.3 lifted this string out of Formatter._to_string into
+    weewx.units.DEFAULT_TIME_FORMAT; from 4.6 -- this extension's floor --
+    through 5.2 the same string is written inline there, with no name to
+    reach for.  Reading the attribute on the render path cost every report
+    that declares a time field its WHOLE entry, every packet, on any WeeWX
+    older than 5.3 (issue #17), so it is resolved once, here, and the
+    literal answers where the constant does not exist.  Not a fallback
+    value of our own choosing: it is what those releases hard-code, pinned
+    against the running WeeWX by
+    test_default_time_format_matches_the_running_weewx.
+    """
+    return getattr(weewx.units, 'DEFAULT_TIME_FORMAT', '%d-%b-%Y %H:%M')
+
+DEFAULT_TIME_FORMAT: str = weewx_default_time_format()
+
+
 class ReportFormatter(weewx.units.Formatter):
     """A report's Formatter, rendering under the report's own locale.
 
@@ -945,7 +965,7 @@ class ReportFormatter(weewx.units.Formatter):
             # which is where the month and weekday names come from.  Times
             # never carry a label, so this is the whole rendering.
             fmt = useThisFormat if useThisFormat is not None \
-                else self.time_format_dict.get(context, weewx.units.DEFAULT_TIME_FORMAT)
+                else self.time_format_dict.get(context, DEFAULT_TIME_FORMAT)
             return self.render_locale.strftime(fmt, tm)
         # A complex or Polar value has no single format string: the base
         # class composes it out of further calls to THIS method, one per
@@ -2311,8 +2331,8 @@ class LoopData(StdService):
                     'line; the report overwrites the field in the output.' % report)
 
         # An upgraded station's [[Include]] line usually lists what its
-        # target_report's skin now declares (the sample panel's 56, or all
-        # of LiveSeasons').  Both render through the same report dict, so
+        # target_report's skin now declares (the sample panel's 56, or every
+        # field of a larger one).  Both render through the same report dict, so
         # the values would be identical: render the shared fields once, in
         # the declaring report's context, and copy them flat.  The legacy
         # context keeps only what nothing else renders.

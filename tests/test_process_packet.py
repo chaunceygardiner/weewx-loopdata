@@ -34,6 +34,7 @@ import configobj
 import contextlib
 import importlib
 import importlib.util
+import inspect
 import io
 import json
 import locale
@@ -1656,7 +1657,16 @@ class ProcessPacketTests(unittest.TestCase):
             self.assertEqual(loopdata_pkt['almanac.moon_index.raw'], 4)
             self.assertNotIn('almanac.moon_index.formatted', loopdata_pkt)
             self.assertEqual(loopdata_pkt['almanac.next_full_moon.raw'], stub.next_full_moon_ts)
-            self.assertNotIn('almanac.no_such_attr', loopdata_pkt)
+            if ProcessPacketTests.unknown_almanac_body_is_refused():
+                self.assertNotIn('almanac.no_such_attr', loopdata_pkt)
+            else:
+                # WeeWX 4.6 through 5.2 hand back a binder for a body of
+                # any name and render it as its own repr, so the field is
+                # published rather than omitted.  Pinned as a difference,
+                # not as desired behavior: it is WeeWX's, it reaches only a
+                # declaration naming something no almanac knows, and
+                # loopdata does not (yet) refuse the binder itself.
+                self.assertIn('almanac.no_such_attr', loopdata_pkt)
 
             # Four fields walk the sunrise attribute; moon_index is walked
             # three times (the .formatted variant evaluates, then fails to format).
@@ -4889,7 +4899,8 @@ class ProcessPacketTests(unittest.TestCase):
         that declares week.start.raw and no other week field must still get
         it.  create_period_accum returns None for an empty obstype set, so a
         span read off the accumulator would be silently absent here -- which
-        is exactly the shape weewx-liveseasons' front_page group has."""
+        is exactly the shape a group that declares a period's start and
+        none of its observations has."""
         fields = ['current.outTemp.raw', 'week.start.raw', 'month.start.raw',
                   'year.start.raw']
         cfg = ProcessPacketTests._get_config('us', 10800, 1, 6, fields)
@@ -10359,6 +10370,39 @@ class ProcessPacketTests(unittest.TestCase):
             locale.setlocale(locale.LC_ALL, saved)
 
     @staticmethod
+    @contextlib.contextmanager
+    def weewx_without(module: Any, name: str):
+        """The running WeeWX with one attribute taken away, so a release
+        that predates it can be rendered against for the length of the
+        body.  Restored however the body leaves -- a module attribute
+        deleted for the rest of the suite would fail tests far from here."""
+        missing = object()
+        saved = getattr(module, name, missing)
+        if saved is not missing:
+            delattr(module, name)
+        try:
+            yield
+        finally:
+            if saved is not missing:
+                setattr(module, name, saved)
+
+    @staticmethod
+    def unknown_almanac_body_is_refused() -> bool:
+        """Does the running WeeWX refuse an almanac attribute that nothing
+        knows?  Every version hands back an AlmanacBinder for it; RENDERING
+        that binder raises AttributeError from 5.3, where _get_ephem_body
+        turns PyEphem's KeyError into one, and yields the binder's default
+        repr before that.  Asked of the library, never of
+        weewx.__version__ -- the question is what it does, and that is what
+        decides whether such a field is omitted or published."""
+        try:
+            str(getattr(weewx.almanac.Almanac(1593630000, 37.4, -122.2),
+                        'no_such_attr_at_all'))
+        except Exception:
+            return True
+        return False
+
+    @staticmethod
     def usable_locales() -> List[str]:
         """The locales this host actually has compiled, beyond C.  A fixed
         order, so a failure names the same one on a re-run."""
@@ -10541,6 +10585,12 @@ class ProcessPacketTests(unittest.TestCase):
                   'local_djd': 45828.416666666664}
         self.assertEqual(set(values), set(L.TIME_UNITS),
                          'a time unit was added without a value here')
+        if not hasattr(weewx.units, 'dublin_to_epoch'):
+            # The Dublin julian day is a WeeWX 5.3 unit -- nothing below it
+            # can produce one, and loopdata's own branch for it is guarded
+            # on the same name -- so there is nothing to render here.  Kept
+            # in TIME_UNITS above, which is the contract this test is for.
+            del values['local_djd']
         for unit, value in sorted(values.items()):
             value_t = (value, unit, 'group_time')
             self.assertTrue(formatter.is_time(value_t), unit)
@@ -10973,6 +11023,66 @@ class ProcessPacketTests(unittest.TestCase):
             'weewx.units.Formatter._to_string has moved; ReportFormatter '
             'needs revisiting, and until it is every report renders under '
             'weewxd\'s locale')
+
+    def test_default_time_format_falls_back_before_weewx_5_3(self):
+        """Spec: WeeWX 5.3 lifted the default time format out of
+        Formatter._to_string into weewx.units.DEFAULT_TIME_FORMAT; 4.6
+        through 5.2 -- releases this extension supports, and its floor is
+        4.6 -- spell the same string inline there and have no such
+        attribute.  7.4 read it on the render path, where it is evaluated
+        for EVERY time, in a named context or not, so on any of those a
+        report that declares a time field lost its whole entry, every
+        packet, with an AttributeError logged (issue #17).
+
+        Two things are pinned, both with the attribute deleted: the
+        resolver answers with the string those releases hard-code, and
+        nothing on the render path reaches for the attribute itself."""
+        L = user.loopdata
+        cfg = ProcessPacketTests._get_config(
+            'us', 10800, 1, 6, ['current.dateTime.formatted'])
+        formatter = cfg.legacy.formatter
+        t = 1593630000
+        # The context the fixture's [[TimeFormats]] names, and one it does
+        # not.  The second is what the default answers for; the FIRST is
+        # what made this total -- a default argument is evaluated whether
+        # or not the dict has the key.
+        assert 'current' in formatter.time_format_dict, sorted(formatter.time_format_dict)
+        assert 'no_such_context' not in formatter.time_format_dict
+
+        with ProcessPacketTests.weewx_without(weewx.units, 'DEFAULT_TIME_FORMAT'):
+            # No assertion here that the module CONSTANT still holds the
+            # running WeeWX's value: WeeWX's own default and the literal
+            # below are the same string, so no comparison of values can
+            # tell resolved-at-import from read-live.  What matters is
+            # pinned instead by the renderings below -- they fail with the
+            # exact AttributeError of issue #17 the moment anything on the
+            # render path reaches for the attribute.
+            self.assertEqual(L.weewx_default_time_format(), '%d-%b-%Y %H:%M')
+            # The production path for a time: .formatted routes through
+            # toString with the period's context.
+            cname = L.LoopData.parse_cname('current.dateTime.formatted')
+            self.assertIsNotNone(cname)
+            out: Dict[str, Any] = {}
+            L.LoopProcessor.add_current_obstype(
+                cname, {'dateTime': t, 'usUnits': 1}, out, cfg.legacy.converter, formatter)
+            self.assertEqual(out.get('current.dateTime.formatted'),
+                             time.strftime('%x %X', time.localtime(t)))
+            value_t = (t, 'unix_epoch', 'group_time')
+            self.assertEqual(
+                formatter.toString(value_t, context='no_such_context', addLabel=False),
+                time.strftime('%d-%b-%Y %H:%M', time.localtime(t)))
+
+    def test_default_time_format_matches_the_running_weewx(self):
+        """Spec: the literal in weewx_default_time_format is not a default
+        of loopdata's choosing -- it is what 4.6 through 5.2 hard-code.
+        Where the constant EXISTS it is what answers, so a WeeWX that
+        changes its default is followed here rather than quietly
+        diverging from the report beside it."""
+        L = user.loopdata
+        if not hasattr(weewx.units, 'DEFAULT_TIME_FORMAT'):
+            self.skipTest('this WeeWX predates weewx.units.DEFAULT_TIME_FORMAT')
+        self.assertEqual(L.weewx_default_time_format(),
+                         weewx.units.DEFAULT_TIME_FORMAT)
 
     def test_an_unknown_lang_renders_as_weewx_would(self):
         """Spec: WeeWX passes lang straight to setlocale, and the lang
@@ -11930,11 +12040,20 @@ class ProcessPacketTests(unittest.TestCase):
                 config_dict['WEEWX_ROOT'], config_dict['StdReport']['SKIN_ROOT'],
                 config_dict['StdReport'][report].get('skin', ''), 'lang')
             return real(lang_spec, lang_dir, report)
+        # ... unless the suite is ALREADY on a WeeWX below 5.3, where the
+        # real function IS the older shape: wrapping it would hand a Path
+        # to something expecting the config, and the stand-in would be
+        # testing itself.  There, drive the real one -- the better test,
+        # and what lets tools/check_against_weewx.sh run this suite
+        # unchanged against an older WeeWX.
+        stand_in = pre_5_3 if 'lang_spec_dir' in inspect.signature(real).parameters else None
         try:
-            weewx.reportengine.get_lang_dict = pre_5_3
+            if stand_in is not None:
+                weewx.reportengine.get_lang_dict = stand_in
             passed.clear()
             self.assertEqual(L.lang_unit_system(by_lang, 'de'), 'metricwx')
-            self.assertIn('ConfigObj', passed)      # the whole config, not a Path
+            if stand_in is not None:
+                self.assertIn('ConfigObj', passed)  # the whole config, not a Path
             self.assertEqual(L.defaults_converter(by_lang).getTargetUnit('windSpeed')[0],
                              'meter_per_second')
         finally:

@@ -1,6 +1,25 @@
 loopdata change history
 -----------------------
 
+7.4.1 2026/09/17
+----------------
+- Fixed: on WeeWX earlier than 5.3, every report that declares a field
+  holding a time lost its whole entry in loop-data.txt, on every packet,
+  with one error logged for each such report.  7.4 reads the default
+  time format -- the one a report uses for a time context its
+  [[TimeFormats]] does not name -- from weewx.units.DEFAULT_TIME_FORMAT,
+  and WeeWX added that name in 5.3; 4.6 through 5.2 write the same format
+  inline and have no such name to read.  It is now resolved once, at
+  startup, and where the name does not exist the format those releases
+  write is used, so a time renders exactly as it does on the report's own
+  pages.  A station running WeeWX 5.3 or later was never affected, in 7.4
+  or now.  Reported by bellrichm (issue #17), citing WeeWX 5.0.0.
+- Internal: three tests now ask the running WeeWX what it does rather
+  than assuming the newest release's behavior, so the whole suite runs
+  unchanged against an older WeeWX.  That is what guards the fix above:
+  it is checked against the oldest WeeWX the suite can run on, not only
+  against the one this machine happens to have.
+
 7.4 2026/09/10
 --------------
 - Times and numbers now render in the language of the report that

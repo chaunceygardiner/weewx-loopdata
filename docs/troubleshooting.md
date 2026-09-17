@@ -48,6 +48,26 @@ Upgrade to loopdata 6.10 or later, which passes whichever argument the
 running WeeWX takes; dropping the almanac fields from your declaration
 also clears it.
 
+## Values are missing from `loop-data.txt`, and the log blames `DEFAULT_TIME_FORMAT`
+
+If part of the file is absent and the log carries an `AttributeError`
+about `weewx.units` having no attribute `DEFAULT_TIME_FORMAT`, you are
+running loopdata 7.4 on a WeeWX earlier than 5.3.  Upgrade to loopdata
+7.4.1 or later.  WeeWX 5.3 gave a name to the format a time falls back
+on and 7.4 read it; the releases before it have the format but not the
+name.
+
+What goes missing depends on how the fields were declared, and so does
+the log line.  A report that [declares its own
+fields](declaring-fields.html) loses its whole entry, and the log names
+the report: `Could not render report <name>; its values are omitted.`  A
+station still on the deprecated `[LoopData] [[Include]]` fields line
+loses the flat keys at the top level of the file instead, and its log
+line names that line rather than a report: `Could not render [LoopData]
+[[Include]] fields; its values are omitted.`  Either way it is every
+packet, and only where a field holding a time is declared -- which is
+why some values can be there and others not.
+
 ## The panel shows readouts but no needles, bands or windrose
 
 Since 7.0 the panel reads its own report's entry in `loop-data.txt`, which

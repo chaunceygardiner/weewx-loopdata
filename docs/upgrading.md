@@ -176,6 +176,12 @@ a restart.  Details, and the aggregates the new type adds, are under
 
 ## Worth knowing, but nothing to do
 
+* **7.4.1** — values write again on WeeWX earlier than 5.3.  If you
+  upgraded to 7.4 and part of `loop-data.txt` vanished — a report's whole
+  entry, or the flat keys of an `[[Include]]` fields line — leaving
+  `Could not render` in the log, this release is the fix; see
+  [Troubleshooting](troubleshooting.html#values-are-missing-from-loop-datatxt-and-the-log-blames-default_time_format).
+  A station on WeeWX 5.3 or later was never affected.
 * **7.2** — a period's own boundaries can be declared as fields:
   `week.start`, `month.end`, `year.length` and `<period>.dateTime`, the
   four report tags every period already has.  Nothing changes unless you

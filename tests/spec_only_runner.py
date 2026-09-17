@@ -181,6 +181,8 @@ SPEC_TESTS = [
     'test_formatted_localizes_without_any_locale_installed',
     'test_render_signature_separates_two_locales',
     'test_weewx_formats_values_the_way_loopdata_assumes',
+    'test_default_time_format_falls_back_before_weewx_5_3',
+    'test_default_time_format_matches_the_running_weewx',
     'test_an_unknown_lang_renders_as_weewx_would',
     'test_station_rain_year_str_follows_the_report',
     'test_number_rendering_matches_weewx_for_every_conversion',

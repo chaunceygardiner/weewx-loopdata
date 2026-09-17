@@ -118,7 +118,7 @@ translations, and the recipe for building your own live page.
 
 See weewx-loopdata in action at
 [www.paloaltoweather.com](https://www.paloaltoweather.com/) — the
-"LiveSeasons" skin, including its celestial tabs, is loopdata-driven
+"Tempestas" skin, including its celestial tabs, is loopdata-driven
 throughout.
 
 Below, loopdata is driving
