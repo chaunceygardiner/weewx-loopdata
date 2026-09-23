@@ -1,8 +1,45 @@
-loopdata change history
------------------------
+# weewx-loopdata change history
 
-7.4.1 2026/09/17
-----------------
+## 7.5 2026/09/23
+- The sample report's gauges are redrawn.  Each is a card: the dial,
+  then under it the reading, a line saying what it means, and today's
+  high above its low.  The light theme now draws light dials -- a pale
+  face on a white card -- where it used to put the dark dials on a light
+  page, and the dark theme draws deep dials on navy cards.  Each gauge
+  has one red arm, as an analog gauge does; the wind's gust needle keeps
+  a quieter color of its own.  The numerals stay inside the face, where they were, but no
+  reading or caption is written across a dial any more; each sits below
+  its dial instead.
+- UV and air quality wear EPA's category colors on the rim and name the
+  category under the reading.  UV follows EPA in naming the index
+  rounded, so 5.5 is High.  The air quality dial now runs to 500, the top
+  of EPA's Hazardous band, where it used to stop at 300.
+- The wind gauge says which way the wind is from and how hard it is
+  gusting, gives today's peak, and marks today's prevailing direction on
+  the dial.  Feels like says how much warmer or cooler it is than the
+  air, and rain says when the day has been dry so far.
+- The numerals on the dials use the report's decimal point, as the
+  readings under them already did.
+- Fixed: on a metric station the rain and rain-rate dials printed their
+  major numerals rounded -- "6", "13", "19" beside ticks at 6.25, 12.5 and
+  18.75 mm.  The metric scale now runs to 20 mm, so every major tick falls
+  on a whole millimeter, and so does every doubling on a big day.
+- The gauges are SVG rather than canvas, and every color is a css
+  property in index.html.tmpl, including the windrose's six speed-band
+  shades, which were the last colors written in the javascript.
+- The sample report declares more fields in its skin.conf, for the
+  readings, units, peaks and wind words above.  A station that overrides
+  one of the sample report's field groups under its stanza in weewx.conf
+  replaces that group whole, so a gauge whose group was overridden shows
+  "--" for any field the override leaves out; "What each gauge reads" in
+  the manual lists what each gauge needs.
+- Nineteen new strings for the gauges, in all nine languages.  The
+  translations of those strings have not yet been reviewed by native
+  speakers, German, French and Danish included.
+- Internal: the change history is now changes.md, in Markdown, so it
+  reads as formatted text on GitHub; it was changes.txt.
+
+## 7.4.1 2026/09/17
 - Fixed: on WeeWX earlier than 5.3, every report that declares a field
   holding a time lost its whole entry in loop-data.txt, on every packet,
   with one error logged for each such report.  7.4 reads the default
@@ -20,8 +57,7 @@ loopdata change history
   it is checked against the oldest WeeWX the suite can run on, not only
   against the one this machine happens to have.
 
-7.4 2026/09/10
---------------
+## 7.4 2026/09/10
 - Times and numbers now render in the language of the report that
   declared them, as everything else already did.  A month or weekday
   name -- 21. Juni, samedi -- and the decimal point in a formatted
@@ -50,8 +86,7 @@ loopdata change history
   table of log messages, one of them because the test that keeps that
   table honest could not see a message written with double quotes.
 
-7.3 2026/09/09
---------------
+## 7.3 2026/09/09
 - ACTION REQUIRED IF YOU WANT THE DARK PAGE ON EVERY SCREEN: the sample
   report now follows the viewer's own system theme by default, and a
   browser with no preference set reports LIGHT rather than "no
@@ -84,8 +119,7 @@ loopdata change history
   which was a third copy of the amber spelled rgba(), is derived from
   it.
 
-7.2 2026/09/06
---------------
+## 7.2 2026/09/06
 - A period's own boundaries are now fields.  start, end, length and
   dateTime are report tags on every period ($week.start, $month.length),
   and loopdata refused all of them.  Declare week.start.raw and every
@@ -137,8 +171,7 @@ loopdata change history
   now compares the rendered string as well as the raw instant, which is
   where a wrong time context shows.
 
-7.1 2026/09/03
---------------
+## 7.1 2026/09/03
 - Week, month, year, rain-year and all-time sums, counts and averages no
   longer count today twice after a restart.  Loopdata seeds those spans
   from the daily summary table and then adds today's running totals on
@@ -180,8 +213,7 @@ loopdata change history
 - Internal: the test suite closes the files it writes, so a run no longer
   prints a ResourceWarning for each one.
 
-7.0.1 2026/08/31
-----------------
+## 7.0.1 2026/08/31
 - Nothing below edits a weewx.conf that already exists, and there is
   nothing to do by hand.  The one change that reaches a station without an
   edit is the expiration_time default, immediately below.
@@ -332,8 +364,7 @@ loopdata change history
   dropped outright (which happens silently when it attaches to a section
   weewx.conf already has) fails.
 
-7.0 2026/08/26
---------------
+## 7.0 2026/08/26
 - ACTION REQUIRED, 1 of 3 -- WeeWX 4.6 or later: this release requires WeeWX
   4.6 or later, where 6.x required 4.0.  Both the installer and the
   service refuse to run on anything older.  4.6 is where WeeWX made its
@@ -444,8 +475,7 @@ loopdata change history
   accumulate_packet and render_report; the almanac and station
   evaluators are per report (their caches hold rendered values).
 
-6.11.3 2026/08/24
------------------
+## 6.11.3 2026/08/24
 - The sample page no longer loads Google Analytics when no analytics id
   is configured.  analytics.inc tested whether googleAnalyticsId was
   PRESENT, not whether it had a value -- and the installer writes it
@@ -508,8 +538,7 @@ loopdata change history
   absent before 3.9, and 3.9's copy has no config_from_str -- so the
   user got a raw traceback instead of the message.
 
-6.11.2 2026/08/24
------------------
+## 6.11.2 2026/08/24
 - The manual says where the loop-data file should live.  The default --
   inside your reports tree, in the target report's own directory --
   works, and is what most stations keep.  Two things are worth knowing
@@ -570,8 +599,7 @@ loopdata change history
   manual documented that value and explained it wrongly.  No install
   changes behavior; a reader of either file is no longer misled.
 
-6.11.1 2026/08/14
------------------
+## 6.11.1 2026/08/14
 - The sample report drops the loopdata field names printed under each
   gauge.  They were meant as a key to what the panel reads, but on a
   live page they read as a template that failed to render -- one user
@@ -583,8 +611,7 @@ loopdata change history
   fields line can be short one .raw field and cost exactly one needle,
   which is what the same user hit before he replaced his fields line.
 
-6.11 2026/08/13
----------------
+## 6.11 2026/08/13
 - The sample report's dark theme is higher contrast and much easier to
   read: white readouts, brighter numerals and labels, a recessed track
   you can see on every dial, and windrose bands that no longer vanish
@@ -597,8 +624,7 @@ loopdata change history
   the canvases cannot read css variables and nothing else stopped the
   copies drifting.
 
-6.10 2026/08/13
----------------
+## 6.10 2026/08/13
 - Almanac fields work again on WeeWX earlier than 5.3.  WeeWX 5.3
   renamed the Almanac constructor's language argument: it now takes
   texts (the target report's whole [Almanac] section -- moon phases,
@@ -642,8 +668,7 @@ loopdata change history
   the page time out on them.  The lang comment, four releases stale,
   now lists all eight translations, and two typos are fixed.
 
-6.9 2026/08/08
---------------
+## 6.9 2026/08/08
 - A next_* almanac field now expires the moment its event's own instant
   passes, instead of being kept until midnight: a "next" value whose
   instant is behind us no longer is what the field name promises.
@@ -684,8 +709,7 @@ loopdata change history
   with lang = it (or no, sv) in the report.  Matches the three new
   languages of weewx-skyfield 2.0 and weewx-celestial 8.0.
 
-6.8 2026/08/02
---------------
+## 6.8 2026/08/02
 - A complete Danish translation ships with the sample LoopData skin,
   contributed by native speaker Gert Andersen:
   lang/da.conf, including the trend.barometer.desc tendency vocabulary
@@ -694,8 +718,7 @@ loopdata change history
   weewx-celestial's da.conf files (a test pins this).  Select it with
   lang = da in the report.
 
-6.7 2026/07/31
---------------
+## 6.7 2026/07/31
 - A complete Spanish translation ships with the sample LoopData skin
   (Beta, awaiting native-speaker review -- corrections welcome):
   lang/es.conf, including the trend.barometer.desc tendency vocabulary
@@ -705,8 +728,7 @@ loopdata change history
   es.conf (the cross-repo test pins it, as for the German, French and
   Dutch).  Select it with lang = es in the report.
 
-6.6 2026/07/30
---------------
+## 6.6 2026/07/30
 - Almanac fields take a unit segment, completing the grammar --
   observation fields (day.outTemp.avg.degree_C) and station fields
   (station.altitude.meter.raw) already took one:
@@ -740,8 +762,7 @@ loopdata change history
   renames (it referenced the old German-only test name, so it errored
   out instead of running).
 
-6.5 2026/07/29
---------------
+## 6.5 2026/07/29
 - A complete French translation ships with the sample LoopData skin
   (Beta, awaiting native-speaker review -- corrections welcome):
   lang/fr.conf, including the trend.barometer.desc tendency vocabulary
@@ -751,8 +772,7 @@ loopdata change history
   fr.conf (a test pins this, as for the German).  Select it with
   lang = fr in the report.
 
-6.4 Release 2026/07/28
-----------------------
+## 6.4 Release 2026/07/28
 ACTION REQUIRED for users who customized [[BarometerTrendDescriptions]]:
 the [LoopData] [[BarometerTrendDescriptions]] section is REMOVED and now
 ignored -- delete it from weewx.conf.  The trend.barometer.desc
@@ -761,7 +781,11 @@ descriptions are now gettext-style [Texts] keys in the TARGET report
 lang-file machinery as everything else -- the shipped lang/de.conf
 carries all nine in German -- and a custom wording goes on the target
 report's stanza instead:
-    [StdReport] [[LoopDataReport]] [[[Texts]]] "Steady" = "Holding"
+
+```
+[StdReport] [[LoopDataReport]] [[[Texts]]] "Steady" = "Holding"
+```
+
 Users who never touched the section need do nothing: the English
 defaults are unchanged.
 
@@ -781,7 +805,7 @@ lang = de on the report's stanza in weewx.conf.
 Two languages meet on the page, and the manual's new Translations page
 documents the coupling: the page's own labels follow the sample
 report's lang, but the live VALUES in loop-data.txt
-(.ordinal_compass, moon_phase, almanac.<body>.label, trend and
+(.ordinal_compass, moon_phase, `almanac.<body>.label`, trend and
 station fields) render in the language of loopdata's [LoopData]
 target report.  Setting [StdReport] [[Defaults]] lang = de in
 weewx.conf sets both at once.  The shipped lang files carry the
@@ -789,8 +813,7 @@ target-report sections too (ordinates, moon phases, body and all 88
 constellation names, hemispheres), so a German LoopDataReport serves
 German values.
 
-6.3 Release 2026/07/25
-----------------------
+## 6.3 Release 2026/07/25
 New: station fields.  Any $station report tag can be listed as a field
 with the $ removed: station.uptime.raw, station.uptime.long_form(),
 station.os_uptime.raw, station.version, station.location,
@@ -810,8 +833,7 @@ array instead of Python's str() of the tuple: station.latitude renders as
 template indexes -- and an almanac field ending in, e.g., moon_phases
 gets the same treatment.
 
-6.2 Release 2026/07/24
-----------------------
+## 6.2 Release 2026/07/24
 The sample skin's LIVE indicator now reports a failed loop-data fetch.
 When the poll for loop_data_file returns anything but the json -- the
 classic being the web server's 404 page because loopdata writes outside
@@ -823,8 +845,7 @@ console and a silently dead panel.  A later successful poll rewrites the
 indicator to LIVE as always.  (Same change as weewx-celestial 7.1, which
 shares the poll's ancestry.)
 
-6.1 Release 2026/07/24
-----------------------
+## 6.1 Release 2026/07/24
 Fixed: a dead or hanging rsync remote could stall loop processing for
 minutes per attempt despite timeout = 1.  That setting only reached rsync's
 --timeout, which bounds rsync protocol I/O, not the phases ssh owns: a
@@ -832,7 +853,7 @@ black-holed TCP connect, a stalled handshake, or an auth prompt could each
 block the LoopProcessor thread far longer (the file kept its full age
 backlog: written minutes after the packet inside it was stamped, dial pages
 frozen).  LoopData now folds ssh-side bounds into the rsync transport --
-ConnectTimeout=<timeout>, ServerAliveInterval=<timeout>,
+`ConnectTimeout=<timeout>`, `ServerAliveInterval=<timeout>`,
 ServerAliveCountMax=2 and BatchMode=yes -- each applied only if your own
 ssh_options doesn't set that keyword, so anything you set wins.  Previously
 the ConnectTimeout=1 default lived in the ssh_options default value itself,
@@ -840,8 +861,7 @@ so setting ssh_options at all (a key file, a port) silently discarded it.
 Setting timeout = 0 disables the time bounds (BatchMode is still applied:
 an interactive prompt can never be answered under weewxd).
 
-6.0 Release 2026/07/22
-----------------------
+## 6.0 Release 2026/07/22
 Action required if you publish the sample report: upgrading replaces the
 sample skin's page with the new instrument panel (below) but keeps your
 existing [LoopData] fields line, and the panel reads fields the old default
@@ -852,16 +872,16 @@ needles, min-max bands or windrose.  Replace the fields line under
 (exactly the fields the panel reads; append any fields other pages of yours
 use) and restart weewxd.  Fresh installs get it by default.
 
-Removed (action required if you used them): the experimental windrun_<dir>
+Removed (action required if you used them): the experimental `windrun_<dir>`
 observation types (windrun_N ... windrun_NNW) are gone, replaced by the
 first-class windrose observation below.  Fields naming them are now ignored.
 To migrate: day.windrun_N.sum is element 0 of day.windrose.sum,
 day.windrun_NNE.sum element 1, and so on clockwise through NNW (element 15).
-The windrun_<dir> types were always documented as experimental and likely to
+The `windrun_<dir>` types were always documented as experimental and likely to
 change; this is that change.
 
 New: windrose.  A NOAA-style windrose for any period except current and trend
--- including week, month, year, rainyear and alltime, which windrun_<dir>
+-- including week, month, year, rainyear and alltime, which `windrun_<dir>`
 never supported.  Per period, loopdata accumulates 16 compass bins x N speed
 bands, each cell tracking both seconds and distance, plus a directionless
 calm total (wind below the calm threshold, or no wind direction).  Four
@@ -880,7 +900,7 @@ with a single SQL aggregate per period, so even alltime.windrose starts fully
 primed.  The sample LoopData skin now draws a live canvas windrose.
 
 Fixed (via the windrose rework): after a weewxd restart, hour-period and
-continuous-period (1m-1440m/1h-24h) windrun_<dir> buckets started EMPTY and
+continuous-period (1m-1440m/1h-24h) `windrun_<dir>` buckets started EMPTY and
 silently filled as packets arrived -- archive-replay priming never carried
 the bucketed values.  windrose accumulators seed every period from the
 archive at startup.
@@ -981,8 +1001,7 @@ types.  No behavior change.
 Internal: the test suite moved from bin/user/tests to a top-level tests
 directory.  No change to the installed extension.
 
-5.0 Release 2026/07/19
-----------------------
+## 5.0 Release 2026/07/19
 New: almanac fields.  Any WeeWX report almanac tag can now be listed in
 [LoopData] [[Include]] fields with the $ removed (e.g., almanac.sunrise,
 almanac.sunrise.raw, almanac.moon_phase, almanac.sun.az,
@@ -994,20 +1013,18 @@ extension: almanac(days=±N) evaluates at the same wall-clock time N local
 calendar days away (e.g., almanac(days=1).sunrise.raw is tomorrow's sunrise).
 Almanac fields are current-only (no period prefixes or aggregates) and are
 cached by attribute class: positions/distances recompute every packet,
-rise/set/transit/visible once per local day, and next_*/previous_* events are
+rise/set/transit/visible once per local day, and `next_*`/`previous_*` events are
 kept until the local day advances past the cached event.
 This makes celestial loop fields available without any packet-injecting
 service: weewx-celestial's loop fields can be replaced by almanac.* entries.
 
-4.1 Release 2026/07/12
-----------------------
+## 4.1 Release 2026/07/12
 Fix: weewx could fail to shut down if SIGTERM landed while LoopData was
 starting up or priming its accumulators from the database on the first loop
 cycle (the broad error handlers there swallowed weewxd's Terminate exception;
 they now pass it through).
 
-4.0 Release 2026/07/11
-----------------------
+## 4.0 Release 2026/07/11
 No configuration changes are required; this is a drop-in upgrade.
 The sortedcontainers package is no longer required.  Its SortedDict is replaced
 by MinMaxDict, a minimal min/max-tracking mapping (two heaps with lazy deletion)
@@ -1021,41 +1038,33 @@ front-removal O(1) instead of an O(window-length) list shift.
 README: new "Using LoopData in Your Own Skin" section; corrected field
 examples, config option names and defaults; many typo fixes.
 
-3.9 Release 2026/06/27
-----------------------
+## 3.9 Release 2026/06/27
 Add plumbing for first/last observation types (in case WeeWX fully supports thenm in the future)
 
-3.8 Release 2026/07/27
-----------------------
+## 3.8 Release 2026/07/27
 Many tests added after mutation testing.
 Support .count which was mistakenly not allowed by the parser
 
-3.6 Release 2026/06/25
-----------------------
+## 3.6 Release 2026/06/25
 Fix three potential latent bugs.
 Added tests to boost code coverage to 76%.  Minus I/O plumbing, test coverage is > 92%.
 
-3.5 Release 2026/06/24
-----------------------
+## 3.5 Release 2026/06/24
 Bug fix for continuous vector accumulator.
 Code cleanup.
 
-3.4 Release 2026/06/20
-----------------------
+## 3.4 Release 2026/06/20
 Ensure temporary loop data file to actual is atomic.
 
-3.3.2 Release 2022/12/19
-------------------------
+## 3.3.2 Release 2022/12/19
 Don't try to convert string observations to string.
 
-3.3.1 Release 2022/12/08
-------------------------
+## 3.3.1 Release 2022/12/08
 Fix for Issue #10.  Due to foloating point errors, one could
 get math domain error for calling sqrt on a negative number.
 Thanks https://github.com/hoetzgit for reporting this.
 
-3.3 Release 2022/11/23
-----------------------
+## 3.3 Release 2022/11/23
 1. Rather than just being able to use the 2m, 10m and 24h rolling
    time period tags, one can now use arbitrary minute tags from
    1m to 1440m; and also arbitrary hour tags from 1h to 24h.
@@ -1063,85 +1072,95 @@ Thanks https://github.com/hoetzgit for reporting this.
    is specified as 15m.wind.max.  In the last 17 minutes, it is
    specified as 17m.wind.max.
 
-3.2 Release 2022/11/22
-----------------------
+## 3.2 Release 2022/11/22
 1. Lots of code refactoring.
 2. Functionally equivalent to v3.1.
 
-3.1 Release 2022/11/19
-----------------------
+## 3.1 Release 2022/11/19
 1. Add support for alltime tag.
-   Note: The sample skin is updated to use alltime tags.
-      For existing installations that actually use the
-      sample skin, you need to add the following fields
-      to the fields clause in the LoopData section in
-      weewx.conf:
-          'alltime.outTemp.max.formatted'
-          'alltime.outTemp.min.formatted'
-          'alltime.rain.sum.formatted'
-          'alltime.wind.rms.formatted'
-          'alltime.windGust.max.formatted'
 
-3.0.1 Release 2022/10/30
-------------------------
+   Note: The sample skin is updated to use alltime tags.
+   For existing installations that actually use the sample skin, you
+   need to add the following fields to the fields clause in the
+   LoopData section in weewx.conf:
+
+   ```
+   'alltime.outTemp.max.formatted'
+   'alltime.outTemp.min.formatted'
+   'alltime.rain.sum.formatted'
+   'alltime.wind.rms.formatted'
+   'alltime.windGust.max.formatted'
+   ```
+
+## 3.0.1 Release 2022/10/30
 1. Much more efficient rolling time periods (2m, 10m, 24h, trend).
 2. Add support 24h tag.
+
    Note: The sample skin is updated to use 24h tags.
-      For existing installations that actually use the
-      sample skin, you need to add the following fields
-      to the fields clause in the LoopData section in
-      weewx.conf:
-          '24h.outTemp.max.formatted'
-          '24h.outTemp.min.formatted'
-          '24h.rain.sum.formatted'
-          '24h.wind.rms.formatted'
-          '24h.windGust.max.formatted'
+   For existing installations that actually use the sample skin, you
+   need to add the following fields to the fields clause in the
+   LoopData section in weewx.conf:
+
+   ```
+   '24h.outTemp.max.formatted'
+   '24h.outTemp.min.formatted'
+   '24h.rain.sum.formatted'
+   '24h.wind.rms.formatted'
+   '24h.windGust.max.formatted'
+   ```
 3. The python3-sortedcontainers package is now required.  To install
    it on debian, type:
-   sudo apt install python3-sortedcontainers
 
-2.11 Release 2022/09/25
------------------------
+   ```
+   sudo apt install python3-sortedcontainers
+   ```
+
+## 2.11 Release 2022/09/25
 1. Specify what drivers this extension has been tested with.
 2. Continue if windrun and/or beaufort can't be calculated.
 
-2.10 Release 2022/02/18
------------------------
+## 2.10 Release 2022/02/18
 1. Bugfix.  Use loop frequency as the weight when adding to the accumulators.
 
 
-2.9 Release 13 February 2022
-----------------------------
+## 2.9 Release 13 February 2022
 1. Fix to work with WeeWX 4.6
 
-2.8 Release ?? ??? 2020
------------------------
+## 2.8 Release ?? ??? 2020
 1. Add support hour tag.
+
    Note: The sample skin is updated to use the hour tags.
-      For existing installations that actually use the
-      sample skin, you need to add the following fields
-      to the fields clause in the LoopData section in
-      weewx.conf:
-          'hour.outTemp.max.formatted'
-          'hour.outTemp.min.formatted'
-          'hour.rain.sum.formatted'
-          'hour.wind.rms.formatted'
-          'hour.windGust.max.formatted'
+   For existing installations that actually use the sample skin, you
+   need to add the following fields to the fields clause in the
+   LoopData section in weewx.conf:
+
+   ```
+   'hour.outTemp.max.formatted'
+   'hour.outTemp.min.formatted'
+   'hour.rain.sum.formatted'
+   'hour.wind.rms.formatted'
+   'hour.windGust.max.formatted'
+   ```
 2. Add support for 2m tag.
+
    Note: The sample skin is updated to use the hour tags.
-      For existing installations that actually use the
-      sample skin, you need to add the following fields
-      to the fields clause in the LoopData section in
-      weewx.conf:
-          '2m.outTemp.max.formatted'
-          '2m.outTemp.min.formatted'
-          '2m.rain.sum.formatted'
-          '2m.wind.rms.formatted'
-          '2m.windGust.max.formatted'
+   For existing installations that actually use the sample skin, you
+   need to add the following fields to the fields clause in the
+   LoopData section in weewx.conf:
+
+   ```
+   '2m.outTemp.max.formatted'
+   '2m.outTemp.min.formatted'
+   '2m.rain.sum.formatted'
+   '2m.wind.rms.formatted'
+   '2m.windGust.max.formatted'
+   ```
 3. In addition to the already supported trend.barometer.desc,
    trend.barometer.code is also supported.  The code can
    be an integer between -4 and 4, where the value
    correspsonds to:
+
+   ```
    -4 Falling Rapidly
    -3 Falling Quickly
    -2 Falling
@@ -1151,13 +1170,16 @@ Thanks https://github.com/hoetzgit for reporting this.
     2 Rising
     3 Rising Quickly
     4 Rising Rapidly
+   ```
 
 4. windrun and beaufort (the deprecated syntax for beaufort) now work correctly.
 
 5. Experimental feature -- It is likely these observations will be moved to a
-                           separate plugin (and available to loopdata).
-   current, 10m, trend, hour and day periods now support windrun_<dir>.  That is,
+   separate plugin (and available to loopdata).
+   current, 10m, trend, hour and day periods now support `windrun_<dir>`.  That is,
    the following (which can be used to make a windrose):
+
+   ```
    windrun_N
    windrun_NNE
    windrun_NE
@@ -1174,33 +1196,29 @@ Thanks https://github.com/hoetzgit for reporting this.
    windrun_WNW
    windrun_NW
    windrun_NNW
+   ```
 
-2.7.2 Release 16 Nov 2020
--------------------------
+## 2.7.2 Release 16 Nov 2020
 1. Fix for customer reported problem.  Exception in
    code when no rainyear fields are included in
    fields list.
 
-2.7.1 Release 28 Aug 2020
--------------------------
+## 2.7.1 Release 28 Aug 2020
 1. Ignore aggreagate fields base on xtypes as there are
    no day accumulators from which to reconstruct inital
    values at start up for these fields.
 
-2.7 Release 11 Aug 2020
------------------------
+## 2.7 Release 11 Aug 2020
 1. Bug fix for accumulators at startup from daily summaries.
    The daily summary was not being selected in each accumulator
    range.
 2. Include tests where week_start is 0 (rather than default 6).
 
-2.6 Release 9 Aug 2020
-----------------------
+## 2.6 Release 9 Aug 2020
 1. Include sample report LoopDataReport to demonstrate
    capabilities of the loopdata extension.
 
-2.5 Release 2 Aug 2020
-----------------------
+## 2.5 Release 2 Aug 2020
 1. Add support for week, month, year and rainyear.
 2. Add LoopData>LoopFrequency>seconds setting in weewx.conf.
    This should be set to the number of seconds between
@@ -1210,13 +1228,11 @@ Thanks https://github.com/hoetzgit for reporting this.
    for the Davis Vantage Pro 2).
 3. Limit time_delta used for trends to 259200 (3 days).
 
-2.5.b2
-------
+## 2.5.b2
 Fix for LoopFrequency being ignored (was always using default).
 Delay accumulator creation until the station time is known (first loop packet).
 
-2.5.b1 Release
---------------
+## 2.5.b1 Release
 1. Add support for week, month, year and rainyear.
 2. Add LoopData>LoopFrequency>seconds setting in weewx.conf.
    This should be set to the number of seconds between
@@ -1225,27 +1241,23 @@ Delay accumulator creation until the station time is known (first loop packet).
    to 2.5 (2.5 seconds is the frequency of loop packets
    for the Davis Vantage Pro 2).
 
-2.0.1 Release
--------------
+## 2.0.1 Release
 1. Handle case where driver emits packets in a unit_system
    other than the database unit_system.
 
-2.0 Release
------------
+## 2.0 Release
 1. The release is identical to rc0; except for a small
    type annotation change and additional tests.
 2. Updated documentation (README).
 
-2.0.rc0 07/22/2020
-------------------
+## 2.0.rc0 07/22/2020
 Release Candidate 0
 1. Fix regression in day accumulator introduced in 2.0.b14.
 2. Add test to cover above (added a previous day packet
    so that tests cover a day boundary.
 3. Only accumulate specified day fields in the day accumulator.
 
-2.0.b15 07/21/2020
-------------------
+## 2.0.b15 07/21/2020
 1. Breaking change.  If loop_data_dir is a relative path, it
    is now relative to the target_report directory.  After
    installing, check loop_data_dir before you restart WeeWX.
@@ -1254,127 +1266,103 @@ Release Candidate 0
    now work out of the box for all flavors of WeeWX 4/Py3.7+
    installs.
 
-2.0.b14 07/21/2020
-------------------
+## 2.0.b14 07/21/2020
 [No user facing changes (but please report issues).]
 1. Internal refactoring so that tests use identical code
    path on each loop packet as production uses.
 
-2.0.b13 07/21/2020
-------------------
+## 2.0.b13 07/21/2020
 [No user facing changes (but please report issues).]
 1. Clean up dead code.
 2. Simplify creation of target report converter.
 3. Elminate unused archivet period accumulator.
 
-2.0.b12 07/20/2020
-------------------
+## 2.0.b12 07/20/2020
 1. Test and fixes for trend.barometer.desc
 
-2.0.b11 07/20/2020
-------------------
+## 2.0.b11 07/20/2020
 1. Ability to localize trend.barometer.desc text in weewx.conf.
 
-2.0.b10 07/19/2020
-------------------
+## 2.0.b10 07/19/2020
 1. Substantial refactoring.  More tests.
 
-2.0.b9 07/19/2020
---------------
+## 2.0.b9 07/19/2020
 1. 10m. is now a full fledged time period (rolling 10 minutes)
    and supports all that day. supports.  For example, 10m.wind.gustdir
 
-2.0.b8 07/18/2020
---------------
+## 2.0.b8 07/18/2020
 1. Save values for trends for only trend fields specified in fields clause.
 2. Only parse fields one time.
 
-2.0.b7 07/18/2020
---------------
+## 2.0.b7 07/18/2020
 1. trend no longer restricted to barometer.
 
-2.0.b6 07/13/2020
---------------
+## 2.0.b6 07/13/2020
 1. Install no longer adds the rename line to weewx.conf.  rename
    is no longer supported.  Note: it will not remove rename on
    existing installations, but rename will be ignored.
 1. Updated README.
 
-2.0.b5 07/12/2020
---------------
+## 2.0.b5 07/12/2020
 1. Fix for case where barometer is reported intermittently.
 2. LoopData now tested in simulator for both intermittent case and
    when batometer/pressure never reported.
 
-2.0.b4 07/12/2020
---------------
+## 2.0.b4 07/12/2020
 1. If not observation available, the key/value pair
    will not be present in the json file.
 
-2.0.b3 07/12/2020
---------------
+## 2.0.b3 07/12/2020
 1. Handle stations with no barometer.
 
-2.0.b2 07/12/2020
---------------
+## 2.0.b2 07/12/2020
 1. Watch for None when formatting.
 
 2. pyflakes and mypy cleanup.
 
-2.0.b1 07/11/2020
---------------
+## 2.0.b1 07/11/2020
 1. Rewritten to use cheetah like identifiers for fields (e.g., $day.rain.sum).
 
 2. Old names are NOT supported.  For existing installations, fields need to be
    renamed in weewx.conf (LoopData fields), your Cheetah templates/JavasScript.
 
-1.3.19 07/09/2020
---------------
+## 1.3.19 07/09/2020
 1. Catch and log setup errors.  Allow WeeWX to continue with LoopData.
 
-1.3.18 07/09/2020
---------------
+## 1.3.18 07/09/2020
 1. Handle null barometer values in database.
 
-1.3.17 07/08/2020
---------------
+## 1.3.17 07/08/2020
 1. Bug fix for wind (not FMT_) version of day stats.
    The values were not being formatted to the proper
    number of decimal places.
 
 2. Add missing highs and lows for vector stats (aka, wind).
 
-1.3.16 07/07/2020
---------------
+## 1.3.16 07/07/2020
 1. Add missing highs and lows for vector stats (aka, wind).
 2. Add formatting for all times (e.g., FMT_dateTime, FMT_T_HI_wind)
 
-1.3.15 07/06/2020
---------------
+## 1.3.15 07/06/2020
 Fix OutOfSpan error caused by creating accumulator with current time
 rather than packet time.
 
-1.3.14 07/06/2020
---------------
+## 1.3.14 07/06/2020
 1. Add support for VectorStats:  Wind Avg, Wind RMS, Wind Vector Avg, Wind Vector Dir.
 2. More tests written.
 
 
-1.3.13 07/05/2020
---------------
+## 1.3.13 07/05/2020
 Fall back to using copy.deepcopy for earlier WeeWX 4 versions.
 
-1.3.12 07/05/2020
---------------
+## 1.3.12 07/05/2020
 1. Properly import weeutil.config
 
-1.3.11 07/05/2020
---------------
+## 1.3.11 07/05/2020
 1. pyflakes found some issues including lots of unused imports.
 2. Update one test.
 
-1.3.10 07/05/2020
---------------
+## 1.3.10 07/05/2020
 1. Redo how 10m max gust is handled when windGust not in packet.
    Simply substitue windSpeed for windGust.
 2. Test overriding km_per_hour label in weewx.conf Defaults>Units.
@@ -1382,8 +1370,7 @@ Fall back to using copy.deepcopy for earlier WeeWX 4 versions.
 4. Add test of IP100 packets.
 5. Add test of Simulator packets.
 
-1.3.9 07/05/2020
-----------------
+## 1.3.9 07/05/2020
 1. Properly construct dictionary of target_report so formatting
    and conversion actually does what it should.
 2. Fix a problem reported by a user running pyflakes.  USUnit
@@ -1392,19 +1379,16 @@ Fall back to using copy.deepcopy for earlier WeeWX 4 versions.
    packet.  Now, if not present, max windSpeed in the archive period
    accumulator stats is used to compute 10m gust.
 
-1.3.8 07/05/2020
-----------------
+## 1.3.8 07/05/2020
 Require at least Python 3.7.
 Handle None for windSpeed and and windDir in the database (as some drivers write None rather than omitting).
 More tests.
 
 
-1.3.7 07/04/2020
-----------------
+## 1.3.7 07/04/2020
 Refactor loopdata.py to facilitate testing.
 
-1.3.6 07/04/2020
-----------------
+## 1.3.6 07/04/2020
 Add tests for conversions and formatting:
 weewx.METRIC   -> metric reports
 weewx.METRIC   -> us     reports
@@ -1413,56 +1397,45 @@ weewx.US       -> us     reports
 weewx.METRICWX -> metric reports
 weewx.METRICWX -> us     reports
 
-1.3.5 07/03/2020
-----------------
+## 1.3.5 07/03/2020
 Converting to report units was being done correctly for observations.
 This release fixes conversions for highs, lows, sums, averages and weighed averages.
 
-1.3.4 07/02/2020
-----------------
+## 1.3.4 07/02/2020
 Installer uses FMT_SUM_rain rather than FMT_day_rain_total in LoopData section of weewx.conf.
 day_rain_total is not emitted by many drivers and was a source of confusion.
 
-1.3.3 07/02/2020
-----------------
+## 1.3.3 07/02/2020
 Refrain from trying to format the sum of unix_epoch observations.
 
-1.3.2 07/02/2020
-----------------
+## 1.3.2 07/02/2020
 Catch FMT_SUM_ formatting exceptions and print error to log with obstype,
 unit_type and unit_group.
 
-1.3.1 06/30/2020
-----------------
+## 1.3.1 06/30/2020
 Fixed issue when specifying port in rsync section.  RsyncUpload was expecting a string
 for port, loopdata was passing an int.
 
-1.3 06/29/2020
---------------
+## 1.3 06/29/2020
 Introduced AVG_/FMT_AVG_ and WAVG_/FMT_WAVG_ prefixes for today's average
 and weighted average of an observation, respectively.
 
-1.2.2 06/28/2020
-----------------
+## 1.2.2 06/28/2020
 Introduced SUM_ and FMT_SUM_ prefixes for today's totals of observations.
 This is most useful for rain, where SUM_rain (or FMT_SUM_rain) will yield
 today's cumultive rainfall.
 
-1.2.1 06/27/2020
-----------------
+## 1.2.1 06/27/2020
 Inexplicably, just a version bump.  No other changes.
 
-1.2 06/27/2020
---------------
+## 1.2 06/27/2020
 Fixed issue where loop thread was created multiple times.
 
 
-1.1 06/27/2020
---------------
+## 1.1 06/27/2020
 Fixes to work with Metric/Mixed database and to correctly target
 non-US reports.
 
 
-1.0 01/19/2020
---------------
+## 1.0 01/19/2020
 Initial release of loopdata.

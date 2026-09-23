@@ -8580,15 +8580,15 @@ class ProcessPacketTests(unittest.TestCase):
     def test_skin_theme_tokens_are_complete(self):
         """The palette is css, and both themes must cover all of it.
 
-        Since 7.3 realtime_updater.inc READS the custom properties
-        instead of repeating them, so the old drift this replaces --
-        two lists of colors falling out of step -- cannot happen.  The
-        drift that CAN happen now is quieter: add a token to :root and
-        forget it in the light theme and the light page silently keeps
-        the dark value, which looks like a design choice rather than a
-        bug.  So every token must be themed, the two places that select
-        the light values must select the SAME set, and the javascript
-        must not read a token nobody declares.
+        Since 7.5 the instruments are SVG dressed by css classes, so the
+        javascript names no color at all, and the old drift -- two lists
+        of colors falling out of step -- cannot happen.  The drift that
+        CAN happen is quieter: add a token to :root and forget it in the
+        light theme and the light page silently keeps the dark value,
+        which looks like a design choice rather than a bug.  So every
+        token must be themed, the two places that select the light values
+        must select the SAME set, and nothing may use a token nobody
+        declares.
         """
         with open(os.path.join(self.I18N_SKIN_DIR, 'index.html.tmpl'),
                   encoding='utf-8') as f:
@@ -8637,63 +8637,60 @@ class ProcessPacketTests(unittest.TestCase):
                              '--%s takes its light value from --light-%s'
                              % (token, value))
 
-        # Nothing the javascript reads may be undeclared, and the reads
-        # are the only place the canvas learns a color.
-        read = set(re.findall(r"v\('--([\w-]+)'\)", include))
-        self.assertTrue(read, 'realtime_updater.inc reads no css tokens')
-        self.assertEqual(sorted(read - palette), [],
-                         'the canvas reads a token :root does not declare')
+        # Nothing may USE a token nobody declares: an undeclared var() is
+        # invalid at computed time, and the stroke or fill falls back to
+        # its initial value -- black -- which looks like a palette choice
+        # rather than a bug.  The css uses them by name; the windrose's
+        # band fills are built in the javascript as var(--rose<n>), n
+        # from 1 to 6.
+        used = set(re.findall(r'var\(--([\w-]+)\)', template))
+        anywhere = set(re.findall(r'--([\w-]+)\s*:', template))
+        self.assertTrue(used & palette, 'the css uses no palette tokens')
+        self.assertEqual(sorted(used - anywhere), [],
+                         'the css uses a custom property nothing declares')
+        self.assertIn("'var(--rose'", include,
+                      'the windrose no longer builds its fills from --rose<n>')
+        self.assertEqual({'rose%d' % n for n in range(1, 7)} - palette, set(),
+                         'the six --rose stops are not all declared')
 
-        # No color literal may survive anywhere in the include, with one
-        # declared exception.  The needle's glow was a third copy of the
-        # amber and would have stayed the dark theme's amber on a light
-        # page; an earlier version of this check only looked at lines
-        # beginning 'ctx' or 'C.', which a one-line refactor into a
-        # variable -- var glow = 'rgba(...)'; ctx.shadowColor = glow --
-        # would have walked straight past.
-        #
-        # RAMP is the exception and is deliberate: the windrose shades
-        # are drawn on the dial face, which is dark in both themes, so
-        # they do not vary and are not custom properties.  It is cut out
-        # by name rather than by a pattern, so a SECOND array of colors
-        # would still fail.
-        body = re.sub(r'var RAMP = \[[^\]]*\];', '', include)
-        strays = [line.strip() for line in body.split('\n')
+        # No color literal may survive anywhere in the include.  The
+        # drawing names classes and the stylesheet dresses them; a color
+        # written in the javascript cannot follow the theme.
+        strays = [line.strip() for line in include.split('\n')
                   if re.search(r"'#[0-9a-fA-F]{3,8}'", line)
-                  or re.search(r"'rgba?\([0-9]", line)]
-        # The digits matter: 'rgba(' on its own is the CONSTRUCTION of the
-        # glow from the themed amber, which is the fix, not the fault.
+                  or re.search(r"rgba?\([0-9]", line)]
         self.assertEqual(strays, [],
                          'a color literal is left in the drawing code; it '
                          'cannot follow the theme')
 
-        # Every C key the drawing code reads must be assigned by
-        # refreshPalette.  An unassigned one is undefined, and assigning
-        # undefined to fillStyle is SILENTLY IGNORED -- the shape draws in
-        # whatever color was set last, which looks like a palette choice
-        # rather than a bug.
-        assigned = set(re.findall(r'\bC\.(\w+)\s*=', include))
-        used = set(re.findall(r'\bC\.(\w+)\b', include)) - assigned
-        self.assertEqual(sorted(used - assigned), [],
-                         'the drawing code reads a C key refreshPalette '
-                         'never assigns; it would draw as undefined')
-        self.assertTrue(assigned, 'refreshPalette assigns nothing')
-
     # Which surface each color is used ON, and the floor it must clear
     # there.  4.5 for text, 3.0 for a graphic a reading depends on.
     #
-    # This table exists because of a real defect: --amber is tuned against
-    # the dial FACE, and .live -- the LIVE / OFFLINE / BAD DATA / CLICK-ME
-    # indicator -- is the one page text painted with it, on the GROUND.
-    # In the light theme that measured 1.67:1 and the indicator vanished,
-    # CLICK-ME with it, which is the control that restarts an expired
-    # page.  The token pairs are what a theme actually has to get right.
+    # This table exists because of a real defect: in 7.3 the LIVE /
+    # OFFLINE / BAD DATA / CLICK-ME indicator was painted with a color
+    # tuned against the dial FACE, on the GROUND.  In the light theme that
+    # measured 1.67:1 and the indicator vanished, CLICK-ME with it, which
+    # is the control that restarts an expired page.  The token pairs are
+    # what a theme actually has to get right, each on the surface it is
+    # actually drawn on.
     CONTRAST_FLOORS = (
-        ('ink', 'ground', 4.5), ('muted', 'ground', 4.5),
-        ('heading', 'ground', 4.5), ('live', 'ground', 4.5),
-        ('card-ink', 'card', 4.5), ('card-muted', 'card', 4.5),
-        ('track', 'face', 3.0), ('steel', 'track', 3.0),
-        ('amber', 'face', 3.0),
+        # On the ground: the title, the timestamp, the status indicator.
+        ('ink', 'ground', 4.5), ('muted', 'ground', 4.5), ('live', 'ground', 4.5),
+        # On the card: the heading and every line under a dial.
+        ('heading', 'card', 4.5), ('ink', 'card', 4.5), ('ink-2', 'card', 4.5),
+        ('muted', 'card', 4.5), ('hi', 'card', 4.5), ('lo', 'card', 4.5),
+        # On the face: the numerals and letters, then the marks.
+        ('ink-2', 'face', 4.5), ('letter', 'face', 4.5), ('major', 'face', 4.5),
+        ('muted', 'face', 4.5),
+        ('needle', 'face', 3.0), ('range', 'face', 3.0), ('tick', 'face', 3.0),
+        ('gust', 'face', 3.0),
+        # The face stands barely off its card, so the rim draws the disc;
+        # the windrose sits on the card, where its calmest band and the
+        # legend's swatch edges must show.
+        ('rim', 'card', 3.0), ('rose1', 'card', 3.0), ('swatch-edge', 'card', 3.0),
+        # The windrose's rings: 1.26:1 in dark and 1.37:1 in light when they
+        # were a hairline, and all but invisible.
+        ('ring', 'card', 3.0),
     )
 
     @staticmethod
@@ -8735,10 +8732,6 @@ class ProcessPacketTests(unittest.TestCase):
             'light': {k[len('light-'):]: v for k, v in values.items()
                       if k.startswith('light-')},
         }
-        # The dark theme's card is transparent, so its canvas text sits on
-        # the face.  Say so rather than skipping the pair.
-        themes['dark']['card'] = themes['dark']['face']
-
         bad = []
         for name, palette in sorted(themes.items()):
             for fore, back, floor in self.CONTRAST_FLOORS:
@@ -9047,7 +9040,7 @@ class ProcessPacketTests(unittest.TestCase):
         site = self.MANUAL_URL.rstrip('/')
         sources = [('README.md', self.repo_text('README.md')),
                    ('install.py', self.repo_text('install.py')),
-                   ('changes.txt', self.repo_text('changes.txt'))]
+                   ('changes.md', self.repo_text('changes.md'))]
         sources += [(n, self.doc_text(n)) for n in self.doc_pages()]
         checked = 0
         problems: List[str] = []
@@ -9606,14 +9599,14 @@ class ProcessPacketTests(unittest.TestCase):
             os.path.join(self.I18N_SKIN_DIR, 'skin.conf'),
             encoding='utf-8', file_error=True)
         self.assertEqual(skin['Extras']['version'], version)
-        # changes.txt must carry a heading for the shipping version, and it
+        # changes.md must carry a heading for the shipping version, and it
         # must be the FIRST one (entries are newest-first under the file's
-        # own title block).
-        headings = re.findall(r'^(\d+\.\d+(?:\.\d+)?)\s',
-                              self.repo_text('changes.txt'), re.M)
+        # own title).
+        headings = re.findall(r'^## (\d+\.\d+(?:\.\d+)?)\s',
+                              self.repo_text('changes.md'), re.M)
         assert len(headings) >= 5, headings   # landmark: the file was parsed
         self.assertEqual(headings[0], version,
-                         'changes.txt leads with %s, not %s'
+                         'changes.md leads with %s, not %s'
                          % (headings[0], version))
 
 
@@ -9726,7 +9719,7 @@ class ProcessPacketTests(unittest.TestCase):
         never reached, so editing the assignment down to the fallback turns
         this green while silently changing what new stations get.  Moving
         the fallback is what preserves behavior; moving the assignment is a
-        deliberate change of default and belongs in changes.txt.  Existing
+        deliberate change of default and belongs in changes.md.  Existing
         stations are unaffected either way -- their weewx.conf already
         carries the value the installer wrote, and an upgrade never
         rewrites it.
@@ -11146,7 +11139,7 @@ class ProcessPacketTests(unittest.TestCase):
         survive."""
         with tempfile.TemporaryDirectory() as tmp:
             config_dict = self._init_fixture(tmp)
-            fields = ['current.outTemp', 'day.windrose.calm']
+            fields = ['current.outTemp.formatted', 'day.windrose.calm']
             config_dict['LoopData']['Include'] = {'fields': fields}
             config_dict['LoopData']['Formatting'] = {'target_report': 'LoopDataReport'}
             # The value moved to [[Defaults]]; nothing under [LoopData].
@@ -11198,7 +11191,7 @@ class ProcessPacketTests(unittest.TestCase):
             config_dict['StdReport']['Odd'] = {'skin': 'Odd', 'HTML_ROOT': 'public_html/odd',
                                                'Units': {'Trend': {'time_delta': '3600'}}}
             config_dict['LoopData']['Include'] = {'fields': [
-                'current.outTemp',        # LoopDataReport's (the target)
+                'current.outTemp.formatted',        # LoopDataReport's (the target)
                 'hour.outTemp.max.raw',   # Other's
                 'week.rain.sum',          # Other's
                 'trend.outTemp.raw',      # Odd's -- different trend window
@@ -11208,7 +11201,7 @@ class ProcessPacketTests(unittest.TestCase):
                 service = user.loopdata.LoopData(self.FakeEngine(config_dict), config_dict)
             cfg = service.cfg
             self.assertEqual(cfg.legacy_shared, {
-                'current.outTemp': 'LoopDataReport',
+                'current.outTemp.formatted': 'LoopDataReport',
                 'hour.outTemp.max.raw': 'Other',
                 'week.rain.sum': 'Other'})
             # Odd renders trends over a different window, so its field stays
@@ -11302,13 +11295,13 @@ class ProcessPacketTests(unittest.TestCase):
             config_dict['LoopData']['Formatting'] = {'target_report': 'LoopDataReport'}
             config_dict['LoopData']['windrose_bands'] = ['1', '4', '8']
             config_dict['LoopData']['Include'] = {'fields': [
-                'current.outTemp',          # LoopDataReport declares it
-                'day.rain.sum',             # ditto
-                'almanac.moon.rise',        # cruft: nobody declares it
-                'current.extraTemp2']}      # a script's, also undeclared here
+                'current.outTemp.formatted',  # LoopDataReport declares it
+                'day.rain.sum.formatted',     # ditto
+                'almanac.moon.rise',          # cruft: nobody declares it
+                'current.extraTemp2']}        # a script's, also undeclared here
             report = L.migration_report(config_dict)
-            self.assertEqual(report['owner'], {'current.outTemp': 'LoopDataReport',
-                                               'day.rain.sum': 'LoopDataReport'})
+            self.assertEqual(report['owner'], {'current.outTemp.formatted': 'LoopDataReport',
+                                               'day.rain.sum.formatted': 'LoopDataReport'})
             self.assertEqual(report['unclaimed'], ['almanac.moon.rise', 'current.extraTemp2'])
             self.assertEqual(report['differs'], set())      # the target renders identically
             # Nothing may be removed while anything is unclaimed.
@@ -11318,7 +11311,7 @@ class ProcessPacketTests(unittest.TestCase):
             self.assertEqual(L.main.__module__, 'user.loopdata')
 
             # Account for the two, and it applies.
-            config_dict['LoopData']['Include']['fields'] = ['current.outTemp', 'day.rain.sum']
+            config_dict['LoopData']['Include']['fields'] = ['current.outTemp.formatted', 'day.rain.sum.formatted']
             report = L.migration_report(config_dict)
             self.assertEqual(report['unclaimed'], [])
             changes = L.apply_migration(config_dict, report)
@@ -12239,13 +12232,13 @@ class ProcessPacketTests(unittest.TestCase):
             # Two of the three legacy fields are declared by LoopDataReport,
             # the target_report: they are rendered once, in its entry, and
             # copied flat; only the third stays in the legacy context.
-            config_dict['LoopData']['Include'] = {'fields': ['current.outTemp', 'day.rain.sum', 'day.outTemp.min']}
+            config_dict['LoopData']['Include'] = {'fields': ['current.outTemp.formatted', 'day.rain.sum.formatted', 'day.outTemp.min']}
             config_dict['LoopData']['Formatting'] = {'target_report': 'LoopDataReport'}
             with self.assertLogs('user.loopdata', level='INFO') as logs:
                 service = user.loopdata.LoopData(self.FakeEngine(config_dict), config_dict)
             cfg = service.cfg
             self.assertEqual(cfg.legacy_shared,
-                             {'current.outTemp': 'LoopDataReport', 'day.rain.sum': 'LoopDataReport'})
+                             {'current.outTemp.formatted': 'LoopDataReport', 'day.rain.sum.formatted': 'LoopDataReport'})
             self.assertEqual(cfg.legacy.specified_fields, ['day.outTemp.min'])
             self.assertTrue(any('2 of the 3 [[Include]] fields are declared by reports that render '
                                 'them identically (LoopDataReport: 2)' in m
@@ -12255,8 +12248,8 @@ class ProcessPacketTests(unittest.TestCase):
             out = user.loopdata.LoopProcessor.generate_output(
                 {'dateTime': pkt_time, 'usUnits': 1, 'outTemp': 77.0, 'rain': 0.0},
                 cfg, accums, user.loopdata.LoopProcessor(cfg).renderers)
-            self.assertEqual(out['current.outTemp'], out['LoopDataReport']['current.outTemp'])
-            self.assertEqual(out['day.rain.sum'], out['LoopDataReport']['day.rain.sum'])
+            self.assertEqual(out['current.outTemp.formatted'], out['LoopDataReport']['current.outTemp.formatted'])
+            self.assertEqual(out['day.rain.sum.formatted'], out['LoopDataReport']['day.rain.sum.formatted'])
             self.assertIn('day.outTemp.min', out)
             self.assertNotIn('day.outTemp.min', out['LoopDataReport'])
             # An exact set, deliberately: a new binding is new work on the
@@ -12385,7 +12378,7 @@ class ProcessPacketTests(unittest.TestCase):
     # invisible in review, because every one of these spellings is
     # correct somewhere -- just not here.  This is a sweep of every
     # tracked text file, so it covers comments, docstrings, templates,
-    # changes.txt, the manual and the shipped skin, which is where all
+    # changes.md, the manual and the shipped skin, which is where all
     # twenty-two of the words fixed on 2026-09-08 were living.
     #
     # THIS BLOCK IS SHARED VERBATIM with weewx-loopdata, weewx-celestial,

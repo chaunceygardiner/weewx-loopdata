@@ -66,8 +66,9 @@
   ## loopdata target), and the badge/readout strings from [Texts] via
   ## $gettext (each key spelled out literally so the tests can tie the
   ## include to lang/en.conf).  Both ride through json.dumps, which
-  ## \u-escapes every non-ASCII character -- html_entities encoding can
-  ## never touch them, and canvas text takes no entities anyway.
+  ## \u-escapes every non-ASCII character, so html_entities encoding can
+  ## never touch them; the drawing code escapes them again on the way into
+  ## the markup it writes.
   #import json
   #set $ords = $almanac.formatter.ordinate_names
   CARDINALS = $json.dumps([str($ords[0]), str($ords[4]), str($ords[8]), str($ords[12])]);
@@ -79,14 +80,38 @@
   #silent $t.update({'OFFLINE': $gettext('OFFLINE')})
   #silent $t.update({'CLICK-ME': $gettext('CLICK-ME')})
   #silent $t.update({'calm': $gettext('calm')})
-  #silent $t.update({'gust {gust}': $gettext('gust {gust}')})
-  #silent $t.update({'gust {gust} @ {dir}': $gettext('gust {gust} @ {dir}')})
+  #silent $t.update({'from {dir}': $gettext('from {dir}')})
+  #silent $t.update({'gusting {gust}': $gettext('gusting {gust}')})
+  #silent $t.update({'gusting {gust} from {dir}': $gettext('gusting {gust} from {dir}')})
+  #silent $t.update({'prevailing {dir}': $gettext('prevailing {dir}')})
+  #silent $t.update({'peak {peak}': $gettext('peak {peak}')})
   #silent $t.update({'today': $gettext('today')})
-  #silent $t.update({'today {min} to {max}': $gettext('today {min} to {max}')})
-  #silent $t.update({'max today {max}': $gettext('max today {max}')})
+  #silent $t.update({'Dry so far today': $gettext('Dry so far today')})
   #silent $t.update({'rate {rate}': $gettext('rate {rate}')})
+  #silent $t.update({'Same as the air': $gettext('Same as the air')})
+  #silent $t.update({'{n}° warmer than the air': $gettext('{n}° warmer than the air')})
+  #silent $t.update({'{n}° cooler than the air': $gettext('{n}° cooler than the air')})
+  #silent $t.update({'Low': $gettext('Low')})
+  #silent $t.update({'Moderate': $gettext('Moderate')})
+  #silent $t.update({'High': $gettext('High')})
+  #silent $t.update({'Very High': $gettext('Very High')})
+  #silent $t.update({'Extreme': $gettext('Extreme')})
+  #silent $t.update({'Good': $gettext('Good')})
+  #silent $t.update({'Unhealthy for Sensitive Groups': $gettext('Unhealthy for Sensitive Groups')})
+  #silent $t.update({'Unhealthy': $gettext('Unhealthy')})
+  #silent $t.update({'Very Unhealthy': $gettext('Very Unhealthy')})
+  #silent $t.update({'Hazardous': $gettext('Hazardous')})
   #silent $t.update({'pm2.5 {pm25}': $gettext('pm2.5 {pm25}')})
   T = $json.dumps($t);
+  ## The report's decimal point, for the numerals printed on the dials:
+  ## the readings come from .formatted fields, which loopdata renders in
+  ## the report's locale, and a dial reading "29.5" under a "29,9" would
+  ## disagree with itself.  WeeWX generates a report with the report's
+  ## locale set, so the running locale IS the report's here -- and a lang
+  ## that does not resolve falls back the same way loopdata's own
+  ## rendering does.
+  #import locale
+  DECIMAL_POINT = $json.dumps($locale.localeconv()['decimal_point']);
   // Composed translations: look the English key up in T (falling back to
   // the key, so a missing entry renders English) and fill the {named}
   // placeholders.  Javascript key literals must spell non-ASCII with \u
@@ -229,97 +254,51 @@
   setInterval(updateCurrent, refresh_rate * 1000);
   addLoadEvent(updateCurrent);
 
-  // ---- The instrument panel: a windrose and five dials, plain canvas. ------
+  // ---- The instrument panel: a windrose, a compass and ten dials. ---------
   // Values are read straight from loop-data.txt: .raw fields drive the
-  // geometry (needles, bands, petals), report-formatted fields supply every
-  // readout, and unit.label fields pick the dial scales, so the panel obeys
-  // the target report's units and formatting like any other loopdata page.
-
-  // The palette, READ from index.html.tmpl's :root custom properties
-  // rather than repeated here.  A canvas cannot read a css variable, but
-  // this can, and that is what makes a theme a css-only concern: the
-  // media query and the [data-theme] pin both land here for free.
-  // Through 7.2 this was a second copy of the values, kept in step by a
-  // test; both the copy and the test are gone.
+  // geometry (needles, arcs, petals), .formatted fields and unit.label
+  // fields supply every reading, and the unit.label fields pick the dial
+  // scales, so the panel obeys this report's units and formatting like any
+  // other loopdata page.
   //
-  // track is the dial's recessed arc; tick is the quieter gray for minor
-  // ticks and the windrose's reference rings; rim is the face disc's own
-  // edge, a whisper because the dials read as instruments without it, not
-  // because anything depends on it (the rose matches the dials by
-  // geometry -- same face radius -- so a louder rim is a free choice).
-  //
-  // Filled in place, never reassigned, because every draw function closes
-  // over this object.  ink and muted come from the CARD pair: canvas text
-  // is drawn inside the disc, on the card, not on the page ground -- in
-  // the light theme those are different colors.
-  var C = {};
-  function refreshPalette() {
-    var s = getComputedStyle(document.documentElement);
-    function v(name) {
-      return s.getPropertyValue(name).trim();
-    }
-    C.face = v('--face');
-    C.track = v('--track');
-    C.tick = v('--tick');
-    C.rim = v('--rim');
-    C.ink = v('--card-ink');
-    C.muted = v('--card-muted');
-    C.amber = v('--amber');
-    C.steel = v('--steel');
-    C.steelDim = v('--steel-dim');
-    // The needle's glow is the amber again, at 55%.  It used to be a
-    // third hardcoded copy of the color, which a themed --amber would
-    // have left behind: the lamp would glow in the other theme's amber.
-    // Derived here so there is exactly one place the amber is written.
-    C.amberGlow = 'rgba(' + rgbOf(C.amber) + ', 0.55)';
-  }
+  // SVG, built as markup and written only when it changed.  NOTHING HERE
+  // NAMES A COLOR: every stroke and fill is a class that index.html.tmpl's
+  // css dresses, so a theme -- the media query or the [data-theme] pin --
+  // reaches the dials through the cascade with no redraw.  Each drawing is
+  // a 200-unit square, scaled by css to its card, so its lines and its
+  // words grow together.
 
-  // '#rrggbb' or '#rgb' to '255, 185, 46'.  A custom property could
-  // hold any css color, but the palette is written in hex and a test
-  // pins that; anything else falls back to the amber's own value so a
-  // hand-edited skin cannot lose the needle.
-  function rgbOf(hex) {
-    var h = String(hex).trim().replace('#', '');
-    if (h.length === 3) {
-      h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
-    }
-    if (!/^[0-9a-fA-F]{6}$/.test(h)) {
-      return '255, 185, 46';
-    }
-    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16),
-            parseInt(h.slice(4, 6), 16)].join(', ');
+  function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
-  var SANS = 'system-ui, -apple-system, sans-serif';
-  // Sequential ramp for the windrose speed bands, dim to bright.  The floor
-  // clears 3:1 against the face: the calmest band is the biggest segment of
-  // most petals, and it used to disappear into the disc.
-  var RAMP = ['#4a739b', '#5d89b2', '#75a3c8', '#90bcdd', '#aed4ef', '#d2ecff'];
-  // Those six are STOPS on a curve, not a fixed set of six colors.  A rose
-  // banded some other way samples the same curve, so the calmest band is
-  // always that floor and the windiest is always the ceiling, however many
-  // bands sit between.  Six bands -- the WRPLOT default, and what the
-  // sample configuration ships -- return the six stops exactly.  Indexing
-  // the list directly wrapped at a seventh band and painted the windiest
-  // band in the calmest band's color, in the rose and its legend alike.
-  function bandColor(i, n) {
-    if (n <= 1 || i <= 0) {
-      return RAMP[0];
+  function num(v) {
+    var n = parseFloat(v);
+    return isNaN(n) ? undefined : n;
+  }
+  function f2(n) { return n.toFixed(2); }
+  // A point at radius r, deg degrees clockwise from north, about (100,100).
+  function pt(r, deg) {
+    var a = deg * Math.PI / 180;
+    return [100 + r * Math.sin(a), 100 - r * Math.cos(a)];
+  }
+  function xy(p) { return f2(p[0]) + ' ' + f2(p[1]); }
+  // An arc from a0 to a1 in either direction.  A sliver too short to see
+  // is widened so a range whose low and high agree still shows.
+  function arcD(r, a0, a1) {
+    var sweep = a1 >= a0 ? 1 : 0;
+    if (Math.abs(a1 - a0) < 0.3) {
+      a1 = a0 + (sweep ? 0.3 : -0.3);
     }
-    if (i >= n - 1) {
-      return RAMP[RAMP.length - 1];
-    }
-    var x = (i / (n - 1)) * (RAMP.length - 1);
-    var lo = Math.floor(x), t = x - lo;
-    if (t === 0) {
-      return RAMP[lo];
-    }
-    var from = RAMP[lo], to = RAMP[lo + 1];
-    var mix = [0, 1, 2].map(function (k) {
-      var a = parseInt(from.substr(1 + 2 * k, 2), 16);
-      var b = parseInt(to.substr(1 + 2 * k, 2), 16);
-      return Math.round(a + (b - a) * t);
-    });
-    return 'rgb(' + mix.join(', ') + ')';
+    return 'M' + xy(pt(r, a0)) + 'A' + r + ' ' + r + ' 0 ' +
+           (Math.abs(a1 - a0) > 180 ? 1 : 0) + ' ' + sweep + ' ' + xy(pt(r, a1));
+  }
+  function line(cls, a, b) {
+    return '<line class="' + cls + '" x1="' + f2(a[0]) + '" y1="' + f2(a[1]) +
+           '" x2="' + f2(b[0]) + '" y2="' + f2(b[1]) + '"/>';
+  }
+  function svgOpen() {
+    return '<svg viewBox="0 0 200 200" aria-hidden="true" focusable="false">';
   }
 
   // Dial scales by the report's unit, keyed off the unit.label fields.
@@ -342,79 +321,273 @@
     return { min: 960, max: 1050, major: 20, minor: 5, dec: 0 };  // mbar/hPa
   }
   function rainScale(label, value) {
+    // A metric top of 20, not 25: the majors fall at quarters, and a
+    // quarter of 25 put 6.25 beside a numeral written "6".  20 and every
+    // doubling of it divide by four into whole millimeters.
     var metric = label.indexOf('mm') >= 0 || label.indexOf('cm') >= 0;
-    var max = metric ? 25 : 1;
+    var max = metric ? 20 : 1;
     while (value !== undefined && value > max) { max *= 2; }
     return { min: 0, max: max, major: max / 4, minor: max / 20,
              dec: metric ? 0 : 2 };
   }
-  var UV_SCALE = { min: 0, max: 12, major: 2, minor: 1, dec: 0 };
-  var RAD_SCALE = { min: 0, max: 1200, major: 300, minor: 60, dec: 0 };
-  var AQI_SCALE = { min: 0, max: 300, major: 50, minor: 10, dec: 0 };
+  var HUM_SCALE = { min: 0, max: 100, major: 20, minor: 5, dec: 0 };
+  var UV_SCALE = { min: 0, max: 14, major: 2, minor: 1, dec: 0 };
+  var RAD_SCALE = { min: 0, max: 1400, major: 400, minor: 100, dec: 0 };
+  var AQI_SCALE = { min: 0, max: 500, major: 100, minor: 25, dec: 0 };
 
-  // Resolution-independent canvases: CSS decides the displayed size, the
-  // backing store matches it at device resolution, and all drawing happens
-  // in a 240-unit coordinate system so geometry and fonts scale together.
-  var LOGICAL = 240;
-  var ctxs = null;
-  var lastResult = null;
-
-  // A viewer flipping their system theme while the page is open.  The css
-  // half changes instantly; without this the canvases would keep the old
-  // palette until the next poll -- up to refresh_rate seconds of a page
-  // that is half one theme and half the other.  addEventListener on a
-  // MediaQueryList is guarded because Safari only grew it in 14.
-  var COLOR_SCHEME = window.matchMedia
-      ? window.matchMedia('(prefers-color-scheme: light)') : null;
-  if (COLOR_SCHEME !== null && COLOR_SCHEME.addEventListener) {
-    COLOR_SCHEME.addEventListener('change', function () {
-      if (lastResult !== null) {
-        updateGauges(lastResult);
+  // THE CATEGORY RIMS, only where a published scale exists that no unit
+  // setting changes: EPA's UV Index and EPA's Air Quality Index.  Each
+  // band is [upper bound, class].  EPA names the UV index ROUNDED (0-2
+  // Low, 3-5 Moderate, 6-7 High, 8-10 Very High, 11+ Extreme), so a UV
+  // band ends at the half, and a reading is rounded before it is named:
+  // 2.5 is Moderate, 5.5 is High.  The AQI is a whole number already.
+  var UV_RIM = [[2.5, 'uv-1'], [5.5, 'uv-2'], [7.5, 'uv-3'], [10.5, 'uv-4'], [14, 'uv-5']];
+  var AQI_RIM = [[50, 'aqi-1'], [100, 'aqi-2'], [150, 'aqi-3'], [200, 'aqi-4'],
+                 [300, 'aqi-5'], [500, 'aqi-6']];
+  var UV_WORDS = [[2, fmt('Low')], [5, fmt('Moderate')], [7, fmt('High')],
+                  [10, fmt('Very High')], [Infinity, fmt('Extreme')]];
+  var AQI_WORDS = [[50, fmt('Good')], [100, fmt('Moderate')],
+                   [150, fmt('Unhealthy for Sensitive Groups')],
+                   [200, fmt('Unhealthy')], [300, fmt('Very Unhealthy')],
+                   [Infinity, fmt('Hazardous')]];
+  function categoryWord(words, v) {
+    if (v === undefined) {
+      return '';
+    }
+    v = Math.round(v);
+    for (var i = 0; i < words.length; i++) {
+      if (v <= words[i][0]) {
+        return words[i][1];
       }
-    });
+    }
+    return '';
   }
-  function context(id) {
-    var canvas = document.getElementById(id);
-    if (canvas === null || !canvas.getContext) {
-      return null;
-    }
-    var dpr = window.devicePixelRatio || 1;
-    var size = canvas.clientWidth || LOGICAL;
-    canvas.width = size * dpr;
-    canvas.height = size * dpr;
-    var ctx = canvas.getContext('2d');
-    ctx.scale(size * dpr / LOGICAL, size * dpr / LOGICAL);
-    ctx.w = LOGICAL; ctx.h = LOGICAL;
-    ctx.cssSize = size;
-    ctx.canvas_el = canvas;
-    return ctx;
-  }
-  // Re-initialize on resize so the backing stores match the new displayed
-  // size (the next update redraws everything anyway).
-  window.addEventListener('resize', function () { ctxs = null; });
-  function initCanvases() {
-    if (ctxs !== null) {
-      return true;
-    }
-    var rose = context('gauge-rose');
-    if (rose === null) {
-      return false;                    // page not loaded yet
-    }
-    ctxs = {
-      rose: rose,
-      wind: context('gauge-wind'),
-      temp: context('gauge-temp'),
-      dew: context('gauge-dew'),
-      hum: context('gauge-hum'),
-      baro: context('gauge-baro'),
-      rain: context('gauge-rain'),
-      rrate: context('gauge-rrate'),
-      feel: context('gauge-feel'),
-      uv: context('gauge-uv'),
-      rad: context('gauge-rad'),
-      aqi: context('gauge-aqi')
+
+  // THE DIAL.  A 270-degree sweep with the gap at the bottom.  The face
+  // fills the drawing and the numerals sit INSIDE it, so the face is as
+  // large as the card allows; the needle runs out to the ticks and is
+  // drawn over a numeral when it points at one, as a gauge's needle is.
+  // Radii are fractions of the face's: numerals centered at 0.58, and
+  // at the sides (where a long one would otherwise reach back into the
+  // range arc) anchored by the outer end at 0.72; today's range just
+  // inside the ticks, its inner edge at 0.78.  A little further out and
+  // a four-character numeral ("31.0", "1.00") touched the arc at the
+  // corners of the dial.
+  var RF = 92, A0 = -135, A1 = 135;
+  var R_NUM = 53, R_NUM_SIDE = 66, R_ARC = 74, R_RIM = 87;
+  // opts: span [lo, hi] | trend (where the reading was trend-window ago) |
+  // rim (category bands)
+  function dialSvg(scale, value, opts) {
+    var frac = function (v) {
+      return Math.max(0, Math.min(1, (v - scale.min) / (scale.max - scale.min)));
     };
-    return true;
+    var ang = function (v) { return A0 + (A1 - A0) * frac(v); };
+    var out = svgOpen() + '<circle class="face" cx="100" cy="100" r="' + RF + '"/>';
+    if (opts.rim) {
+      var prev = scale.min;
+      opts.rim.forEach(function (band) {
+        out += '<path class="rim ' + band[1] + '" d="' +
+               arcD(R_RIM, ang(prev), ang(band[0])) + '"/>';
+        prev = band[0];
+      });
+    }
+    if (opts.span && opts.span[0] !== undefined && opts.span[1] !== undefined) {
+      out += '<path class="span" d="' + arcD(R_ARC, ang(opts.span[0]), ang(opts.span[1])) + '"/>';
+    }
+    // The barometer's trend: from where the pressure was one trend window
+    // ago to where it is now, with a head at the present end.  Compared as
+    // ANGLES: a pressure off the scale pins both ends to the same stop,
+    // and a trend there has no length to draw.
+    var t0 = opts.trend === undefined ? undefined : ang(opts.trend);
+    var t1 = value === undefined ? undefined : ang(value);
+    if (t0 !== undefined && t1 !== undefined && Math.abs(t1 - t0) > 0.01) {
+      var dir = t1 > t0 ? 1 : -1;
+      var neck = t1 - dir * 4;
+      if ((neck - t0) * dir < 0) {
+        neck = t0;
+      }
+      out += '<path class="trend" d="' + arcD(R_ARC, t0, neck) + '"/>' +
+             '<path class="trend-head" d="M' + xy(pt(R_ARC, t1)) + 'L' +
+             xy(pt(R_ARC - 6, neck)) + 'L' + xy(pt(R_ARC + 6, neck)) + 'Z"/>';
+    }
+    var steps = Math.round((scale.max - scale.min) / scale.minor);
+    for (var k = 0; k <= steps; k++) {
+      var v = scale.min + k * scale.minor;
+      var q = (v - scale.min) / scale.major;
+      var major = Math.abs(q - Math.round(q)) < 1e-6;
+      var a = ang(v);
+      out += line(major ? 'tick major' : 'tick', pt(RF - 2, a), pt(RF - (major ? 13 : 7), a));
+      if (major) {
+        var side = Math.sin(a * Math.PI / 180), anchor = 'middle', lp = pt(R_NUM, a);
+        if (Math.abs(side) > 0.85) {
+          anchor = side > 0 ? 'end' : 'start';
+          lp = pt(R_NUM_SIDE, a);
+        }
+        out += '<text class="num" x="' + f2(lp[0]) + '" y="' + f2(lp[1] + 4.5) +
+               '" text-anchor="' + anchor + '">' +
+               esc(v.toFixed(scale.dec).replace('.', DECIMAL_POINT)) + '</text>';
+      }
+    }
+    if (value !== undefined) {
+      var na = ang(value);
+      out += line('needle', pt(-18, na), pt(RF - 10, na));
+    }
+    return out + '<circle class="hub" cx="100" cy="100" r="6.5"/></svg>';
+  }
+
+  // THE COMPASS: letters inside the ring, the needle's head at the side
+  // the wind comes FROM, the last ten minutes' gust as a lighter, shorter
+  // needle, and today's prevailing direction as a short arc inside the
+  // ticks.  Both needles are drawn after the letters, so an arrow covers
+  // the letter it reaches rather than being read through it.
+  var CL = { letters: 64, arc: 76, arcHalf: 10,
+             gust: [-12, 44, 62, 9], wind: [-16, 54, 72, 9] };
+  function arrow(cls, deg, n) {
+    return line(cls, pt(n[0], deg), pt(n[1], deg)) +
+           '<path class="' + cls + '-head" d="M' + xy(pt(n[2], deg)) + 'L' +
+           xy(pt(n[1], deg - n[3])) + 'L' + xy(pt(n[1], deg + n[3])) + 'Z"/>';
+  }
+  function compassSvg(w) {
+    var out = svgOpen() + '<circle class="face" cx="100" cy="100" r="' + RF + '"/>';
+    if (w.prevailing !== undefined) {
+      out += '<path class="span" d="' +
+             arcD(CL.arc, w.prevailing - CL.arcHalf, w.prevailing + CL.arcHalf) + '"/>';
+    }
+    for (var d = 0; d < 360; d += 10) {
+      var major = d % 30 === 0;
+      out += line(major ? 'tick major' : 'tick', pt(RF - 2, d), pt(RF - (major ? 13 : 7), d));
+    }
+    CARDINALS.forEach(function (c, i) {
+      var p = pt(CL.letters, i * 90);
+      out += '<text class="letter' + (i === 0 ? ' north' : '') + '" x="' + f2(p[0]) +
+             '" y="' + f2(p[1]) + '" text-anchor="middle" dominant-baseline="central">' +
+             esc(c) + '</text>';
+    });
+    if (w.gust > 0 && w.gustDir !== undefined) {
+      out += arrow('gust', w.gustDir, CL.gust);
+    }
+    if (w.speed > 0 && w.dir !== undefined) {
+      out += arrow('needle', w.dir, CL.wind);
+    }
+    return out + '<circle class="hub" cx="100" cy="100" r="7"/></svg>';
+  }
+
+  // THE WINDROSE: petals by direction, each stacked outward by speed band,
+  // scaled so the windiest direction reaches the outer ring; the share of
+  // the day that was calm in the hub.
+  //
+  // A band's fill for ANY number of bands.  The six --rose tokens are
+  // stops on a curve, not one color per band: six bands take the six
+  // stops exactly, and any other count samples the same curve with css
+  // color-mix, so the calmest band is always the first stop and the
+  // windiest always the last.  (Indexing six colors directly gave a
+  // seventh band no color at all.)
+  function bandFill(i, n) {
+    if (n === 6 || n <= 1) {
+      return 'var(--rose' + Math.min(i + 1, 6) + ')';
+    }
+    var x = i / (n - 1) * 5, lo = Math.floor(x), t = x - lo;
+    if (t < 1e-6 || lo >= 5) {
+      return 'var(--rose' + (Math.min(lo, 5) + 1) + ')';
+    }
+    return 'color-mix(in srgb, var(--rose' + (lo + 1) + ') ' +
+           Math.round((1 - t) * 100) + '%, var(--rose' + (lo + 2) + '))';
+  }
+  function roseSvg(banded, calm) {
+    var R1 = 84, r0 = 27, out = svgOpen();
+    [0.25, 0.5, 0.75, 1].forEach(function (k) {
+      out += '<circle class="ring" cx="100" cy="100" r="' + (r0 + (R1 - r0) * k) + '"/>';
+    });
+    var total = calm || 0, maxDir = 0;
+    banded.forEach(function (row) {
+      var t = row.reduce(function (x, y) { return x + y; }, 0);
+      total += t;
+      maxDir = Math.max(maxDir, t);
+    });
+    if (total > 0 && maxDir > 0) {
+      var scale = (R1 - r0) / (maxDir / total);
+      banded.forEach(function (row, i) {
+        var a = i * 22.5, acc = 0;
+        row.forEach(function (sec, band) {
+          if (!(sec > 0)) {
+            return;
+          }
+          var ra = r0 + acc / total * scale, rb = r0 + (acc + sec) / total * scale;
+          acc += sec;
+          out += '<path class="petal" style="fill: ' + bandFill(band, row.length) +
+                 '" d="M' + xy(pt(ra, a - 9)) + 'L' + xy(pt(rb, a - 9)) + 'A' + f2(rb) +
+                 ' ' + f2(rb) + ' 0 0 1 ' + xy(pt(rb, a + 9)) + 'L' + xy(pt(ra, a + 9)) +
+                 'A' + f2(ra) + ' ' + f2(ra) + ' 0 0 0 ' + xy(pt(ra, a - 9)) + 'Z"/>';
+        });
+      });
+    }
+    CARDINALS.forEach(function (c, i) {
+      var p = pt(R1 + 10, i * 90);
+      out += '<text class="letter' + (i === 0 ? ' north' : '') + '" x="' + f2(p[0]) +
+             '" y="' + f2(p[1]) + '" text-anchor="middle" dominant-baseline="central">' +
+             esc(c) + '</text>';
+    });
+    // A translation of "calm" longer than the hub has room for is set
+    // smaller rather than run over its edge.
+    var calmWord = fmt('calm');
+    return out + '<circle class="hub-disc" cx="100" cy="100" r="25"/>' +
+           '<text class="hub-pct" x="100" y="100" text-anchor="middle">' +
+           (total > 0 ? Math.round((calm || 0) / total * 100) + '%' : '\u2014') + '</text>' +
+           '<text class="hub-calm" x="100" y="114" text-anchor="middle"' +
+           (calmWord.length > 6 ? ' style="font-size: ' + (80 / calmWord.length).toFixed(1) + 'px"' : '') +
+           '>' + esc(calmWord) + '</text></svg>';
+  }
+  function legendHtml(edges, unit) {
+    var html = '';
+    edges.forEach(function (edge, i) {
+      html += '<span><i style="background: ' + bandFill(i, edges.length) + '"></i>' +
+              esc(i < edges.length - 1 ? edge + '\u2013' + edges[i + 1] : edge + '+') + '</span>';
+    });
+    return html + '<span>' + esc(unit.trim()) + '</span>';
+  }
+
+  // ---- the lines under a dial: the reading, what it means, today's
+  // high above its low.  The number is the field's .formatted and the
+  // unit its unit.label, both as this report renders them.
+  function readingHtml(number, unit) {
+    return '<div class="reading"><b>' + esc(number === undefined ? '--' : number) + '</b>' +
+           (unit && number !== undefined ? '<span class="unit">' + esc(unit) + '</span>' : '') +
+           '</div>';
+  }
+  function wordHtml(html) {
+    return '<div class="word">' + (html || '&nbsp;') + '</div>';
+  }
+  // notes: further items for the same line (a peak, the prevailing wind).
+  function rangeHtml(hi, lo, notes) {
+    var out = '<div class="range">';
+    if (hi !== undefined) {
+      out += '<span class="hi">\u25b2 ' + esc(hi) + '</span>';
+    }
+    if (lo !== undefined) {
+      out += '<span class="lo">\u25bc ' + esc(lo) + '</span>';
+    }
+    (notes || []).forEach(function (note) {
+      out += '<span>' + esc(note) + '</span>';
+    });
+    return out + '</div>';
+  }
+  // A formatted value with its unit label, or undefined when the value is
+  // missing.
+  function withUnit(value, unit) {
+    return value === undefined ? undefined : value + (unit || '');
+  }
+
+  // Each element is rewritten only when its markup changed.
+  var written = {};
+  function put(id, html) {
+    if (written[id] === html) {
+      return;
+    }
+    var el = document.getElementById(id);
+    if (el !== null) {
+      el.innerHTML = html;
+      written[id] = html;
+    }
   }
 
   // Cells for observations a station may not report (no sensor, or the
@@ -427,570 +600,135 @@
     }
   }
 
-  function face(ctx, cx, cy, r) {
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, 2 * Math.PI);
-    ctx.fillStyle = C.face;
-    ctx.fill();
-    ctx.strokeStyle = C.rim;
-    ctx.lineWidth = 1;
-    ctx.stroke();
+  // Temperature, dew point, feels like and humidity: a dial with today's
+  // range as its arc, and today's high above its low.
+  function ranged(r, id, obs, scale, unit, word) {
+    var v = num(r['current.' + obs + '.raw']);
+    var lo = num(r['day.' + obs + '.min.raw']), hi = num(r['day.' + obs + '.max.raw']);
+    put('gauge-' + id, dialSvg(scale, v, {span: [lo, hi]}));
+    put('read-' + id, readingHtml(r['current.' + obs + '.formatted'], unit) + wordHtml(esc(word)) +
+        rangeHtml(withUnit(r['day.' + obs + '.max.formatted'], unit),
+                  withUnit(r['day.' + obs + '.min.formatted'], unit)));
   }
-
-  // ---- The shared dial: a 270-degree meter, south-gap orientation. ---------
-  // cfg: scale {min,max,major,minor,dec}, value (raw number, undefined ok),
-  //      text (report-formatted readout), label, [band: [lo, hi]],
-  //      [trendFrom]
-  var START = 135, SWEEP = 270;                    // degrees, clockwise from +x
-  function rad(deg) { return deg * Math.PI / 180; }
-  function dialAngle(cfg, v) {
-    var f = (v - cfg.scale.min) / (cfg.scale.max - cfg.scale.min);
-    f = Math.max(0, Math.min(1, f));
-    return rad(START + SWEEP * f);
-  }
-
-  function drawDial(ctx, cfg) {
-    var W = ctx.w, H = ctx.h, cx = W / 2, cy = H / 2;
-    var r = Math.min(W, H) / 2 - 12;
-    var s = cfg.scale;
-    ctx.clearRect(0, 0, W, H);
-    face(ctx, cx, cy, r);
-    var rt = r - 12;                               // track radius
-
-    // Recessed track.
-    ctx.beginPath();
-    ctx.arc(cx, cy, rt, rad(START), rad(START + SWEEP));
-    ctx.strokeStyle = C.track;
-    ctx.lineWidth = 7;
-    ctx.lineCap = 'round';
-    ctx.stroke();
-
-    // Range band (today's min..max) on the track.
-    if (cfg.band !== undefined &&
-        cfg.band[0] !== undefined && cfg.band[1] !== undefined) {
-      ctx.beginPath();
-      ctx.arc(cx, cy, rt, dialAngle(cfg, cfg.band[0]), dialAngle(cfg, cfg.band[1]));
-      ctx.strokeStyle = C.steelDim;
-      ctx.lineWidth = 7;
-      ctx.stroke();
-    }
-
-    // Trend arc (barometer over the trend window) just inside the track,
-    // chevron at the current end showing direction of travel.
-    if (cfg.trendFrom !== undefined && cfg.value !== undefined &&
-        cfg.trendFrom !== cfg.value) {
-      var a0 = dialAngle(cfg, cfg.trendFrom), a1 = dialAngle(cfg, cfg.value);
-      var ccw = a1 < a0;
-      if (a0 !== a1) {
-        ctx.beginPath();
-        ctx.arc(cx, cy, rt - 10, a0, a1, ccw);
-        ctx.strokeStyle = C.steel;
-        ctx.lineWidth = 2.5;
-        ctx.lineCap = 'butt';
-        ctx.stroke();
-        var tip = a1 + (ccw ? -0.045 : 0.045);
-        ctx.beginPath();
-        ctx.moveTo(cx + (rt - 5) * Math.cos(a1), cy + (rt - 5) * Math.sin(a1));
-        ctx.lineTo(cx + (rt - 10) * Math.cos(tip), cy + (rt - 10) * Math.sin(tip));
-        ctx.lineTo(cx + (rt - 15) * Math.cos(a1), cy + (rt - 15) * Math.sin(a1));
-        ctx.closePath();
-        ctx.fillStyle = C.steel;
-        ctx.fill();
-      }
-    }
-
-    // Ticks and numerals.
-    ctx.font = '10px ' + SANS;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    for (var v = s.min; v <= s.max + 1e-9; v += s.minor) {
-      var a = dialAngle(cfg, v);
-      var major = Math.abs(v / s.major - Math.round(v / s.major)) < 1e-6;
-      var len = major ? 7 : 3.5;
-      ctx.beginPath();
-      ctx.moveTo(cx + (rt - 9) * Math.cos(a), cy + (rt - 9) * Math.sin(a));
-      ctx.lineTo(cx + (rt - 9 - len) * Math.cos(a), cy + (rt - 9 - len) * Math.sin(a));
-      ctx.strokeStyle = major ? C.muted : C.tick;
-      ctx.lineWidth = major ? 1.5 : 1;
-      ctx.stroke();
-      if (major) {
-        ctx.fillStyle = C.muted;
-        ctx.fillText(v.toFixed(s.dec),
-                     cx + (rt - 26) * Math.cos(a), cy + (rt - 26) * Math.sin(a));
-      }
-    }
-
-    // Needle: warm amber, a hint of lamp-glow, counterweight tail.
-    if (cfg.value !== undefined) {
-      var na = dialAngle(cfg, cfg.value);
-      ctx.save();
-      ctx.shadowColor = C.amberGlow;
-      ctx.shadowBlur = 6;
-      ctx.beginPath();
-      ctx.moveTo(cx - 14 * Math.cos(na), cy - 14 * Math.sin(na));
-      ctx.lineTo(cx + (rt - 18) * Math.cos(na), cy + (rt - 18) * Math.sin(na));
-      ctx.strokeStyle = C.amber;
-      ctx.lineWidth = 2.5;
-      ctx.lineCap = 'round';
-      ctx.stroke();
-      ctx.restore();
-    }
-    ctx.beginPath();
-    ctx.arc(cx, cy, 5, 0, 2 * Math.PI);
-    ctx.fillStyle = C.amber;
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(cx, cy, 2, 0, 2 * Math.PI);
-    ctx.fillStyle = C.face;
-    ctx.fill();
-
-    // Readout in the south gap.
-    ctx.fillStyle = C.ink;
-    ctx.font = '600 19px ' + SANS;
-    ctx.fillText(cfg.text !== undefined ? cfg.text : '--', cx, cy + r - 28);
-    if (cfg.label) {
-      ctx.fillStyle = C.muted;
-      ctx.font = '11px ' + SANS;
-      ctx.fillText(cfg.label, cx, cy + r - 9);
-    }
-  }
-
-  // ---- The wind compass: full circle, direction needle + gust ghost. -------
-  function compassAngle(deg) { return rad(deg - 90); }   // 0 = north = up
-
-  function drawCompass(ctx, cfg) {
-    var W = ctx.w, H = ctx.h, cx = W / 2, cy = H / 2;
-    var r = Math.min(W, H) / 2 - 12;
-    ctx.clearRect(0, 0, W, H);
-    face(ctx, cx, cy, r);
-    var rt = r - 12;
-
-    // Ticks every 22.5, heavier at the cardinals; letters inside the rim.
-    for (var i = 0; i < 16; i++) {
-      var a = compassAngle(i * 22.5);
-      var major = i % 4 === 0;
-      ctx.beginPath();
-      ctx.moveTo(cx + rt * Math.cos(a), cy + rt * Math.sin(a));
-      ctx.lineTo(cx + (rt - (major ? 8 : 4)) * Math.cos(a),
-                 cy + (rt - (major ? 8 : 4)) * Math.sin(a));
-      ctx.strokeStyle = major ? C.muted : C.tick;
-      ctx.lineWidth = major ? 1.5 : 1;
-      ctx.stroke();
-    }
-    ctx.font = '600 12px ' + SANS;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    CARDINALS.forEach(function (d, i) {
-      var a = compassAngle(i * 90);
-      ctx.fillStyle = i === 0 ? C.ink : C.muted;
-      ctx.fillText(d, cx + (rt - 19) * Math.cos(a), cy + (rt - 19) * Math.sin(a));
-    });
-
-    function needle(deg, color, width, len, glow) {
-      var a = compassAngle(deg);
-      ctx.save();
-      if (glow) {
-        ctx.shadowColor = C.amberGlow;
-        ctx.shadowBlur = 6;
-      }
-      ctx.beginPath();
-      ctx.moveTo(cx - 14 * Math.cos(a), cy - 14 * Math.sin(a));
-      ctx.lineTo(cx + len * Math.cos(a), cy + len * Math.sin(a));
-      ctx.strokeStyle = color;
-      ctx.lineWidth = width;
-      ctx.lineCap = 'round';
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(cx + (len + 9) * Math.cos(a), cy + (len + 9) * Math.sin(a));
-      ctx.lineTo(cx + len * Math.cos(a + 0.10), cy + len * Math.sin(a + 0.10));
-      ctx.lineTo(cx + len * Math.cos(a - 0.10), cy + len * Math.sin(a - 0.10));
-      ctx.closePath();
-      ctx.fillStyle = color;
-      ctx.fill();
-      ctx.restore();
-    }
-    if (cfg.gustDir !== undefined) {
-      needle(cfg.gustDir, C.steel, 2, rt - 38, false);
-    }
-    if (cfg.dir !== undefined && cfg.speed !== undefined && cfg.speed > 0) {
-      needle(cfg.dir, C.amber, 2.5, rt - 34, true);
-    }
-
-    ctx.beginPath();
-    ctx.arc(cx, cy, 5, 0, 2 * Math.PI);
-    ctx.fillStyle = C.amber;
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(cx, cy, 2, 0, 2 * Math.PI);
-    ctx.fillStyle = C.face;
-    ctx.fill();
-
-    // Readouts in the lower third.
-    ctx.fillStyle = C.ink;
-    ctx.font = '600 18px ' + SANS;
-    ctx.fillText(cfg.speedText !== undefined ? cfg.speedText : '--',
-                 cx, cy + r * 0.42);
-    ctx.fillStyle = C.muted;
-    ctx.font = '11px ' + SANS;
-    var sub = (cfg.speed !== undefined && cfg.speed > 0 &&
-               cfg.dirText !== undefined) ? cfg.dirText : fmt('calm');
-    if (cfg.gustText !== undefined) {
-      sub += '   ' + (cfg.gustDirText !== undefined
-          ? fmt('gust {gust} @ {dir}', {gust: cfg.gustText, dir: cfg.gustDirText})
-          : fmt('gust {gust}', {gust: cfg.gustText}));
-    }
-    ctx.fillText(sub, cx, cy + r * 0.42 + 18);
-  }
-
-  // ---- The NOAA windrose: petals by direction, stacked by speed band. ------
-  function drawRose(ctx, rose) {
-    var W = ctx.w, H = ctx.h, cx = W / 2, cy = H / 2;
-    // The rose's face is the dials' face exactly -- both 12 units inside
-    // the canvas -- so the twelve instruments are one size by construction,
-    // whatever the palette does.  (Through 6.10 the face was pulled in to
-    // the dials' TRACK radius instead, matching the boundary the eye read
-    // back when the dials' own face edge was invisible; a palette with a
-    // visible face edge broke that.)  The compass letters move inside, sat
-    // so their outer edge lands on the circle the dials' track ring
-    // occupies, and the petals stop short of them: a petal points straight
-    // at its own letter, so the clearance is purely radial.  What faces the
-    // petal depends on the position, and the two tight ones are the BOTTOM
-    // and the SIDES.  textBaseline 'middle' seats a cap-height glyph with
-    // more of it above the anchor than below, so at the bottom of the disc
-    // that surplus points inward: S clears 2.70 where N, the same glyph
-    // height, clears 5.30.  At E and W the glyph's side faces inward, so
-    // the widest letter is as tight as the bottom one -- W clears 2.65.
-    // Worst is that S/W pair at about 3.3 units -- the letter's ink, skirt
-    // included, against the petals' outer arc at rMax -- in all nine shipped
-    // languages, the petals keeping the reach they have had since 6.0.
-    // Measure by rendering the rose three times through this function --
-    // normally, with CARDINALS blanked, with no petals -- and diffing, so
-    // anti-aliased skirts count as ink rather than being thresholded away.
-    // Two traps, both of which have produced a wrong answer here: sweep the
-    // petal's whole +/-8.2 degree span, because a glyph with a hollow center
-    // (N, O) reads far clearer than it is on the cardinal's center ray
-    // alone; and do not take the with-minus-without-petals diff as petal
-    // ink, because each segment is stroked 2px in the FACE color and where
-    // that covers a reference ring it registers as ~1.5 units of reach that
-    // is invisible and eats no clearance.  The same panel measures 3.0 to
-    // 3.4 across a range of responsive canvas sizes, so canvas size moves
-    // the figure only slightly.  Measured off the rendered canvas, not
-    // estimated; re-measure before moving either radius, and note the
-    // ordinates come from the TARGET report, so a custom one can serve any
-    // glyph it likes.
-    var rFace = Math.min(W, H) / 2 - 12;
-    var rLetter = rFace - 11;
-    var rMax = rFace - 20;
-    var rCalm = 22;
-    ctx.clearRect(0, 0, W, H);
-    face(ctx, cx, cy, rFace);
-
-    // Totals: overall (for the calm share) and the windiest direction
-    // (sets the radial scale).
-    var total = rose.calm, maxBin = 0;
-    var binTotals = rose.banded.map(function (bands) {
-      var t = bands.reduce(function (a, b) { return a + b; }, 0);
-      total += t;
-      if (t > maxBin) {
-        maxBin = t;
-      }
-      return t;
-    });
-
-    // Recessive reference rings.
-    ctx.strokeStyle = C.tick;
-    ctx.lineWidth = 1;
-    [1 / 3, 2 / 3, 1].forEach(function (f) {
-      ctx.beginPath();
-      ctx.arc(cx, cy, rCalm + (rMax - rCalm) * f, 0, 2 * Math.PI);
-      ctx.stroke();
-    });
-
-    // Petals: bin i centered on i*22.5 deg clockwise from north; a face-color
-    // stroke keeps a gap between stacked segments.
-    for (var i = 0; i < rose.banded.length; i++) {
-      if (binTotals[i] <= 0 || maxBin <= 0) {
-        continue;
-      }
-      var a0 = rad(i * 22.5 - 90 - 8.2), a1 = rad(i * 22.5 - 90 + 8.2);
-      var r = rCalm;
-      var petal = (rMax - rCalm) * binTotals[i] / maxBin;
-      for (var b = 0; b < rose.banded[i].length; b++) {
-        if (rose.banded[i][b] <= 0) {
-          continue;
-        }
-        var seg = petal * rose.banded[i][b] / binTotals[i];
-        ctx.beginPath();
-        ctx.arc(cx, cy, r + seg, a0, a1);
-        ctx.arc(cx, cy, r, a1, a0, true);
-        ctx.closePath();
-        ctx.fillStyle = bandColor(b, rose.banded[i].length);
-        ctx.fill();
-        ctx.strokeStyle = C.face;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        r += seg;
-      }
-    }
-
-    // Compass letters inside the rim, on the dials' track circle.
-    ctx.font = '600 11px ' + SANS;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    CARDINALS.forEach(function (d, i) {
-      var a = rad(i * 90 - 90);
-      ctx.fillStyle = i === 0 ? C.ink : C.muted;
-      ctx.fillText(d, cx + rLetter * Math.cos(a), cy + rLetter * Math.sin(a));
-    });
-
-    // Calm share, center.
-    ctx.beginPath();
-    ctx.arc(cx, cy, rCalm, 0, 2 * Math.PI);
-    ctx.fillStyle = C.face;
-    ctx.fill();
-    ctx.strokeStyle = C.track;
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    if (total > 0) {
-      ctx.fillStyle = C.ink;
-      ctx.font = '600 13px ' + SANS;
-      ctx.fillText(Math.round(100 * rose.calm / total) + '%', cx, cy - 5);
-      ctx.fillStyle = C.muted;
-      ctx.font = '9px ' + SANS;
-      ctx.fillText(fmt('calm'), cx, cy + 9);
-    }
-  }
-
-  // Legend from windrose.bands (band edges in the report's windSpeed unit) --
-  // rebuilt only when the edges change.
-  var legendKey = '';
-  function buildLegend(edges, unitLabel) {
-    var key = edges.join(',') + unitLabel;
-    if (key === legendKey) {
-      return;
-    }
-    var el = document.getElementById('rose-legend');
-    if (el === null) {
-      return;                          // a page built without a legend
-    }
-    el.innerHTML = '';
-    edges.forEach(function (lo, i) {
-      var span = document.createElement('span');
-      var chip = document.createElement('i');
-      chip.style.background = bandColor(i, edges.length);
-      span.appendChild(chip);
-      var hi = i + 1 < edges.length ? '-' + edges[i + 1] : '+' + unitLabel;
-      span.appendChild(document.createTextNode(lo + hi));
-      el.appendChild(span);
-    });
-    legendKey = key;                   // only once the legend is built
+  // UV, solar radiation and rain rate: the arc runs from the floor to
+  // today's peak.
+  function peaked(r, id, obs, scale, unit, word, rim) {
+    var v = num(r['current.' + obs + '.raw']), peak = num(r['day.' + obs + '.max.raw']);
+    put('gauge-' + id, dialSvg(scale, v, {span: peak > scale.min ? [scale.min, peak] : null,
+                                          rim: rim}));
+    put('read-' + id, readingHtml(r['current.' + obs + '.formatted'], unit) + wordHtml(esc(word)) +
+        rangeHtml(undefined, undefined,
+                  peak > scale.min && r['day.' + obs + '.max'] !== undefined
+                      ? [fmt('peak {peak}', {peak: r['day.' + obs + '.max']})] : []));
   }
 
   function updateGauges(result) {
-    // Cheap, and it means a theme change is picked up by the next poll
-    // even if the change event below never fires.
-    lastResult = result;
-    refreshPalette();
-    // If layout has changed the displayed size since the backing stores
-    // were built (late layout, rotation), rebuild them at the new size.
-    // A canvas in a hidden cell measures 0 and was built at the fallback
-    // size, so it stays wrong once its cell is shown: check every context,
-    // skipping the ones still hidden.
-    if (ctxs !== null) {
-      var stale = false;
-      Object.keys(ctxs).forEach(function (k) {
-        var ctx = ctxs[k];
-        if (ctx === null) {
-          return;
-        }
-        var shown = ctx.canvas_el.clientWidth;
-        if (shown > 0 && Math.abs(shown - ctx.cssSize) > 2) {
-          stale = true;
-        }
-      });
-      if (stale) {
-        ctxs = null;
+    var r = result;
+    var tLabel = r['unit.label.outTemp'] || '';
+
+    if (r['day.windrose.banded'] !== undefined) {
+      put('gauge-rose', roseSvg(r['day.windrose.banded'], num(r['day.windrose.calm'])));
+      if (r['windrose.bands'] !== undefined) {
+        put('rose-legend', legendHtml(r['windrose.bands'], r['unit.label.windSpeed'] || ''));
       }
     }
-    if (!initCanvases()) {
-      return;
-    }
-    if (ctxs.rose !== null && result['day.windrose.banded'] !== undefined) {
-      drawRose(ctxs.rose, {
-        banded: result['day.windrose.banded'],
-        calm: result['day.windrose.calm'] || 0
-      });
-      if (result['windrose.bands'] !== undefined) {
-        buildLegend(result['windrose.bands'],
-                    ' ' + (result['unit.label.windSpeed'] || '').trim());
+
+    var speed = num(r['current.windSpeed.raw']), gust = num(r['10m.windGust.max.raw']);
+    var windFrom = r['current.windDir.ordinal_compass'];
+    var gustFrom = r['10m.wind.gustdir.ordinal_compass'];
+    put('gauge-wind', compassSvg({speed: speed, dir: num(r['current.windDir.raw']),
+                                  gust: gust, gustDir: num(r['10m.wind.gustdir.raw']),
+                                  prevailing: num(r['day.wind.vecdir.raw'])}));
+    // "from NNE · gusting 7 mph", naming the gust's bearing only where it
+    // is not the wind's; no speed is no reading, not a calm.
+    var said = [];
+    if (speed > 0) {
+      if (windFrom !== undefined) {
+        // The bearing is set bold inside the translated sentence: fill a
+        // marker, escape the sentence, then swap the marker for the markup.
+        said.push(esc(fmt('from {dir}', {dir: '\u0000'}))
+                  .replace('\u0000', '<b>' + esc(windFrom) + '</b>'));
       }
+    } else if (speed !== undefined) {
+      said.push('<b>' + esc(fmt('calm')) + '</b>');
     }
-    if (ctxs.wind !== null) {
-      drawCompass(ctxs.wind, {
-        speed: result['current.windSpeed.raw'],
-        dir: result['current.windDir.raw'],
-        gustDir: result['10m.wind.gustdir.raw'],
-        speedText: result['current.windSpeed'],
-        dirText: result['current.windDir.ordinal_compass'],
-        gustText: result['10m.windGust.max'],
-        gustDirText: result['10m.wind.gustdir.ordinal_compass']
-      });
+    if (gust > 0 && r['10m.windGust.max'] !== undefined) {
+      said.push(esc(gustFrom !== undefined && (gustFrom !== windFrom || !(speed > 0))
+          ? fmt('gusting {gust} from {dir}', {gust: r['10m.windGust.max'], dir: gustFrom})
+          : fmt('gusting {gust}', {gust: r['10m.windGust.max']})));
     }
-    if (ctxs.temp !== null) {
-      var tLabel = '';
-      if (result['day.outTemp.min.formatted'] !== undefined &&
-          result['day.outTemp.max.formatted'] !== undefined) {
-        tLabel = fmt('today {min} to {max}',
-                     {min: result['day.outTemp.min.formatted'],
-                      max: result['day.outTemp.max.formatted']});
-      }
-      drawDial(ctxs.temp, {
-        scale: tempScale(result['unit.label.outTemp'] || ''),
-        value: result['current.outTemp.raw'],
-        band: [result['day.outTemp.min.raw'], result['day.outTemp.max.raw']],
-        text: result['current.outTemp'],
-        label: tLabel
-      });
+    var notes = [];
+    if (num(r['day.wind.max.raw']) > 0 && r['day.wind.max'] !== undefined) {
+      notes.push(fmt('peak {peak}', {peak: r['day.wind.max']}));
     }
-    if (ctxs.baro !== null) {
-      var trendFrom = undefined;
-      if (result['current.barometer.raw'] !== undefined &&
-          result['trend.barometer.raw'] !== undefined) {
-        trendFrom = result['current.barometer.raw'] - result['trend.barometer.raw'];
-      }
-      drawDial(ctxs.baro, {
-        scale: baroScale(result['unit.label.barometer'] || ''),
-        value: result['current.barometer.raw'],
-        trendFrom: trendFrom,
-        text: result['current.barometer'],
-        label: result['trend.barometer.desc'] || ''
-      });
+    if (r['day.wind.vecdir.ordinal_compass'] !== undefined) {
+      notes.push(fmt('prevailing {dir}', {dir: r['day.wind.vecdir.ordinal_compass']}));
     }
-    if (ctxs.hum !== null) {
-      var hLabel = '';
-      if (result['day.outHumidity.min.raw'] !== undefined &&
-          result['day.outHumidity.max.raw'] !== undefined) {
-        hLabel = fmt('today {min} to {max}',
-                     {min: Math.round(result['day.outHumidity.min.raw']),
-                      max: Math.round(result['day.outHumidity.max.raw'])});
-      }
-      drawDial(ctxs.hum, {
-        scale: { min: 0, max: 100, major: 20, minor: 5, dec: 0 },
-        value: result['current.outHumidity.raw'],
-        band: [result['day.outHumidity.min.raw'], result['day.outHumidity.max.raw']],
-        text: result['current.outHumidity'],
-        label: hLabel
-      });
+    put('read-wind', readingHtml(r['current.windSpeed.formatted'], r['unit.label.windSpeed']) +
+        wordHtml(said.join(' \u00b7 ')) + rangeHtml(undefined, undefined, notes));
+
+    ranged(r, 'temp', 'outTemp', tempScale(tLabel), tLabel, '');
+    ranged(r, 'dew', 'dewpoint', tempScale(tLabel), tLabel, '');
+    ranged(r, 'hum', 'outHumidity', HUM_SCALE, r['unit.label.outHumidity'] || '', '');
+
+    var bLabel = r['unit.label.barometer'] || '';
+    var baro = num(r['current.barometer.raw']), change = num(r['trend.barometer.raw']);
+    put('gauge-baro', dialSvg(baroScale(bLabel), baro,
+                              {trend: baro !== undefined && change !== undefined ? baro - change : undefined}));
+    put('read-baro', readingHtml(r['current.barometer.formatted'], bLabel) +
+        wordHtml(esc(r['trend.barometer.desc'] || '')) +
+        rangeHtml(withUnit(r['day.barometer.max.formatted'], bLabel),
+                  withUnit(r['day.barometer.min.formatted'], bLabel)));
+
+    var rLabel = r['unit.label.rain'] || '';
+    var rain = num(r['day.rain.sum.raw']), rate = num(r['current.rainRate.raw']);
+    var rainWord = rain === 0 ? fmt('Dry so far today')
+        : rate > 0 && r['current.rainRate'] !== undefined ? fmt('rate {rate}', {rate: r['current.rainRate']})
+        : fmt('today');
+    put('gauge-rain', dialSvg(rainScale(rLabel, rain), rain, {}));
+    put('read-rain', readingHtml(r['day.rain.sum.formatted'], rLabel) + wordHtml(esc(rainWord)) +
+        rangeHtml());
+
+    // Scale off the day's peak too, so the dial does not rescale as a
+    // burst passes.
+    var rrLabel = r['unit.label.rainRate'] || '';
+    var rateMax = num(r['day.rainRate.max.raw']);
+    peaked(r, 'rrate', 'rainRate', rainScale(rrLabel, Math.max(rate || 0, rateMax || 0)),
+           rrLabel, '', null);
+
+    var feel = num(r['current.appTemp.raw']);
+    showCell('cell-feel', feel !== undefined);
+    if (feel !== undefined) {
+      var temp = num(r['current.outTemp.raw']), diff = temp === undefined ? undefined : feel - temp;
+      var feelWord = diff === undefined ? ''
+          : Math.abs(diff) < 1 ? fmt('Same as the air')
+          : diff > 0 ? fmt('{n}\u00b0 warmer than the air', {n: Math.round(diff)})
+          : fmt('{n}\u00b0 cooler than the air', {n: Math.round(-diff)});
+      ranged(r, 'feel', 'appTemp', tempScale(tLabel), tLabel, feelWord);
     }
-    if (ctxs.rain !== null) {
-      var rLabel = fmt('today');
-      if (result['current.rainRate.raw'] !== undefined &&
-          result['current.rainRate.raw'] > 0 &&
-          result['current.rainRate'] !== undefined) {
-        rLabel = fmt('rate {rate}', {rate: result['current.rainRate']});
-      }
-      drawDial(ctxs.rain, {
-        scale: rainScale(result['unit.label.rain'] || '',
-                         result['day.rain.sum.raw']),
-        value: result['day.rain.sum.raw'],
-        text: result['day.rain.sum'],
-        label: rLabel
-      });
+
+    var uv = num(r['current.UV.raw']);
+    showCell('cell-uv', uv !== undefined);
+    if (uv !== undefined) {
+      peaked(r, 'uv', 'UV', UV_SCALE, '', categoryWord(UV_WORDS, uv), UV_RIM);
     }
-    if (ctxs.dew !== null) {
-      var dLabel = '';
-      if (result['day.dewpoint.min.formatted'] !== undefined &&
-          result['day.dewpoint.max.formatted'] !== undefined) {
-        dLabel = fmt('today {min} to {max}',
-                     {min: result['day.dewpoint.min.formatted'],
-                      max: result['day.dewpoint.max.formatted']});
-      }
-      drawDial(ctxs.dew, {
-        scale: tempScale(result['unit.label.outTemp'] || ''),
-        value: result['current.dewpoint.raw'],
-        band: [result['day.dewpoint.min.raw'], result['day.dewpoint.max.raw']],
-        text: result['current.dewpoint'],
-        label: dLabel
-      });
+
+    var solar = num(r['current.radiation.raw']);
+    showCell('cell-rad', solar !== undefined);
+    if (solar !== undefined) {
+      peaked(r, 'rad', 'radiation', RAD_SCALE, r['unit.label.radiation'] || '', '', null);
     }
-    if (ctxs.rrate !== null) {
-      // Scale off the day's max too, so the dial does not rescale as a
-      // burst passes.
-      var rateMax = result['current.rainRate.raw'];
-      if (result['day.rainRate.max.raw'] !== undefined &&
-          (rateMax === undefined || result['day.rainRate.max.raw'] > rateMax)) {
-        rateMax = result['day.rainRate.max.raw'];
+
+    var aqi = num(r['current.pm2_5_aqi.raw']);
+    showCell('cell-aqi', aqi !== undefined);
+    if (aqi !== undefined) {
+      var aqiWord = categoryWord(AQI_WORDS, aqi);
+      if (r['current.pm2_5'] !== undefined) {
+        aqiWord += ' \u00b7 ' + fmt('pm2.5 {pm25}', {pm25: r['current.pm2_5']});
       }
-      var rrLabel = '';
-      if (result['day.rainRate.max'] !== undefined) {
-        rrLabel = fmt('max today {max}', {max: result['day.rainRate.max']});
-      }
-      drawDial(ctxs.rrate, {
-        scale: rainScale(result['unit.label.rainRate'] || '', rateMax),
-        value: result['current.rainRate.raw'],
-        text: result['current.rainRate'],
-        label: rrLabel
-      });
-    }
-    var haveFeel = result['current.appTemp.raw'] !== undefined;
-    showCell('cell-feel', haveFeel);
-    if (haveFeel && ctxs.feel !== null) {
-      var fLabel = '';
-      if (result['day.appTemp.min.formatted'] !== undefined &&
-          result['day.appTemp.max.formatted'] !== undefined) {
-        fLabel = fmt('today {min} to {max}',
-                     {min: result['day.appTemp.min.formatted'],
-                      max: result['day.appTemp.max.formatted']});
-      }
-      drawDial(ctxs.feel, {
-        scale: tempScale(result['unit.label.outTemp'] || ''),
-        value: result['current.appTemp.raw'],
-        band: [result['day.appTemp.min.raw'], result['day.appTemp.max.raw']],
-        text: result['current.appTemp'],
-        label: fLabel
-      });
-    }
-    var haveUv = result['current.UV.raw'] !== undefined;
-    showCell('cell-uv', haveUv);
-    if (haveUv && ctxs.uv !== null) {
-      var uLabel = '';
-      if (result['day.UV.max'] !== undefined) {
-        uLabel = fmt('max today {max}', {max: result['day.UV.max']});
-      }
-      drawDial(ctxs.uv, {
-        scale: UV_SCALE,
-        value: result['current.UV.raw'],
-        text: result['current.UV'],
-        label: uLabel
-      });
-    }
-    var haveRad = result['current.radiation.raw'] !== undefined;
-    showCell('cell-rad', haveRad);
-    if (haveRad && ctxs.rad !== null) {
-      var sLabel = '';
-      if (result['day.radiation.max'] !== undefined) {
-        sLabel = fmt('max today {max}', {max: result['day.radiation.max']});
-      }
-      drawDial(ctxs.rad, {
-        scale: RAD_SCALE,
-        value: result['current.radiation.raw'],
-        text: result['current.radiation'],
-        label: sLabel
-      });
-    }
-    var haveAqi = result['current.pm2_5_aqi.raw'] !== undefined;
-    showCell('cell-aqi', haveAqi);
-    if (haveAqi && ctxs.aqi !== null) {
-      var aLabel = '';
-      if (result['current.pm2_5'] !== undefined) {
-        aLabel = fmt('pm2.5 {pm25}', {pm25: result['current.pm2_5']});
-      }
-      drawDial(ctxs.aqi, {
-        scale: AQI_SCALE,
-        value: result['current.pm2_5_aqi.raw'],
-        text: result['current.pm2_5_aqi.formatted'],
-        label: aLabel
-      });
+      put('gauge-aqi', dialSvg(AQI_SCALE, aqi, {rim: AQI_RIM}));
+      put('read-aqi', readingHtml(r['current.pm2_5_aqi.formatted'], '') + wordHtml(esc(aqiWord)) +
+          rangeHtml());
     }
   }
 

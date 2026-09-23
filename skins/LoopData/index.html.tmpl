@@ -28,26 +28,24 @@
     #end if
     <meta name="description" content="$gettext('Up to date weather readings for {location}.').format(location=$station.location)">
     <style>
-      /* The panel's palette, and since 7.3 the SINGLE source of truth for
-         it: realtime_updater.inc reads these with getComputedStyle rather
-         than carrying a copy of the values, so a theme is a css change and
-         nothing else.  A canvas cannot read a custom property, but the
-         javascript that draws on it can.
+      /* The panel's palette, and the SINGLE source of truth for it: the
+         instruments are SVG whose every stroke and fill is a class
+         dressed below, so the javascript names no color and a theme is a
+         css change and nothing else.
 
-         --rim is the dial face's own edge, kept a whisper because the track
-         ring already reads as the instrument's rim; nothing depends on it.
-         --card sits behind each canvas: transparent in the dark theme,
-         where the ground and the face are within 1.2:1 of each other and a
-         gauge needs nothing behind it, and a panel tile in the light theme,
-         where it is what the caption at the disc's rim sits on.
-
-         --ink and --muted are the PAGE's text, on the ground; --card-ink
-         and --card-muted are what the canvases draw with, on the card.
-         They are equal in the dark theme and differ in light, which is the
-         whole reason they are two pairs rather than one.
+         Two instruments, one per theme.  Dark: a deep well on a navy
+         card.  Light: a pale blue-gray face on a white card.  In both, one
+         red arm per gauge, as on an analog gauge -- a red each theme can
+         carry, so two values; the wind's gust needle is not that arm and
+         keeps its own color.  In both, the face stands barely off its
+         card, so it is the rim that draws the disc.  --ink, --muted and
+         --heading are text on the card; --live alone is text on the
+         ground.  The six --rose values are the windrose's speed bands,
+         bright on the dark well and dark on the light face, each set
+         stepping evenly against its own face.
 
          THREE STATES, and the order matters.  :root carries dark, so a
-         browser that reports nothing still gets today's page.  The media
+         browser that reports nothing still gets the dark page.  The media
          query supplies light for a viewer whose system asks for light --
          unless the page has been pinned to dark.  The [data-theme] rules
          let [Extras] theme pin either one outright.  The light VALUES are
@@ -58,92 +56,120 @@
         /* So the browser's own chrome -- scrollbars, focus rings, form
            controls -- follows the theme rather than staying light. */
         color-scheme: dark;
-        --ground: #000206;
-        --face: #121a26;
-        --track: #5c718f;
-        --tick: #3a4a63;
-        --rim: #1e2a3a;
-        --ink: #ffffff;
-        --muted: #c6d2e2;
-        --heading: #dbe4f0;
-        --amber: #ffb92e;
-        --steel: #9cceff;
-        --steel-dim: #8db0d6;
-        --card: transparent;
-        --card-ink: #ffffff;
-        --card-muted: #c6d2e2;
-        /* The status indicator is the ONLY page text painted amber, and
-           it sits on the ground rather than on a dial face.  --amber is
-           tuned against the face; on the light theme's paper it falls to
-           1.67:1 and LIVE, OFFLINE, BAD DATA and CLICK-ME all disappear
-           -- CLICK-ME being the control that restarts an expired page.
-           So the indicator gets its own on-ground value. */
+        --ground: #0a0f22;
+        --card: #111834;
+        --line: #2a3358;
+        --ring: #5b67a0;
+        --ink: #e9e4d4;
+        --ink-2: #ded9c9;
+        --muted: #b2bae1;
+        --heading: #99c2dd;
+        --hi: #ffa289;
+        --lo: #a5b7ff;
         --live: #ffb92e;
-        /* The legend's inset from its card.  Zero in the dark theme,
-           where --card is transparent and there is no card to inset
-           from: a padded legend there would make the rose's grid cell
-           taller and move every gauge below it, which is a layout
-           change nobody asked for. */
-        --legend-pad: 0;
+        --face: #0b1026;
+        --rim: #6a76a7;
+        --tick: #6677a3;
+        --major: #e9e4d4;
+        --letter: #b2bae1;
+        --needle: #ef5350;
+        --gust: #7985b1;
+        --range: #99c2dd;
+        --swatch-edge: #b2bae1;
+        --rose1: #4778c9;
+        --rose2: #4b91e1;
+        --rose3: #5dacea;
+        --rose4: #77c9f3;
+        --rose5: #a4e6fb;
+        --rose6: #f5fcfe;
 
-        /* The light theme's values -- deep navy instruments on warm
-           paper.  Named here, applied below. */
-        --light-ground: #ece2d0;
-        --light-face: #132133;
-        --light-track: #56708f;
-        --light-tick: #35486a;
-        --light-rim: #060c14;
-        --light-ink: #1c2b3d;
-        --light-muted: #6d6354;
-        --light-heading: #22364e;
-        --light-amber: #f0a02a;
-        --light-steel: #9cceff;
-        --light-steel-dim: #8db0d6;
-        --light-card: #0e1a29;
-        --light-card-ink: #fbf6ec;
-        --light-card-muted: #bcc9d9;
+        /* The light theme's values.  Named here, applied below. */
+        --light-ground: #e3e3e3;
+        --light-card: #ffffff;
+        --light-line: #999999;
+        --light-ring: #87919d;
+        --light-ink: #222222;
+        --light-ink-2: #343434;
+        --light-muted: #545e69;
+        --light-heading: #246a92;
+        --light-hi: #aa4444;
+        --light-lo: #4444aa;
         --light-live: #815009;
-        --light-legend-pad: 6px 10px;
+        --light-face: #f3f6f9;
+        --light-rim: #5f6b78;
+        --light-tick: #6f7a87;
+        --light-major: #1b2733;
+        --light-letter: #4a5563;
+        --light-needle: #c62828;
+        --light-gust: #5f7182;
+        --light-range: #163e5a;
+        --light-swatch-edge: #545e69;
+        --light-rose1: #3892c0;
+        --light-rose2: #2875ad;
+        --light-rose3: #1c5a99;
+        --light-rose4: #124183;
+        --light-rose5: #092764;
+        --light-rose6: #01071a;
       }
       @media (prefers-color-scheme: light) {
         :root:not([data-theme="dark"]) {
           color-scheme: light;
           --ground: var(--light-ground);
-          --face: var(--light-face);
-          --track: var(--light-track);
-          --tick: var(--light-tick);
-          --rim: var(--light-rim);
+          --card: var(--light-card);
+          --line: var(--light-line);
+          --ring: var(--light-ring);
           --ink: var(--light-ink);
+          --ink-2: var(--light-ink-2);
           --muted: var(--light-muted);
           --heading: var(--light-heading);
-          --amber: var(--light-amber);
-          --steel: var(--light-steel);
-          --steel-dim: var(--light-steel-dim);
-          --card: var(--light-card);
-          --card-ink: var(--light-card-ink);
-          --card-muted: var(--light-card-muted);
+          --hi: var(--light-hi);
+          --lo: var(--light-lo);
           --live: var(--light-live);
-          --legend-pad: var(--light-legend-pad);
+          --face: var(--light-face);
+          --rim: var(--light-rim);
+          --tick: var(--light-tick);
+          --major: var(--light-major);
+          --letter: var(--light-letter);
+          --needle: var(--light-needle);
+          --gust: var(--light-gust);
+          --range: var(--light-range);
+          --swatch-edge: var(--light-swatch-edge);
+          --rose1: var(--light-rose1);
+          --rose2: var(--light-rose2);
+          --rose3: var(--light-rose3);
+          --rose4: var(--light-rose4);
+          --rose5: var(--light-rose5);
+          --rose6: var(--light-rose6);
         }
       }
       :root[data-theme="light"] {
         color-scheme: light;
         --ground: var(--light-ground);
-        --face: var(--light-face);
-        --track: var(--light-track);
-        --tick: var(--light-tick);
-        --rim: var(--light-rim);
+        --card: var(--light-card);
+        --line: var(--light-line);
+        --ring: var(--light-ring);
         --ink: var(--light-ink);
+        --ink-2: var(--light-ink-2);
         --muted: var(--light-muted);
         --heading: var(--light-heading);
-        --amber: var(--light-amber);
-        --steel: var(--light-steel);
-        --steel-dim: var(--light-steel-dim);
-        --card: var(--light-card);
-        --card-ink: var(--light-card-ink);
-        --card-muted: var(--light-card-muted);
+        --hi: var(--light-hi);
+        --lo: var(--light-lo);
         --live: var(--light-live);
-        --legend-pad: var(--light-legend-pad);
+        --face: var(--light-face);
+        --rim: var(--light-rim);
+        --tick: var(--light-tick);
+        --major: var(--light-major);
+        --letter: var(--light-letter);
+        --needle: var(--light-needle);
+        --gust: var(--light-gust);
+        --range: var(--light-range);
+        --swatch-edge: var(--light-swatch-edge);
+        --rose1: var(--light-rose1);
+        --rose2: var(--light-rose2);
+        --rose3: var(--light-rose3);
+        --rose4: var(--light-rose4);
+        --rose5: var(--light-rose5);
+        --rose6: var(--light-rose6);
       }
       html, body { background: var(--ground); }
       body {
@@ -167,68 +193,112 @@
         font-size: 12px; font-weight: 600; letter-spacing: 0.14em;
         color: var(--live); text-align: right; cursor: default;
       }
+      /* --cw is the width inside a card, which the fixed column count
+         makes a function of the window: the window, less the body's
+         padding and the gaps between columns, over the columns, less the
+         card's padding and border.  The words under a dial are sized from
+         it, so they grow with the card as the drawing above them does. */
       .gauges {
         display: grid; grid-template-columns: repeat(4, 1fr);
-        gap: 36px 16px; justify-items: stretch; align-items: start;
-        /* Every row as tall as the tallest, so the windrose's legend is
-           reserved on ALL of them rather than only the row it sits in.
-           Without this the rose's cell is 22px taller than the three
-           gauges beside it (34px in the light theme, where the legend
-           has a card and an inset), which reads as the first row being
-           misaligned with the rest.  1fr rather than a measured height:
-           it still holds if the canvas size or the legend ever moves. */
-        grid-auto-rows: 1fr;
+        gap: 16px;
+        --cw: calc((100vw - 88px) / 4 - 26px);
       }
-      @media (max-width: 1080px) { .gauges { grid-template-columns: repeat(3, 1fr); } }
-      @media (max-width: 800px) { .gauges { grid-template-columns: repeat(2, 1fr); } }
-      @media (max-width: 540px) { .gauges { grid-template-columns: 1fr; } }
+      @media (max-width: 1080px) {
+        .gauges { grid-template-columns: repeat(3, 1fr); --cw: calc((100vw - 72px) / 3 - 26px); }
+      }
+      @media (max-width: 800px) {
+        .gauges { grid-template-columns: repeat(2, 1fr); --cw: calc((100vw - 56px) / 2 - 26px); }
+      }
+      @media (max-width: 540px) {
+        .gauges { grid-template-columns: 1fr; --cw: calc(100vw - 66px); }
+      }
+      /* EACH INSTRUMENT IS A CARD. */
       .gauge {
-        display: flex; flex-direction: column; align-items: center;
-        gap: 10px; width: 100%;
+        display: flex; flex-direction: column; min-width: 0;
+        background: var(--card); border: 1px solid var(--line);
+        padding: 14px 12px 12px; box-sizing: border-box;
       }
       .gauge h2 {
-        font-size: clamp(11px, 0.9vw, 16px); font-weight: 600;
-        letter-spacing: 0.22em;
-        text-transform: uppercase; margin: 0; color: var(--heading);
+        margin: 0 0 6px; color: var(--heading); font-weight: 600;
+        font-size: clamp(12px, calc(var(--cw) * 0.042), 16px);
+        letter-spacing: 0.08em; text-transform: uppercase;
       }
-      /* The gauges scale with the window: the engine draws in a 240-unit
-         coordinate system stretched to the css size, so a wide window gets
-         big gauges, big fonts and all. */
-      canvas {
-        display: block; width: 100%; max-width: 480px;
-        height: auto;
-        /* 10px, fixed, and not a token: it is the panel radius the
-           author's other skin uses for every panel it has -- the
-           celestial box, the seismic drum, the radar frames -- so a
-           gauge tile here wears the same corner rather than a new one.
-           Deliberately not scaled with the box: a radius that grows
-           stops reading as the same corner.
-           It shows in the light theme only, where --card is a tile; in
-           dark --card is transparent and there is nothing to round.
-           border-radius affects no layout, so the grid is untouched. */
-        background: var(--card);
-        border-radius: 10px;
+      /* The drawing's square is held before the first poll fills it, so
+         the page does not jump when it lands, and it stops at 480px.
+         overflow visible: the windrose's letters sit at the edge of the
+         drawing. */
+      .draw { width: 100%; max-width: 480px; aspect-ratio: 1; margin: 0 auto; }
+      .draw svg { display: block; width: 100%; height: auto; overflow: visible; }
+      .draw text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+
+      /* The lines under a dial: the reading, what it means, today's high
+         above its low. */
+      .read { text-align: center; margin-top: 2px; }
+      .reading { color: var(--muted); font-size: clamp(14px, calc(var(--cw) * 0.05), 20px); }
+      .reading b { color: var(--ink); font-size: clamp(24px, calc(var(--cw) * 0.105), 46px); font-weight: 600; }
+      .unit { white-space: pre; }
+      .word { color: var(--ink-2); font-size: clamp(13px, calc(var(--cw) * 0.046), 18px); min-height: 1.4em; }
+      .word b { color: var(--ink); }
+      .range {
+        display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 14px;
+        color: var(--muted); font-size: clamp(12px, calc(var(--cw) * 0.042), 16px);
+        margin-top: 4px; min-height: 1.3em;
       }
+      .hi { color: var(--hi); }
+      .lo { color: var(--lo); }
+
+      /* The drawing.  Sizes are in the drawing's own 200 units, so they
+         scale with the card. */
+      .draw .face { fill: var(--face); stroke: var(--rim); stroke-width: 1.5; }
+      .draw .tick { stroke: var(--tick); stroke-width: 1.2; }
+      .draw .tick.major { stroke: var(--major); stroke-width: 2.2; }
+      .draw .num { fill: var(--ink-2); font-size: 13px; font-weight: 600; }
+      .draw .rim { fill: none; stroke-width: 7; }
+      .draw .span, .draw .trend { fill: none; stroke: var(--range); stroke-width: 4; stroke-linecap: round; }
+      .draw .trend { stroke-linecap: butt; }
+      .draw .trend-head { fill: var(--range); }
+      .draw .needle { stroke: var(--needle); stroke-width: 3; stroke-linecap: round; }
+      .draw .needle-head, .draw .hub { fill: var(--needle); }
+      .draw .gust { stroke: var(--gust); stroke-width: 2.5; stroke-linecap: round; }
+      .draw .gust-head { fill: var(--gust); }
+      .draw .letter { fill: var(--letter); font-size: 14px; font-weight: 600; }
+      .draw .letter.north { fill: var(--major); font-weight: 700; }
+      /* The windrose's reference rings and the hub's edge: at 3:1 on the
+         card, quieter than the ticks so the petals lead. */
+      .draw .ring { fill: none; stroke: var(--ring); stroke-width: 1; }
+      .draw .petal { stroke: var(--card); stroke-width: 0.6; }
+      .draw .hub-disc { fill: var(--card); stroke: var(--ring); stroke-width: 1.5; }
+      .draw .hub-pct { fill: var(--ink); font-size: 12px; font-weight: 600; }
+      .draw .hub-calm { fill: var(--muted); font-size: 12px; }
+
+      /* The category rims: EPA's own colors, the same in both themes,
+         for the UV Index and the Air Quality Index. */
+      .draw .rim.uv-1 { stroke: #289500; }
+      .draw .rim.uv-2 { stroke: #f7e400; }
+      .draw .rim.uv-3 { stroke: #f85900; }
+      .draw .rim.uv-4 { stroke: #d8001d; }
+      .draw .rim.uv-5 { stroke: #6b49c8; }
+      .draw .rim.aqi-1 { stroke: #00e400; }
+      .draw .rim.aqi-2 { stroke: #ffff00; }
+      .draw .rim.aqi-3 { stroke: #ff7e00; }
+      .draw .rim.aqi-4 { stroke: #ff0000; }
+      .draw .rim.aqi-5 { stroke: #8f3f97; }
+      .draw .rim.aqi-6 { stroke: #7e0023; }
+
       .legend {
         display: flex; flex-wrap: wrap; gap: 4px 10px; justify-content: center;
-        font-size: clamp(10.5px, 0.8vw, 15px); color: var(--card-muted);
-        max-width: 400px;
-        /* On the card, with the rose it explains.  The chips are the
-           windrose's own band colors, which are chosen to clear the DIAL
-           FACE -- against the light theme's paper ground the palest three
-           fall to 1.2:1 and vanish.  Transparent in the dark theme, where
-           --card is transparent and this changes nothing. */
-        background: var(--card);
-        padding: var(--legend-pad);
+        font-size: clamp(12px, calc(var(--cw) * 0.04), 15px); color: var(--ink); margin-top: 8px;
       }
       /* Until the first poll fills it -- and for ever on a report that
-         declares no windrose group -- the legend is empty markup.  With a
-         card behind it that would draw as a small bare tile. */
+         declares no windrose group -- the legend is empty markup. */
       .legend:empty { display: none; }
-      .legend span { display: flex; align-items: center; gap: 5px; }
+      .legend span { display: flex; align-items: center; gap: 4px; }
+      /* EVERY SWATCH CARRIES AN EDGE: the dark theme's windiest band is
+         near-white by design, and a swatch that cannot be told from its
+         card identifies nothing. */
       .legend i {
-        width: clamp(10px, 0.8vw, 15px); height: clamp(10px, 0.8vw, 15px);
-        display: inline-block; border-radius: 2px;
+        width: 11px; height: 11px; display: inline-block; border-radius: 2px;
+        border: 1px solid var(--swatch-edge); box-sizing: border-box;
       }
     </style>
   </head>
@@ -250,52 +320,63 @@
       <div class="gauges">
         <div class="gauge">
           <h2>$gettext("Today's Windrose")</h2>
-          <canvas id="gauge-rose" width="240" height="240"></canvas>
+          <div class="draw" id="gauge-rose"></div>
           <div class="legend" id="rose-legend"></div>
         </div>
         <div class="gauge">
           <h2>$gettext("Wind")</h2>
-          <canvas id="gauge-wind" width="240" height="240"></canvas>
+          <div class="draw" id="gauge-wind"></div>
+          <div class="read" id="read-wind"></div>
         </div>
         <div class="gauge">
           <h2>$gettext("Temperature")</h2>
-          <canvas id="gauge-temp" width="240" height="240"></canvas>
+          <div class="draw" id="gauge-temp"></div>
+          <div class="read" id="read-temp"></div>
         </div>
         <div class="gauge">
           <h2>$gettext("Dew Point")</h2>
-          <canvas id="gauge-dew" width="240" height="240"></canvas>
+          <div class="draw" id="gauge-dew"></div>
+          <div class="read" id="read-dew"></div>
         </div>
         <div class="gauge">
           <h2>$gettext("Humidity")</h2>
-          <canvas id="gauge-hum" width="240" height="240"></canvas>
+          <div class="draw" id="gauge-hum"></div>
+          <div class="read" id="read-hum"></div>
         </div>
         <div class="gauge">
           <h2>$gettext("Barometer")</h2>
-          <canvas id="gauge-baro" width="240" height="240"></canvas>
+          <div class="draw" id="gauge-baro"></div>
+          <div class="read" id="read-baro"></div>
         </div>
         <div class="gauge">
           <h2>$gettext("Rain")</h2>
-          <canvas id="gauge-rain" width="240" height="240"></canvas>
+          <div class="draw" id="gauge-rain"></div>
+          <div class="read" id="read-rain"></div>
         </div>
         <div class="gauge">
           <h2>$gettext("Rain Rate")</h2>
-          <canvas id="gauge-rrate" width="240" height="240"></canvas>
+          <div class="draw" id="gauge-rrate"></div>
+          <div class="read" id="read-rrate"></div>
         </div>
         <div class="gauge" id="cell-feel">
           <h2>$gettext("Feels Like")</h2>
-          <canvas id="gauge-feel" width="240" height="240"></canvas>
+          <div class="draw" id="gauge-feel"></div>
+          <div class="read" id="read-feel"></div>
         </div>
         <div class="gauge" id="cell-uv">
           <h2>$gettext("UV Index")</h2>
-          <canvas id="gauge-uv" width="240" height="240"></canvas>
+          <div class="draw" id="gauge-uv"></div>
+          <div class="read" id="read-uv"></div>
         </div>
         <div class="gauge" id="cell-rad">
           <h2>$gettext("Solar Radiation")</h2>
-          <canvas id="gauge-rad" width="240" height="240"></canvas>
+          <div class="draw" id="gauge-rad"></div>
+          <div class="read" id="read-rad"></div>
         </div>
         <div class="gauge" id="cell-aqi">
           <h2>$gettext("Air Quality")</h2>
-          <canvas id="gauge-aqi" width="240" height="240"></canvas>
+          <div class="draw" id="gauge-aqi"></div>
+          <div class="read" id="read-aqi"></div>
         </div>
       </div>
     </div>

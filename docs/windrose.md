@@ -127,7 +127,7 @@ new edges.
 
 ## Drawing a rose
 
-The [sample skin](sample-skin.html) draws a live canvas windrose from
+The [sample skin](sample-skin.html) draws a live windrose from
 `day.windrose.banded` and `day.windrose.calm` — see
 `skins/LoopData/realtime_updater.inc` for javascript to crib from.
 

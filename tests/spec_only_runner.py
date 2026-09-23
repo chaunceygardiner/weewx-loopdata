@@ -115,7 +115,7 @@ SPEC_TESTS = [
     'test_i18n_sv_conf_is_complete',
     'test_i18n_lang_files_in_step_with_siblings',
     # Manual/code lockstep audits: these read repo sources (the docs, the
-    # installer, skin.conf, changes.txt) and compare them against the code's
+    # installer, skin.conf, changes.md) and compare them against the code's
     # own tables -- never against loopdata output -- so they are spec-derived.
     'test_manual_heading_slug_rule',
     'test_manual_internal_links_and_anchors_resolve',

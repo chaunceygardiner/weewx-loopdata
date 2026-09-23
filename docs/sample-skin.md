@@ -20,17 +20,28 @@ the panel works out of the box on a fresh install.
 
 ## The instrument panel
 
-The page is a NOAA windrose plus eleven canvas gauges, drawn by a few
-hundred lines of dependency-free javascript — and every needle, petal and
-readout redraws on every loop packet:
+The page is a NOAA windrose, a wind compass and ten dials, drawn as SVG
+by a few hundred lines of dependency-free javascript — and every needle,
+petal and reading redraws on every loop packet.  Each instrument is a card:
+the drawing, then under it the reading, a line saying what it means, and
+today's high above its low.
 
-* Temperature, dew point, feels-like and humidity dials wear today's
-  min–max as a band.
-* The wind compass carries a second ghost needle at the 10-minute gust
-  direction.
-* The barometer draws the 3-hour trend as an arc, with a chevron showing
-  the direction of travel.
-* Rain and rain-rate dials rescale themselves on a big day.
+* Temperature, dew point, feels-like and humidity dials draw today's
+  low-to-high as an arc inside the ticks.  Feels like says how far it is
+  from the air temperature.
+* The wind compass points its needle at the side the wind comes from, with
+  a lighter, shorter needle for the strongest gust of the last ten
+  minutes, and today's prevailing direction as a short arc.  Under it:
+  "from WNW · gusting 14 mph from W", today's peak and the prevailing
+  direction in words.
+* The barometer draws the 3-hour trend as an arc, headed in the direction
+  of travel, and says it in words (`trend.barometer.desc`).
+* UV and air quality wear their EPA category colors on the rim, and say
+  the category: "High" at a UV index of 6, "Good" at an AQI of 38.  EPA
+  names the UV index rounded, so the page does too.  The air quality dial
+  runs to 500, the top of EPA's Hazardous band.
+* UV, solar radiation and rain rate draw today's peak as an arc from the
+  floor.  Rain and rain-rate dials rescale themselves on a big day.
 * The windrose is the NOAA banded kind, drawn from `day.windrose.banded`
   and `day.windrose.calm`.
 * UV, solar radiation and air quality (weewx-purple's `pm2_5_aqi`) gauges —
@@ -39,12 +50,15 @@ readout redraws on every loop packet:
   field shows up in loop-data.txt.
 
 The division of labor is the loopdata pattern in miniature: the `.raw`
-fields drive the geometry, report-formatted fields supply the readouts, and
-`unit.label` fields pick the dial scales — so the panel follows this
-report's units and formatting (metric or US) like any other loopdata page.
-The gauges scale with the window: the engine draws in a 240-unit coordinate
-system stretched to the css size, so geometry and fonts grow together on a
-wide display (faces cap at 480px).
+fields drive the geometry, `.formatted` fields supply each number and
+`unit.label` fields the unit beside it and the dial scales — so the panel
+follows this report's units and formatting (metric or US, and its decimal
+point) like any other loopdata page.  The numerals on the dials use the
+same decimal point.  The panel scales with the window: four cards to a
+row, three below 1080 pixels, two below 800 and one below 540.  Each
+drawing is a 200-unit square stretched to its card, so its lines and words
+grow together (drawings cap at 480px), and the words under it grow with
+the card.
 
 The fields the panel reads are declared in `skins/LoopData/skin.conf`,
 one group per gauge (see [Declaring fields](declaring-fields.html)), and
@@ -56,26 +70,28 @@ another report name gets its own entry.
 
 Gauge by gauge, in the order the page lays them out.  A gauge whose
 formatted field is missing shows `--`; one whose `.raw` field is missing
-draws no needle, band or petal.
+draws no needle, arc or petal.
 
 | Gauge | Fields |
 |:--|:--|
 | Today's Windrose | `day.windrose.banded`, `day.windrose.calm` (and the automatic `windrose.bands`) |
-| Wind | `current.windSpeed`, `current.windSpeed.raw`, `current.windDir.raw`, `current.windDir.ordinal_compass`, `10m.windGust.max`, `10m.wind.gustdir.raw`, `10m.wind.gustdir.ordinal_compass` |
-| Temperature | `current.outTemp`, `current.outTemp.raw`, `day.outTemp.min.raw`, `day.outTemp.max.raw`, `day.outTemp.min.formatted`, `day.outTemp.max.formatted` |
-| Dew Point | `current.dewpoint`, `current.dewpoint.raw`, `day.dewpoint.min.raw`, `day.dewpoint.max.raw`, `day.dewpoint.min.formatted`, `day.dewpoint.max.formatted` |
-| Humidity | `current.outHumidity`, `current.outHumidity.raw`, `day.outHumidity.min.raw`, `day.outHumidity.max.raw` |
-| Barometer | `current.barometer`, `current.barometer.raw`, `trend.barometer.raw`, `trend.barometer.desc` |
-| Rain | `day.rain.sum`, `day.rain.sum.raw`, `current.rainRate`, `current.rainRate.raw` |
-| Rain Rate | `current.rainRate`, `current.rainRate.raw`, `day.rainRate.max`, `day.rainRate.max.raw` |
-| Feels Like | `current.appTemp`, `current.appTemp.raw`, `day.appTemp.min.raw`, `day.appTemp.max.raw`, `day.appTemp.min.formatted`, `day.appTemp.max.formatted` |
-| UV Index | `current.UV`, `current.UV.raw`, `day.UV.max` |
-| Solar Radiation | `current.radiation`, `current.radiation.raw`, `day.radiation.max` |
+| Wind | `current.windSpeed.formatted`, `current.windSpeed.raw`, `current.windDir.raw`, `current.windDir.ordinal_compass`, `10m.windGust.max`, `10m.windGust.max.raw`, `10m.wind.gustdir.raw`, `10m.wind.gustdir.ordinal_compass`, `day.wind.max`, `day.wind.max.raw`, `day.wind.vecdir.raw`, `day.wind.vecdir.ordinal_compass` |
+| Temperature | `current.outTemp.formatted`, `current.outTemp.raw`, `day.outTemp.min.raw`, `day.outTemp.max.raw`, `day.outTemp.min.formatted`, `day.outTemp.max.formatted` |
+| Dew Point | `current.dewpoint.formatted`, `current.dewpoint.raw`, `day.dewpoint.min.raw`, `day.dewpoint.max.raw`, `day.dewpoint.min.formatted`, `day.dewpoint.max.formatted` |
+| Humidity | `current.outHumidity.formatted`, `current.outHumidity.raw`, `day.outHumidity.min.raw`, `day.outHumidity.max.raw`, `day.outHumidity.min.formatted`, `day.outHumidity.max.formatted` |
+| Barometer | `current.barometer.formatted`, `current.barometer.raw`, `trend.barometer.raw`, `trend.barometer.desc`, `day.barometer.min.formatted`, `day.barometer.max.formatted` |
+| Rain | `day.rain.sum.formatted`, `day.rain.sum.raw`, `current.rainRate`, `current.rainRate.raw` |
+| Rain Rate | `current.rainRate.formatted`, `current.rainRate.raw`, `day.rainRate.max`, `day.rainRate.max.raw` |
+| Feels Like | `current.appTemp.formatted`, `current.appTemp.raw`, `day.appTemp.min.raw`, `day.appTemp.max.raw`, `day.appTemp.min.formatted`, `day.appTemp.max.formatted` |
+| UV Index | `current.UV.formatted`, `current.UV.raw`, `day.UV.max`, `day.UV.max.raw` |
+| Solar Radiation | `current.radiation.formatted`, `current.radiation.raw`, `day.radiation.max`, `day.radiation.max.raw` |
 | Air Quality | `current.pm2_5`, `current.pm2_5_aqi.raw`, `current.pm2_5_aqi.formatted` |
 
-`current.dateTime.raw` drives the timestamp and the LIVE indicator, and
-`unit.label.outTemp`, `unit.label.barometer`, `unit.label.rain`,
-`unit.label.rainRate` and `unit.label.windSpeed` pick the dial scales.
+`current.dateTime.raw` drives the timestamp and the LIVE indicator.
+`unit.label.outTemp`, `unit.label.outHumidity`, `unit.label.barometer`,
+`unit.label.rain`, `unit.label.rainRate`, `unit.label.windSpeed` and
+`unit.label.radiation` supply the unit beside each reading and pick the
+dial scales.
 
 {: .note }
 To turn the sample page off, set `enable = false` on `[[LoopDataReport]]`
@@ -158,9 +174,10 @@ the value, as described above.
 
 ## Themes
 
-The page ships two: **dark**, navy dials on near-black, which is what this
-skin has always looked like, and **light**, deep navy instruments on warm
-paper.  `theme` in the report's `[Extras]` chooses between them.
+The page ships two: **dark**, deep dials on navy cards, and **light**,
+pale dials on white cards.  In both, each gauge has one red arm, as an
+analog gauge does.
+`theme` in the report's `[Extras]` chooses between them.
 
 **`auto` is the default, and it follows the viewer, not the station.**  The
 browser reports whatever the person looking at the page has set on their
@@ -200,45 +217,38 @@ it regardless of who is looking.
 ### Retuning the colors
 
 The palette is a set of CSS custom properties at the top of
-`index.html.tmpl`, and since 7.3 that is the only place those colors are
-written: `realtime_updater.inc` reads the properties rather than repeating
-them, so changing one there changes both the page and the canvases.  The
-one exception is the windrose's six speed-band shades, which are still the
-`RAMP` array in `realtime_updater.inc` — they are drawn on the dial face,
-which is dark in both themes, so they do not change with the theme.  The dark
-values sit on `:root` and the light ones are named `--light-*` beside
-them, applied by a `prefers-color-scheme` media query and by the
-`[data-theme]` attribute the `theme` option sets.
+`index.html.tmpl`, and that is the only place the colors are written: the
+instruments are SVG whose every line and fill is a css class, so the
+javascript names no color at all.  The dark values sit on `:root` and the
+light ones are named `--light-*` beside them, applied by a
+`prefers-color-scheme` media query and by the `[data-theme]` attribute the
+`theme` option sets.  The one set that is the same in both themes is the
+UV and air quality rims, which are EPA's own colors.
 
-The shipped numbers were measured, not picked: each gauge's range band
-clears its track by 3:1, which is what makes an arc read at a glance, and
-the six windrose shades in `RAMP` hold their separation against the dial
-face.  If
-you retune, keep those relationships or the dials get harder to read at
-the size they are actually drawn.  Note also that a skin edit is replaced
-on the next upgrade — `weewx.conf` is not.
+The shipped numbers were measured, not picked: every color clears the
+surface it is drawn on — 4.5:1 for text, 3:1 for a needle, arc or tick —
+and the six windrose shades (`--rose1` to `--rose6`) step evenly from the
+calmest band to the windiest against their own theme.  If you retune, keep
+those relationships or the dials get harder to read at the size they are
+actually drawn.  Note also that a skin edit is replaced on the next
+upgrade — `weewx.conf` is not.
 
 ## Files to crib from
 
-* `index.html.tmpl` — the page skeleton: a `<canvas>` per gauge, the
-  palette, and the translated strings Cheetah hands to the javascript.  It
-  renders no readings itself; every value on the page arrives by poll.
+* `index.html.tmpl` — the page skeleton: a card per gauge with an empty
+  slot for its drawing and one for its reading, the palette, and the
+  styles that dress the drawings.  It renders no readings itself; every
+  value on the page arrives by poll.
 * `realtime_updater.inc` — the polling javascript: the fetch loop, the
   LIVE/OFFLINE/NO DATA/BAD DATA indicator, the expiration timer, and the
-  canvas gauge and windrose rendering.
+  SVG drawing of the dials, the compass and the windrose.  It writes class
+  names only, and rewrites a drawing only when it changed.
 
-The palette lives in one place, the `:root` custom properties in
-`index.html.tmpl`.  A canvas cannot read a css variable, but the javascript
-drawing on it can, so `realtime_updater.inc` reads the properties rather
-than repeating them — the exception being the windrose's `RAMP`, described
-below.  Retune it freely — the windrose and the dials share a face radius,
-so they read as one size whatever you do to the colors.
-
-`RAMP`'s six shades are stops on a curve rather than one color per band:
-`bandColor` samples them for however many speed bands your
-`windrose_bands` produces, so the calmest band is always the first stop
-and the windiest always the last, and six bands get the six stops
-exactly.
+The six `--rose` shades are stops on a curve rather than one color per
+band: the windrose samples them, with css `color-mix`, for however many
+speed bands your `windrose_bands` produces, so the calmest band is always
+the first stop and the windiest always the last, and six bands get the six
+stops exactly.
 
 [Building a live page](build-a-live-page.html) walks through the same
 pattern for your own skin.

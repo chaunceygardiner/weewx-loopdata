@@ -92,7 +92,7 @@ stanza in `weewx.conf` that dropped the field — the case above.
 Otherwise the field is declared but had no value, and a field with no value is
 omitted from `loop-data.txt` entirely (see
 [Missing data](field-reference.html#missing-data)) — the same reason the
-wind compass loses its amber needle while `windDir` is null in a calm.  If
+wind compass loses its needle while `windDir` is null in a calm.  If
 it never appears, your station isn't reporting that observation in loop
 packets, which is a station or driver matter rather than a LoopData one; the
 `obstypes.current` line LoopData logs at startup says what it does report.

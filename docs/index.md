@@ -18,11 +18,11 @@ report: current observations, trends, aggregates over hours, days, weeks,
 months, years and rolling windows — including almanac tags, station tags and
 unit labels.
 
-This is the sample report included with the extension — a NOAA-style windrose
-and eleven gauges, drawn by a few hundred lines of dependency-free canvas
-javascript.  Every needle, petal and readout on this page redraws on every
-loop packet, and gauges for sensors a station does not have (UV, solar
-radiation, air quality) hide themselves automatically:
+This is the sample report included with the extension — a NOAA-style
+windrose and eleven gauges, drawn as SVG by a few hundred lines of
+dependency-free javascript.  Every needle, petal and readout on this page
+redraws on every loop packet, and gauges for sensors a station does not have
+(UV, solar radiation, air quality) hide themselves automatically:
 
 ![The LoopData sample report: a live instrument panel](images/LoopDataReport.png)
 
