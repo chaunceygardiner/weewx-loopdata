@@ -1,5 +1,14 @@
 # weewx-loopdata change history
 
+## 7.5.1 2026/09/23
+- The sample report's windrose sits on a dial face of its own, rimmed
+  like the gauges beside it with the compass letters inside, and that face
+  is exactly the size of theirs; in 7.5 the rose was drawn straight on its
+  card and came out a different size from the dials in its row.  Its
+  letters and its lines -- the rim, the rings, the hub's edge -- are drawn
+  the same size on screen as the dials' too.  Its rings are a shade
+  darker in the light theme, so they still stand out against the face.
+
 ## 7.5 2026/09/23
 - The sample report's gauges are redrawn.  Each is a card: the dial,
   then under it the reading, a line saying what it means, and today's

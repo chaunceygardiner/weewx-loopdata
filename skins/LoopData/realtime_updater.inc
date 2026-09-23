@@ -297,8 +297,9 @@
     return '<line class="' + cls + '" x1="' + f2(a[0]) + '" y1="' + f2(a[1]) +
            '" x2="' + f2(b[0]) + '" y2="' + f2(b[1]) + '"/>';
   }
-  function svgOpen() {
-    return '<svg viewBox="0 0 200 200" aria-hidden="true" focusable="false">';
+  function svgOpen(viewBox, cls) {
+    return '<svg' + (cls ? ' class="' + cls + '"' : '') + ' viewBox="' +
+           (viewBox || '0 0 200 200') + '" aria-hidden="true" focusable="false">';
   }
 
   // Dial scales by the report's unit, keyed off the unit.label fields.
@@ -493,8 +494,16 @@
     return 'color-mix(in srgb, var(--rose' + (lo + 1) + ') ' +
            Math.round((1 - t) * 100) + '%, var(--rose' + (lo + 2) + '))';
   }
+  // The rose sits on a face of its own, with the letters inside it, and
+  // its drawing is cropped wider than 200 so that face comes out exactly
+  // the size of the dials' faces beside it: a face of ROSE_FACE shown as a
+  // dial shows one of RF.
+  var ROSE_FACE = 106, ROSE_HALF = ROSE_FACE * 100 / RF;
+  var ROSE_VIEW = [100 - ROSE_HALF, 100 - ROSE_HALF, 2 * ROSE_HALF, 2 * ROSE_HALF]
+      .map(function (v) { return v.toFixed(2); }).join(' ');
   function roseSvg(banded, calm) {
-    var R1 = 84, r0 = 27, out = svgOpen();
+    var R1 = 84, r0 = 27;
+    var out = svgOpen(ROSE_VIEW, 'rose') + '<circle class="face" cx="100" cy="100" r="' + ROSE_FACE + '"/>';
     [0.25, 0.5, 0.75, 1].forEach(function (k) {
       out += '<circle class="ring" cx="100" cy="100" r="' + (r0 + (R1 - r0) * k) + '"/>';
     });

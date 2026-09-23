@@ -56,9 +56,10 @@ follows this report's units and formatting (metric or US, and its decimal
 point) like any other loopdata page.  The numerals on the dials use the
 same decimal point.  The panel scales with the window: four cards to a
 row, three below 1080 pixels, two below 800 and one below 540.  Each
-drawing is a 200-unit square stretched to its card, so its lines and words
-grow together (drawings cap at 480px), and the words under it grow with
-the card.
+drawing is a square stretched to its card, so its lines and words grow
+together (drawings cap at 480px), and the words under it grow with the
+card.  Every gauge's face, the windrose's included, comes out the same
+size.
 
 The fields the panel reads are declared in `skins/LoopData/skin.conf`,
 one group per gauge (see [Declaring fields](declaring-fields.html)), and

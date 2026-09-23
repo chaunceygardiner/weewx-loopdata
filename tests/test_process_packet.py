@@ -8685,12 +8685,12 @@ class ProcessPacketTests(unittest.TestCase):
         ('needle', 'face', 3.0), ('range', 'face', 3.0), ('tick', 'face', 3.0),
         ('gust', 'face', 3.0),
         # The face stands barely off its card, so the rim draws the disc;
-        # the windrose sits on the card, where its calmest band and the
-        # legend's swatch edges must show.
-        ('rim', 'card', 3.0), ('rose1', 'card', 3.0), ('swatch-edge', 'card', 3.0),
-        # The windrose's rings: 1.26:1 in dark and 1.37:1 in light when they
-        # were a hairline, and all but invisible.
-        ('ring', 'card', 3.0),
+        # the legend's swatch edges sit on the card.
+        ('rim', 'card', 3.0), ('swatch-edge', 'card', 3.0),
+        # The windrose sits on a face of its own, where its calmest band
+        # and its rings must show.  The rings were 1.26:1 in dark and
+        # 1.37:1 in light as a hairline, and all but invisible.
+        ('rose1', 'face', 3.0), ('ring', 'face', 3.0),
     )
 
     @staticmethod

@@ -87,7 +87,7 @@
         --light-ground: #e3e3e3;
         --light-card: #ffffff;
         --light-line: #999999;
-        --light-ring: #87919d;
+        --light-ring: #7f8995;
         --light-ink: #222222;
         --light-ink-2: #343434;
         --light-muted: #545e69;
@@ -264,12 +264,23 @@
       .draw .letter { fill: var(--letter); font-size: 14px; font-weight: 600; }
       .draw .letter.north { fill: var(--major); font-weight: 700; }
       /* The windrose's reference rings and the hub's edge: at 3:1 on the
-         card, quieter than the ticks so the petals lead. */
+         face they sit on, quieter than the ticks so the petals lead. */
       .draw .ring { fill: none; stroke: var(--ring); stroke-width: 1; }
-      .draw .petal { stroke: var(--card); stroke-width: 0.6; }
-      .draw .hub-disc { fill: var(--card); stroke: var(--ring); stroke-width: 1.5; }
+      .draw .petal { stroke: var(--face); stroke-width: 0.6; }
+      .draw .hub-disc { fill: var(--face); stroke: var(--ring); stroke-width: 1.5; }
       .draw .hub-pct { fill: var(--ink); font-size: 12px; font-weight: 600; }
       .draw .hub-calm { fill: var(--muted); font-size: 12px; }
+      /* The windrose's drawing is cropped 230.4 units wide rather than
+         200, so its face matches the dials'.  Everything sized in drawing
+         units -- its words AND its line widths -- is set 230.4/200 larger
+         to come out on screen the size of the dials'; scaling only the
+         words left its rim and rings 13% thinner than theirs. */
+      .draw .rose .letter { font-size: 16.1px; }
+      .draw .rose .hub-pct, .draw .rose .hub-calm { font-size: 13.8px; }
+      .draw .rose .face { stroke-width: 1.73; }
+      .draw .rose .ring { stroke-width: 1.15; }
+      .draw .rose .hub-disc { stroke-width: 1.73; }
+      .draw .rose .petal { stroke-width: 0.69; }
 
       /* The category rims: EPA's own colors, the same in both themes,
          for the UV Index and the Air Quality Index. */
