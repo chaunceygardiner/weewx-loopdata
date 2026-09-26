@@ -1,5 +1,17 @@
 # weewx-loopdata change history
 
+## 7.x (in progress)
+- The sample report's wind compass points with the same red arm as the
+  dials beside it, and the gust with a plain lighter needle; both used to
+  carry arrowheads.  The tip marks where the wind comes from, and an
+  arrowhead invited reading it the other way, as the way the wind is
+  going.  In a calm, with no red arm to carry, the hub takes the gust
+  needle's color.
+- The barometer's trend arc is drawn only when the change is big enough
+  to show its head, about 1.3 hPa (0.04 inHg) over the trend window.  A
+  smaller change used to draw a sliver too small to see or to read as an
+  arrow.
+
 ## 7.5.1 2026/09/23
 - The sample report's windrose sits on a dial face of its own, rimmed
   like the gauges beside it with the compass letters inside, and that face

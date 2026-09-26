@@ -29,13 +29,15 @@ today's high above its low.
 * Temperature, dew point, feels-like and humidity dials draw today's
   low-to-high as an arc inside the ticks.  Feels like says how far it is
   from the air temperature.
-* The wind compass points its needle at the side the wind comes from, with
-  a lighter, shorter needle for the strongest gust of the last ten
-  minutes, and today's prevailing direction as a short arc.  Under it:
+* The wind compass points the dials' red arm at the side the wind comes
+  from, with a lighter, shorter needle for the strongest gust of the last
+  ten minutes, and today's prevailing direction as a short arc.  Under it:
   "from WNW · gusting 14 mph from W", today's peak and the prevailing
   direction in words.
 * The barometer draws the 3-hour trend as an arc, headed in the direction
-  of travel, and says it in words (`trend.barometer.desc`).
+  of travel, once the change is big enough to draw — about 1.3 hPa
+  (0.04 inHg) — and says it in words (`trend.barometer.desc`) either
+  way.
 * UV and air quality wear their EPA category colors on the rim, and say
   the category: "High" at a UV index of 6, "Good" at an AQI of 38.  EPA
   names the UV index rounded, so the page does too.  The air quality dial

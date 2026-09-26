@@ -376,6 +376,17 @@
   // corners of the dial.
   var RF = 92, A0 = -135, A1 = 135;
   var R_NUM = 53, R_NUM_SIDE = 66, R_ARC = 74, R_RIM = 87;
+  // The red arm and its hub, the same on every dial and on the compass.
+  // A compass with no arm to carry, in a calm, wears a still hub, in the
+  // gust's color: a red hub there is the root of an arm that isn't drawn.
+  function arm(deg) { return line('needle', pt(-18, deg), pt(RF - 10, deg)); }
+  function hub(still) {
+    return '<circle class="hub' + (still ? ' still' : '') + '" cx="100" cy="100" r="6.5"/>';
+  }
+  // The trend's head is TREND_HEAD degrees long, and a trend shorter than
+  // its own head is not drawn: under that it is a sliver, too short to
+  // read as an arrow and, at the smallest changes, too small to see.
+  var TREND_HEAD = 4;
   // opts: span [lo, hi] | trend (where the reading was trend-window ago) |
   // rim (category bands)
   function dialSvg(scale, value, opts) {
@@ -397,16 +408,14 @@
     }
     // The barometer's trend: from where the pressure was one trend window
     // ago to where it is now, with a head at the present end.  Compared as
-    // ANGLES: a pressure off the scale pins both ends to the same stop,
-    // and a trend there has no length to draw.
+    // ANGLES, so the cutoff is the same length on every unit's scale; a
+    // pressure off the scale pins both ends to the same stop, and a trend
+    // there has no length to draw.
     var t0 = opts.trend === undefined ? undefined : ang(opts.trend);
     var t1 = value === undefined ? undefined : ang(value);
-    if (t0 !== undefined && t1 !== undefined && Math.abs(t1 - t0) > 0.01) {
+    if (t0 !== undefined && t1 !== undefined && Math.abs(t1 - t0) >= TREND_HEAD) {
       var dir = t1 > t0 ? 1 : -1;
-      var neck = t1 - dir * 4;
-      if ((neck - t0) * dir < 0) {
-        neck = t0;
-      }
+      var neck = t1 - dir * TREND_HEAD;
       out += '<path class="trend" d="' + arcD(R_ARC, t0, neck) + '"/>' +
              '<path class="trend-head" d="M' + xy(pt(R_ARC, t1)) + 'L' +
              xy(pt(R_ARC - 6, neck)) + 'L' + xy(pt(R_ARC + 6, neck)) + 'Z"/>';
@@ -430,24 +439,19 @@
       }
     }
     if (value !== undefined) {
-      var na = ang(value);
-      out += line('needle', pt(-18, na), pt(RF - 10, na));
+      out += arm(ang(value));
     }
-    return out + '<circle class="hub" cx="100" cy="100" r="6.5"/></svg>';
+    return out + hub(false) + '</svg>';
   }
 
-  // THE COMPASS: letters inside the ring, the needle's head at the side
-  // the wind comes FROM, the last ten minutes' gust as a lighter, shorter
-  // needle, and today's prevailing direction as a short arc inside the
-  // ticks.  Both needles are drawn after the letters, so an arrow covers
-  // the letter it reaches rather than being read through it.
-  var CL = { letters: 64, arc: 76, arcHalf: 10,
-             gust: [-12, 44, 62, 9], wind: [-16, 54, 72, 9] };
-  function arrow(cls, deg, n) {
-    return line(cls, pt(n[0], deg), pt(n[1], deg)) +
-           '<path class="' + cls + '-head" d="M' + xy(pt(n[2], deg)) + 'L' +
-           xy(pt(n[1], deg - n[3])) + 'L' + xy(pt(n[1], deg + n[3])) + 'Z"/>';
-  }
+  // THE COMPASS: letters inside the ring, the dials' red arm pointing at
+  // the side the wind comes FROM, the last ten minutes' gust as a lighter,
+  // shorter needle, and today's prevailing direction as a short arc inside
+  // the ticks.  Neither needle has a head: an arrow on a wind dial reads
+  // as the way the wind is GOING, the opposite of what the tip marks.
+  // The arm runs over the letter it points at, as a dial's arm runs over
+  // a numeral; the gust stops short of the letters.
+  var CL = { letters: 64, arc: 76, arcHalf: 10, gust: [-12, 54] };
   function compassSvg(w) {
     var out = svgOpen() + '<circle class="face" cx="100" cy="100" r="' + RF + '"/>';
     if (w.prevailing !== undefined) {
@@ -465,12 +469,13 @@
              esc(c) + '</text>';
     });
     if (w.gust > 0 && w.gustDir !== undefined) {
-      out += arrow('gust', w.gustDir, CL.gust);
+      out += line('gust', pt(CL.gust[0], w.gustDir), pt(CL.gust[1], w.gustDir));
     }
-    if (w.speed > 0 && w.dir !== undefined) {
-      out += arrow('needle', w.dir, CL.wind);
+    var armed = w.speed > 0 && w.dir !== undefined;
+    if (armed) {
+      out += arm(w.dir);
     }
-    return out + '<circle class="hub" cx="100" cy="100" r="7"/></svg>';
+    return out + hub(!armed) + '</svg>';
   }
 
   // THE WINDROSE: petals by direction, each stacked outward by speed band,
