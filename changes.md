@@ -1,6 +1,6 @@
 # weewx-loopdata change history
 
-## 7.x (in progress)
+## 7.5.2 2026/09/26
 - The sample report's wind compass points with the same red arm as the
   dials beside it, and the gust with a plain lighter needle; both used to
   carry arrowheads.  The tip marks where the wind comes from, and an
