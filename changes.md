@@ -12,7 +12,9 @@
   every row and the time or date of each extreme under it.  The windrose
   card draws the rose for this hour, today, this week, this month and
   this year; the UV and air quality cards color their peaks in EPA's
-  categories and show EPA's scale with the reading's row marked.  The
+  categories and show EPA's scale with the reading's row marked, the
+  air quality card ranking each period's highest PM2.5 as the index
+  weewx-purple computes for it, since the index is never archived.  The
   cards step with the arrow keys or the buttons in their head, close on
   Escape, the x or a click outside, and follow the station on every
   packet while open.  Everything they say comes from loop-data.txt: the

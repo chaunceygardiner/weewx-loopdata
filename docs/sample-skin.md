@@ -104,6 +104,10 @@ Each card is the same four things:
 * **One more section where there is one**: the windrose card draws the
   rose for this hour, today, this week, this month and this year; the UV
   and air quality cards show EPA's scale with the reading's row marked.
+  The air quality ladder ranks each period's highest PM2.5, which is
+  archived, and shows it as the index weewx-purple computes for it; the
+  index itself is an xtype, computed per packet and never archived, so
+  no period beyond today could be built from it.
 
 ![The wind card in the light theme](images/LoopDataReport-card-light.png)
 
