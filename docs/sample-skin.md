@@ -104,10 +104,12 @@ Each card is the same four things:
 * **One more section where there is one**: the windrose card draws the
   rose for this hour, today, this week, this month and this year; the UV
   and air quality cards show EPA's scale with the reading's row marked.
-  The air quality ladder ranks each period's highest PM2.5, which is
-  archived, and shows it as the index weewx-purple computes for it; the
-  index itself is an xtype, computed per packet and never archived, so
-  no period beyond today could be built from it.
+  The air quality card's today tiles and its ladder rank each period's
+  highest (and today's lowest) PM2.5, which is archived, and show it as
+  the index weewx-purple computes for it; the index itself is an xtype,
+  computed per packet and never archived, so no period's extreme could be
+  built from it -- today's would count only the packets since weewxd
+  started.  Only the reading now uses the index in the packet.
 
 ![The wind card in the light theme](images/LoopDataReport-card-light.png)
 
@@ -163,7 +165,7 @@ draws no needle, arc or petal.
 | Feels Like card | `trend.appTemp.formatted`, `1h.appTemp.min.raw`, `1h.appTemp.min.formatted`, `1h.appTemp.max.raw`, `1h.appTemp.max.formatted`, `24h.appTemp.min.raw`, `24h.appTemp.min.formatted`, `24h.appTemp.max.raw`, `24h.appTemp.max.formatted`, `day.appTemp.min.raw`, `day.appTemp.min.formatted`, `day.appTemp.mintime`, `day.appTemp.max.raw`, `day.appTemp.max.formatted`, `day.appTemp.maxtime`, `week.appTemp.min.raw`, `week.appTemp.min.formatted`, `week.appTemp.mintime`, `week.appTemp.max.raw`, `week.appTemp.max.formatted`, `week.appTemp.maxtime`, `month.appTemp.min.raw`, `month.appTemp.min.formatted`, `month.appTemp.mintime.format("%b %-d")`, `month.appTemp.max.raw`, `month.appTemp.max.formatted`, `month.appTemp.maxtime.format("%b %-d")`, `year.appTemp.min.raw`, `year.appTemp.min.formatted`, `year.appTemp.mintime.format("%b %-d")`, `year.appTemp.max.raw`, `year.appTemp.max.formatted`, `year.appTemp.maxtime.format("%b %-d")`, `alltime.appTemp.min.raw`, `alltime.appTemp.min.formatted`, `alltime.appTemp.mintime.format("%b %-d, %Y")`, `alltime.appTemp.max.raw`, `alltime.appTemp.max.formatted`, `alltime.appTemp.maxtime.format("%b %-d, %Y")` |
 | UV Index card | `day.UV.maxtime`, `1h.UV.avg.formatted`, `almanac.sun.altitude`, `almanac.sun.transit`, `almanac.sunrise`, `almanac.sunset`, `almanac.sun.visible.long_form()`, `week.UV.max`, `week.UV.max.raw`, `week.UV.maxtime`, `month.UV.max`, `month.UV.max.raw`, `month.UV.maxtime.format("%b %-d")`, `year.UV.max`, `year.UV.max.raw`, `year.UV.maxtime.format("%b %-d")`, `alltime.UV.max`, `alltime.UV.max.raw`, `alltime.UV.maxtime.format("%b %-d, %Y")` |
 | Solar Radiation card | `day.radiation.maxtime`, `1h.radiation.avg`, `almanac.sun.azimuth`, `almanac(horizon=-6).sun(use_center=1).set`, `almanac.sun.visible_change.minute.format("%d")`, `week.radiation.max`, `week.radiation.max.raw`, `week.radiation.maxtime`, `month.radiation.max`, `month.radiation.max.raw`, `month.radiation.maxtime.format("%b %-d")`, `year.radiation.max`, `year.radiation.max.raw`, `year.radiation.maxtime.format("%b %-d")`, `alltime.radiation.max`, `alltime.radiation.max.raw`, `alltime.radiation.maxtime.format("%b %-d, %Y")` |
-| Air Quality card | `day.pm2_5_aqi.max`, `day.pm2_5_aqi.maxtime`, `day.pm2_5_aqi.max.raw`, `day.pm2_5_aqi.min`, `day.pm2_5_aqi.mintime`, `1h.pm2_5.avg`, `24h.pm2_5.avg`, `24h.pm2_5.max.raw`, `day.pm2_5.max.raw`, `day.pm2_5.maxtime`, `week.pm2_5.max.raw`, `week.pm2_5.maxtime`, `month.pm2_5.max.raw`, `month.pm2_5.maxtime.format("%b %-d")`, `year.pm2_5.max.raw`, `year.pm2_5.maxtime.format("%b %-d")`, `alltime.pm2_5.max.raw`, `alltime.pm2_5.maxtime.format("%b %-d, %Y")` |
+| Air Quality card | `1h.pm2_5.avg`, `24h.pm2_5.avg`, `24h.pm2_5.max.raw`, `day.pm2_5.min.raw`, `day.pm2_5.mintime`, `day.pm2_5.max.raw`, `day.pm2_5.maxtime`, `week.pm2_5.max.raw`, `week.pm2_5.maxtime`, `month.pm2_5.max.raw`, `month.pm2_5.maxtime.format("%b %-d")`, `year.pm2_5.max.raw`, `year.pm2_5.maxtime.format("%b %-d")`, `alltime.pm2_5.max.raw`, `alltime.pm2_5.maxtime.format("%b %-d, %Y")` |
 
 The card rows are the groups 8.0 added, one per card, on top of the
 gauge's own; a card also reads its gauge's fields.  Each card's page

@@ -12265,15 +12265,22 @@ class ProcessPacketTests(unittest.TestCase):
         """The sample skin's whole declaration, run through the service's
         own first-packet build against a real archive, lands in the file:
         every declared field, by name.  A declaration parses whether or
-        not loopdata can produce it -- 8.0 shipped declaring week, month,
-        year, all-time and 24-hour peaks of pm2_5_aqi, an xtype with no
-        daily summary, which the builder refuses with an INFO line and
-        the card then showed as "nothing yet" on every row but today's.
-        No test rendered the declaration until this one.
+        not loopdata can produce it: a week, month, year, all-time or
+        24-hour peak of pm2_5_aqi, an xtype with no daily summary, parses
+        and is refused by the builder with an INFO line, and the card's
+        row then says "nothing yet" for ever.  Only rendering the
+        declaration sees that.
 
         The archive is wview_extended, which has pm2_5 and no pm2_5_aqi,
         as a purple station's does; the packets carry every observation
-        the skin reads, the xtype included."""
+        the skin reads, the xtype included.
+
+        And the declaration's SHAPE: no aggregate of an observation the
+        archive lacks, for any period.  A DAY aggregate of such an
+        observation (day.pm2_5_aqi.max, say) is produced by the build
+        above -- the day accumulator takes whatever the packets carry --
+        and counts only the packets since weewxd started, so a present
+        field cannot fail the check above; only the structure can."""
         L = user.loopdata
         os.environ['TZ'] = 'America/Los_Angeles'
         time.tzset()
@@ -12314,6 +12321,18 @@ class ProcessPacketTests(unittest.TestCase):
                 entry = json.load(f)['LoopDataReport']
         missing = sorted(f for f in declared if f not in entry)
         self.assertEqual(missing, [], 'declared by the sample skin, produced by nothing')
+        composite = {'wind': ['windSpeed', 'windDir', 'windGust', 'windGustDir'],
+                     'windrose': ['windSpeed', 'windDir'], 'windrun': ['windSpeed', 'windDir']}
+        unarchived = []
+        for f in declared:
+            cname = L.LoopData.parse_cname(f)
+            if cname is None or cname.period in (None, 'current') or cname.span_prop is not None:
+                continue
+            for obs in composite.get(cname.obstype, [cname.obstype]):
+                if obs not in columns:
+                    unarchived.append(f)
+        self.assertEqual(unarchived, [], 'an aggregate of an observation the archive lacks: '
+                         'since the last restart for day, refused for every other period')
 
     def test_init_wires_the_contexts(self):
         """LoopData.__init__ end to end against a real config, skin tree and
