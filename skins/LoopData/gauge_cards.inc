@@ -145,6 +145,7 @@
   #silent $t.update({'24-hour PM2.5': $gettext('24-hour PM2.5')})
   #silent $t.update({'Worst air': $gettext('Worst air')})
   #silent $t.update({'the highest index of each period, in EPA’s colors': $gettext('the highest index of each period, in EPA’s colors')})
+  #silent $t.update({'Each period’s index is EPA’s for its highest PM2.5, as weewx-purple computes it.': $gettext('Each period’s index is EPA’s for its highest PM2.5, as weewx-purple computes it.')})
   Object.assign(T, $json.dumps($t));
   ## The sixteen compass points in the report's language, for naming the
   ## windrose's leading direction (CARDINALS carries only the four the
@@ -351,6 +352,21 @@
       };
     }
     var uvClass = classifier(UV_BANDS), aqiClass = classifier(AQI_BANDS);
+    // EPA's PM2.5 index from a concentration in \u00b5g/m\u00b3, the same
+    // piecewise line weewx-purple computes pm2_5_aqi with (EPA's 2024
+    // breakpoints).  The AQI is an xtype, computed per packet and never
+    // archived, so a period's worst air is the index of its highest
+    // PM2.5, which IS archived: the ladder ranks that.
+    function pm25Aqi(x) {
+      if (x === undefined || x < 0) { return undefined; }
+      x = Math.trunc(x * 10) / 10;       // purple truncates to a tenth first
+      return x <= 9.0 ? Math.round(x / 9.0 * 50)
+           : x <= 35.4 ? Math.round((x - 9.1) / 26.3 * 49.0 + 51.0)
+           : x <= 55.4 ? Math.round((x - 35.5) / 19.9 * 49.0 + 101.0)
+           : x <= 125.4 ? Math.round((x - 55.5) / 69.9 * 49.0 + 151.0)
+           : x <= 225.4 ? Math.round((x - 125.5) / 99.9 * 99.0 + 201.0)
+           : Math.round((x - 225.5) / 99.9 * 199.0 + 301.0);
+    }
     var NO_HOUR = CAL.filter(function (p) { return p[0] !== '1h'; });
 
     // ---- the cards -------------------------------------------------------
@@ -569,7 +585,13 @@
                             [fmt('Low today'), r['day.pm2_5_aqi.min'], r['day.pm2_5_aqi.mintime']],
                             [fmt('24-hour PM2.5'), r['24h.pm2_5.avg'], fmt('average')]]) +
                section(fmt('Worst air'), fmt('the highest index of each period, in EPA\u2019s colors'),
-                       peakLadder(r, 'pm2_5_aqi', '', 0, NO_HOUR, aqiClass)) +
+                       ladder(NO_HOUR.map(function (pp) {
+                         var v = pm25Aqi(num(r[pp[0] + '.pm2_5.max.raw']));
+                         return {label: periodLabel(pp, r), hi: v, hiText: v === undefined ? undefined : v + ' AQI',
+                                 hiWhen: pp[2] === null ? undefined : r[pp[0] + '.pm2_5.maxtime' + pp[2]],
+                                 cls: v === undefined ? undefined : aqiClass(v)};
+                       }), aqi, '', {single: true}),
+                       esc(fmt('Each period\u2019s index is EPA\u2019s for its highest PM2.5, as weewx-purple computes it.'))) +
                section(fmt('EPA\u2019s scale'), '',
                        scaleTable(AQI_BANDS, [fmt('Good'), fmt('Moderate'), fmt('Unhealthy for Sensitive Groups'),
                                               fmt('Unhealthy'), fmt('Very Unhealthy'), fmt('Hazardous')], aqi));

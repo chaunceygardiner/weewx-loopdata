@@ -12261,6 +12261,60 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(sorted(read - declared - {'windrose.bands'}), [],
                          'the cards read a field the sample skin does not declare')
 
+    def test_loopdata_produces_every_field_the_sample_skin_declares(self):
+        """The sample skin's whole declaration, run through the service's
+        own first-packet build against a real archive, lands in the file:
+        every declared field, by name.  A declaration parses whether or
+        not loopdata can produce it -- 8.0 shipped declaring week, month,
+        year, all-time and 24-hour peaks of pm2_5_aqi, an xtype with no
+        daily summary, which the builder refuses with an INFO line and
+        the card then showed as "nothing yet" on every row but today's.
+        No test rendered the declaration until this one.
+
+        The archive is wview_extended, which has pm2_5 and no pm2_5_aqi,
+        as a purple station's does; the packets carry every observation
+        the skin reads, the xtype included."""
+        L = user.loopdata
+        os.environ['TZ'] = 'America/Los_Angeles'
+        time.tzset()
+        obs = {'outTemp': 70.0, 'dewpoint': 55.0, 'outHumidity': 60.0, 'barometer': 30.0,
+               'rain': 0.01, 'rainRate': 0.05, 'windSpeed': 10.0, 'windDir': 90.0,
+               'windGust': 12.0, 'windGustDir': 95.0, 'appTemp': 71.0, 'UV': 3.0,
+               'radiation': 500.0, 'pm2_5': 6.0, 'pm2_5_aqi': 25}
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp)
+            t = 1593630000                                  # 2020-07-01 12:00 PDT
+            dbm = weewx.manager.open_manager_with_config(config_dict, 'wx_binding')
+            try:
+                columns = set(dbm.connection.columnsOf('archive'))
+                for dt in (t - 1500, t - 1200, t - 900):
+                    rec = {k: v for k, v in obs.items() if k in columns}
+                    rec.update({'dateTime': dt, 'usUnits': weewx.US, 'interval': 5})
+                    dbm.addRecord(rec)
+            finally:
+                dbm.close()
+            service = L.LoopData(self.FakeEngine(config_dict), config_dict)
+            cfg = service.cfg
+            declared = list(cfg.reports[0].specified_fields) if cfg.reports else []
+            self.assertGreater(len(declared), 300)
+            written = os.path.join(cfg.loop_data_dir, cfg.filename)
+            with contextlib.redirect_stdout(io.StringIO()):
+                service.pre_loop(None)
+                try:
+                    for dt in (t, t + 2, t + 4):
+                        pkt = dict(obs, dateTime=dt, usUnits=weewx.US)
+                        service.new_loop(weewx.Event(weewx.NEW_LOOP_PACKET, packet=pkt))
+                    deadline = time.time() + 20
+                    while not cfg.queue.empty() and time.time() < deadline:
+                        time.sleep(0.01)
+                    self.assertTrue(cfg.queue.empty())
+                finally:
+                    service.shutDown()
+            with open(written) as f:
+                entry = json.load(f)['LoopDataReport']
+        missing = sorted(f for f in declared if f not in entry)
+        self.assertEqual(missing, [], 'declared by the sample skin, produced by nothing')
+
     def test_init_wires_the_contexts(self):
         """LoopData.__init__ end to end against a real config, skin tree and
         database: the declaring report, the legacy line through
