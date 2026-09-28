@@ -280,7 +280,7 @@ def loader():
 class LoopDataInstaller(ExtensionInstaller):
     def __init__(self):
         super(LoopDataInstaller, self).__init__(
-            version = "7.5.2",
+            version = "8.0",
             name = 'loopdata',
             description = 'Loop statistics for real time reporting.',
             author = "John A Kline",
@@ -299,6 +299,7 @@ class LoopDataInstaller(ExtensionInstaller):
                     'skins/LoopData/favicon.ico',
                     'skins/LoopData/index.html.tmpl',
                     'skins/LoopData/realtime_updater.inc',
+                    'skins/LoopData/gauge_cards.inc',
                     'skins/LoopData/skin.conf',
                     ]),
                 ('skins/LoopData/lang', [

@@ -69,6 +69,65 @@ the page reads its own report's entry in `loop-data.txt` — so it works
 whatever else the file carries, and a second copy of the skin under
 another report name gets its own entry.
 
+## The cards
+
+Since 8.0 every gauge opens a card.  Click or tap a gauge (the drawing
+is the keyboard target: Tab to it and press Enter) and a card opens over
+the panel — a full-screen sheet on a phone — with the dial and its lines
+at the left and, beside them, what the reading means and where it sits.
+The card follows the station like the panel does: everything on it is
+rewritten on every packet while it is open, from the same
+`loop-data.txt` poll.  The ‹ › buttons in its head, or the arrow keys,
+step through the gauges; Escape, the × or a click outside closes it.
+
+![The temperature card over the sample report](images/LoopDataReport-card.png)
+
+Each card is the same four things:
+
+* **A sentence** that says the one thing the gauge means now: the change
+  over the report's trend window, the Beaufort force and its name, the
+  dew point in words (dry, comfortable, sticky, muggy, oppressive), the
+  sun's altitude and when it sets, the AMS Glossary's word for how hard
+  it is raining.  A fine-print line explains the measure once.
+* **Three tiles**: today's high and low with their times, and the change
+  over the trend window — or, where those do not apply, the peak, the
+  wind run, the rain year.
+* **The ladder**: one row per period — the last hour, the last 24 hours,
+  today, this week, this month, this year and all time — each a bar from
+  the period's low to its high on one axis, with the reading now drawn as
+  a line through every row and the time or date of each extreme under
+  it.  The all-time row is the station's records, with their dates, and
+  is labeled by the year the archive begins.  For a peak-only measure
+  (UV, solar radiation, rain rate, the strongest gusts, rain by period)
+  every bar runs from zero, and the UV and air quality bars wear EPA's
+  category colors.
+* **One more section where there is one**: the windrose card draws the
+  rose for this hour, today, this week, this month and this year; the UV
+  and air quality cards show EPA's scale with the reading's row marked.
+
+![The wind card in the light theme](images/LoopDataReport-card-light.png)
+
+On a phone the card is a full-screen sheet:
+
+![The windrose card on a phone](images/LoopDataReport-card-phone.png)
+
+Day and week times on a card render through the report's own
+`[Units][TimeFormats]`, as the panel's do; the month, year and all-time
+extremes carry a date, in the two forms the skin declares.  All of it is
+translated in the eight shipped languages, by the same mechanism as the
+panel (see [Translations](#translations)); the card strings arrived with
+8.0 and have not yet been reviewed by native speakers.
+
+The cards cost the LoopData service something: each period a card ranks
+a reading against is an accumulator, and the rolling 24-hour windows
+keep every packet of the last day — about 10 MB each at two-second
+packets, some 80 MB for the nine observations the cards rank.  The
+fields, one `_card` group per card, are listed below; a station that
+does not want the cost can delete a group from the declaration (in a
+copy of the report's stanza in `weewx.conf`, since `skin.conf` is
+replaced on upgrade), and the card then says what the fields that
+remain can say.
+
 ## What each gauge reads
 
 Gauge by gauge, in the order the page lays them out.  A gauge whose
@@ -89,6 +148,22 @@ draws no needle, arc or petal.
 | UV Index | `current.UV.formatted`, `current.UV.raw`, `day.UV.max`, `day.UV.max.raw` |
 | Solar Radiation | `current.radiation.formatted`, `current.radiation.raw`, `day.radiation.max`, `day.radiation.max.raw` |
 | Air Quality | `current.pm2_5`, `current.pm2_5_aqi.raw`, `current.pm2_5_aqi.formatted` |
+| Today's Windrose card | `hour.windrose.banded`, `hour.windrose.calm`, `week.windrose.banded`, `week.windrose.calm`, `month.windrose.banded`, `month.windrose.calm`, `year.windrose.banded`, `year.windrose.calm` |
+| Wind card | `day.windSpeed.avg`, `day.windrun.sum`, `day.wind.vecavg`, `day.wind.maxtime`, `day.wind.gustdir.ordinal_compass`, `1h.windSpeed.avg`, `1h.windGust.max`, `1h.windGust.max.raw`, `1h.wind.gustdir.ordinal_compass`, `24h.windGust.max`, `24h.windGust.max.raw`, `24h.wind.gustdir.ordinal_compass`, `week.wind.max`, `week.wind.max.raw`, `week.wind.gustdir.ordinal_compass`, `week.wind.maxtime`, `month.wind.max`, `month.wind.max.raw`, `month.wind.gustdir.ordinal_compass`, `month.wind.maxtime.format("%b %-d")`, `year.wind.max`, `year.wind.max.raw`, `year.wind.gustdir.ordinal_compass`, `year.wind.maxtime.format("%b %-d")`, `alltime.wind.max`, `alltime.wind.max.raw`, `alltime.wind.gustdir.ordinal_compass`, `alltime.wind.maxtime.format("%b %-d, %Y")`, `alltime.start.format("%Y")` |
+| Temperature card | `trend.outTemp.formatted`, `day.outTemp.avg.formatted`, `1h.outTemp.min.raw`, `1h.outTemp.min.formatted`, `1h.outTemp.max.raw`, `1h.outTemp.max.formatted`, `24h.outTemp.min.raw`, `24h.outTemp.min.formatted`, `24h.outTemp.max.raw`, `24h.outTemp.max.formatted`, `day.outTemp.min.raw`, `day.outTemp.min.formatted`, `day.outTemp.mintime`, `day.outTemp.max.raw`, `day.outTemp.max.formatted`, `day.outTemp.maxtime`, `week.outTemp.min.raw`, `week.outTemp.min.formatted`, `week.outTemp.mintime`, `week.outTemp.max.raw`, `week.outTemp.max.formatted`, `week.outTemp.maxtime`, `month.outTemp.min.raw`, `month.outTemp.min.formatted`, `month.outTemp.mintime.format("%b %-d")`, `month.outTemp.max.raw`, `month.outTemp.max.formatted`, `month.outTemp.maxtime.format("%b %-d")`, `year.outTemp.min.raw`, `year.outTemp.min.formatted`, `year.outTemp.mintime.format("%b %-d")`, `year.outTemp.max.raw`, `year.outTemp.max.formatted`, `year.outTemp.maxtime.format("%b %-d")`, `alltime.outTemp.min.raw`, `alltime.outTemp.min.formatted`, `alltime.outTemp.mintime.format("%b %-d, %Y")`, `alltime.outTemp.max.raw`, `alltime.outTemp.max.formatted`, `alltime.outTemp.maxtime.format("%b %-d, %Y")` |
+| Dew Point card | `trend.dewpoint.formatted`, `1h.dewpoint.min.raw`, `1h.dewpoint.min.formatted`, `1h.dewpoint.max.raw`, `1h.dewpoint.max.formatted`, `24h.dewpoint.min.raw`, `24h.dewpoint.min.formatted`, `24h.dewpoint.max.raw`, `24h.dewpoint.max.formatted`, `day.dewpoint.min.raw`, `day.dewpoint.min.formatted`, `day.dewpoint.mintime`, `day.dewpoint.max.raw`, `day.dewpoint.max.formatted`, `day.dewpoint.maxtime`, `week.dewpoint.min.raw`, `week.dewpoint.min.formatted`, `week.dewpoint.mintime`, `week.dewpoint.max.raw`, `week.dewpoint.max.formatted`, `week.dewpoint.maxtime`, `month.dewpoint.min.raw`, `month.dewpoint.min.formatted`, `month.dewpoint.mintime.format("%b %-d")`, `month.dewpoint.max.raw`, `month.dewpoint.max.formatted`, `month.dewpoint.maxtime.format("%b %-d")`, `year.dewpoint.min.raw`, `year.dewpoint.min.formatted`, `year.dewpoint.mintime.format("%b %-d")`, `year.dewpoint.max.raw`, `year.dewpoint.max.formatted`, `year.dewpoint.maxtime.format("%b %-d")`, `alltime.dewpoint.min.raw`, `alltime.dewpoint.min.formatted`, `alltime.dewpoint.mintime.format("%b %-d, %Y")`, `alltime.dewpoint.max.raw`, `alltime.dewpoint.max.formatted`, `alltime.dewpoint.maxtime.format("%b %-d, %Y")` |
+| Humidity card | `trend.outHumidity.formatted`, `1h.outHumidity.min.raw`, `1h.outHumidity.min.formatted`, `1h.outHumidity.max.raw`, `1h.outHumidity.max.formatted`, `24h.outHumidity.min.raw`, `24h.outHumidity.min.formatted`, `24h.outHumidity.max.raw`, `24h.outHumidity.max.formatted`, `day.outHumidity.min.raw`, `day.outHumidity.min.formatted`, `day.outHumidity.mintime`, `day.outHumidity.max.raw`, `day.outHumidity.max.formatted`, `day.outHumidity.maxtime`, `week.outHumidity.min.raw`, `week.outHumidity.min.formatted`, `week.outHumidity.mintime`, `week.outHumidity.max.raw`, `week.outHumidity.max.formatted`, `week.outHumidity.maxtime`, `month.outHumidity.min.raw`, `month.outHumidity.min.formatted`, `month.outHumidity.mintime.format("%b %-d")`, `month.outHumidity.max.raw`, `month.outHumidity.max.formatted`, `month.outHumidity.maxtime.format("%b %-d")`, `year.outHumidity.min.raw`, `year.outHumidity.min.formatted`, `year.outHumidity.mintime.format("%b %-d")`, `year.outHumidity.max.raw`, `year.outHumidity.max.formatted`, `year.outHumidity.maxtime.format("%b %-d")`, `alltime.outHumidity.min.raw`, `alltime.outHumidity.min.formatted`, `alltime.outHumidity.mintime.format("%b %-d, %Y")`, `alltime.outHumidity.max.raw`, `alltime.outHumidity.max.formatted`, `alltime.outHumidity.maxtime.format("%b %-d, %Y")` |
+| Barometer card | `trend.barometer.formatted`, `1h.barometer.min.raw`, `1h.barometer.min.formatted`, `1h.barometer.max.raw`, `1h.barometer.max.formatted`, `24h.barometer.min.raw`, `24h.barometer.min.formatted`, `24h.barometer.max.raw`, `24h.barometer.max.formatted`, `day.barometer.min.raw`, `day.barometer.min.formatted`, `day.barometer.mintime`, `day.barometer.max.raw`, `day.barometer.max.formatted`, `day.barometer.maxtime`, `week.barometer.min.raw`, `week.barometer.min.formatted`, `week.barometer.mintime`, `week.barometer.max.raw`, `week.barometer.max.formatted`, `week.barometer.maxtime`, `month.barometer.min.raw`, `month.barometer.min.formatted`, `month.barometer.mintime.format("%b %-d")`, `month.barometer.max.raw`, `month.barometer.max.formatted`, `month.barometer.maxtime.format("%b %-d")`, `year.barometer.min.raw`, `year.barometer.min.formatted`, `year.barometer.mintime.format("%b %-d")`, `year.barometer.max.raw`, `year.barometer.max.formatted`, `year.barometer.maxtime.format("%b %-d")`, `alltime.barometer.min.raw`, `alltime.barometer.min.formatted`, `alltime.barometer.mintime.format("%b %-d, %Y")`, `alltime.barometer.max.raw`, `alltime.barometer.max.formatted`, `alltime.barometer.maxtime.format("%b %-d, %Y")` |
+| Rain card | `1h.rain.sum`, `1h.rain.sum.raw`, `24h.rain.sum`, `24h.rain.sum.raw`, `day.rain.sum`, `week.rain.sum`, `week.rain.sum.raw`, `month.rain.sum`, `month.rain.sum.raw`, `year.rain.sum`, `year.rain.sum.raw`, `rainyear.rain.sum`, `rainyear.rain.sum.raw`, `rainyear.start.format("%b %-d")`, `alltime.rain.sum`, `alltime.start.format("%Y")` |
+| Rain Rate card | `day.rainRate.maxtime`, `month.rainRate.max`, `month.rainRate.max.raw`, `month.rainRate.maxtime.format("%b %-d")`, `year.rainRate.max`, `year.rainRate.max.raw`, `year.rainRate.maxtime.format("%b %-d")`, `alltime.rainRate.max`, `alltime.rainRate.max.raw`, `alltime.rainRate.maxtime.format("%b %-d, %Y")` |
+| Feels Like card | `trend.appTemp.formatted`, `1h.appTemp.min.raw`, `1h.appTemp.min.formatted`, `1h.appTemp.max.raw`, `1h.appTemp.max.formatted`, `24h.appTemp.min.raw`, `24h.appTemp.min.formatted`, `24h.appTemp.max.raw`, `24h.appTemp.max.formatted`, `day.appTemp.min.raw`, `day.appTemp.min.formatted`, `day.appTemp.mintime`, `day.appTemp.max.raw`, `day.appTemp.max.formatted`, `day.appTemp.maxtime`, `week.appTemp.min.raw`, `week.appTemp.min.formatted`, `week.appTemp.mintime`, `week.appTemp.max.raw`, `week.appTemp.max.formatted`, `week.appTemp.maxtime`, `month.appTemp.min.raw`, `month.appTemp.min.formatted`, `month.appTemp.mintime.format("%b %-d")`, `month.appTemp.max.raw`, `month.appTemp.max.formatted`, `month.appTemp.maxtime.format("%b %-d")`, `year.appTemp.min.raw`, `year.appTemp.min.formatted`, `year.appTemp.mintime.format("%b %-d")`, `year.appTemp.max.raw`, `year.appTemp.max.formatted`, `year.appTemp.maxtime.format("%b %-d")`, `alltime.appTemp.min.raw`, `alltime.appTemp.min.formatted`, `alltime.appTemp.mintime.format("%b %-d, %Y")`, `alltime.appTemp.max.raw`, `alltime.appTemp.max.formatted`, `alltime.appTemp.maxtime.format("%b %-d, %Y")` |
+| UV Index card | `day.UV.maxtime`, `1h.UV.avg.formatted`, `almanac.sun.altitude`, `almanac.sun.transit`, `almanac.sunrise`, `almanac.sunset`, `almanac.sun.visible.long_form()`, `week.UV.max`, `week.UV.max.raw`, `week.UV.maxtime`, `month.UV.max`, `month.UV.max.raw`, `month.UV.maxtime.format("%b %-d")`, `year.UV.max`, `year.UV.max.raw`, `year.UV.maxtime.format("%b %-d")`, `alltime.UV.max`, `alltime.UV.max.raw`, `alltime.UV.maxtime.format("%b %-d, %Y")` |
+| Solar Radiation card | `day.radiation.maxtime`, `1h.radiation.avg`, `almanac.sun.azimuth`, `almanac(horizon=-6).sun(use_center=1).set`, `almanac.sun.visible_change.minute.format("%d")`, `week.radiation.max`, `week.radiation.max.raw`, `week.radiation.maxtime`, `month.radiation.max`, `month.radiation.max.raw`, `month.radiation.maxtime.format("%b %-d")`, `year.radiation.max`, `year.radiation.max.raw`, `year.radiation.maxtime.format("%b %-d")`, `alltime.radiation.max`, `alltime.radiation.max.raw`, `alltime.radiation.maxtime.format("%b %-d, %Y")` |
+| Air Quality card | `day.pm2_5_aqi.max`, `day.pm2_5_aqi.maxtime`, `day.pm2_5_aqi.max.raw`, `day.pm2_5_aqi.min`, `day.pm2_5_aqi.mintime`, `1h.pm2_5.avg`, `24h.pm2_5.avg`, `24h.pm2_5_aqi.max`, `24h.pm2_5_aqi.max.raw`, `week.pm2_5_aqi.max`, `week.pm2_5_aqi.max.raw`, `week.pm2_5_aqi.maxtime`, `month.pm2_5_aqi.max`, `month.pm2_5_aqi.max.raw`, `month.pm2_5_aqi.maxtime.format("%b %-d")`, `year.pm2_5_aqi.max`, `year.pm2_5_aqi.max.raw`, `year.pm2_5_aqi.maxtime.format("%b %-d")`, `alltime.pm2_5_aqi.max`, `alltime.pm2_5_aqi.max.raw`, `alltime.pm2_5_aqi.maxtime.format("%b %-d, %Y")` |
+
+The card rows are the groups 8.0 added, one per card, on top of the
+gauge's own; a card also reads its gauge's fields.  Each card's page
+lines are the panel's, copied.
 
 `current.dateTime.raw` drives the timestamp and the LIVE indicator.
 `unit.label.outTemp`, `unit.label.outHumidity`, `unit.label.barometer`,
@@ -246,6 +321,10 @@ upgrade — `weewx.conf` is not.
   LIVE/OFFLINE/NO DATA/BAD DATA indicator, the expiration timer, and the
   SVG drawing of the dials, the compass and the windrose.  It writes class
   names only, and rewrites a drawing only when it changed.
+* `gauge_cards.inc` — the cards (8.0): one dialog, filled per gauge from
+  the same record the panel just drew, and the ladder, the tiles and the
+  sentences that fill it.  It leans on the updater's helpers and wraps its
+  `updateGauges` so an open card redraws after the panel does.
 
 The six `--rose` shades are stops on a curve rather than one color per
 band: the windrose samples them, with css `color-mix`, for however many

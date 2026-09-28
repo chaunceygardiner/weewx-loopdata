@@ -1,5 +1,31 @@
 # weewx-loopdata change history
 
+## 8.0 2026/09/28
+- The sample report's gauges open cards.  A click or a tap on any gauge
+  opens a card over the panel (a full-screen sheet on a phone) that says
+  what the reading means and where it sits: the dial and its lines, a
+  sentence -- the change over the trend window, the Beaufort force, the
+  dew point in words, the sun's altitude -- three tiles for today's high
+  and low with their times, and a ladder of the last hour, the last 24
+  hours, today, this week, this month, this year and all time, each a bar
+  from the period's low to its high with the reading now drawn through
+  every row and the time or date of each extreme under it.  The windrose
+  card draws the rose for this hour, today, this week, this month and
+  this year; the UV and air quality cards color their peaks in EPA's
+  categories and show EPA's scale with the reading's row marked.  The
+  cards step with the arrow keys or the buttons in their head, close on
+  Escape, the x or a click outside, and follow the station on every
+  packet while open.  Everything they say comes from loop-data.txt: the
+  skin declares the fields, one group per card, in its skin.conf.  The
+  new rolling 24-hour windows cost the service about 10 MB each at
+  two-second packets, some 80 MB for the nine observations the cards
+  rank.
+- The panel's dew point gauge says the dew point in words -- dry,
+  comfortable, sticky, muggy, oppressive -- where its word line was
+  blank.
+- Every card string is translated in the eight shipped languages.  The
+  translations have not been reviewed by native speakers.
+
 ## 7.5.2 2026/09/26
 - The sample report's wind compass points with the same red arm as the
   dials beside it, and the gust with a plain lighter needle; both used to

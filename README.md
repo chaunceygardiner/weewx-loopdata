@@ -21,7 +21,10 @@ This is the sample report included with this extension — a NOAA-style
 windrose and eleven gauges, drawn as SVG by a few hundred lines of
 dependency-free javascript.  Every needle, petal and readout on this page
 redraws on every loop packet, and gauges for sensors a station does not have
-(UV, solar radiation, air quality) hide themselves automatically:
+(UV, solar radiation, air quality) hide themselves automatically.  Since
+8.0 a click or a tap on any gauge opens a card that says what the reading
+means and where it sits against the last hour, the last day, this week,
+this month, this year and the station's records:
 
 ![LoopDataReport](LoopDataReport.png)
 
@@ -30,6 +33,12 @@ the report follows whoever is looking at it; `theme` in the report's
 `[Extras]` pins one instead.
 
 ![LoopDataReport in the light theme](LoopDataReport-light.png)
+
+A gauge's card, opened by a click or a tap (8.0): the dial, what the
+reading means, and where it sits against every period up to the
+station's records.
+
+![The temperature card](LoopDataReport-card.png)
 
 Here is the whole idea in one example.  Say your report template shows a
 current condition, a daily aggregate and an almanac time:

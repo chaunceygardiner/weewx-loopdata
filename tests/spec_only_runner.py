@@ -144,6 +144,7 @@ SPEC_TESTS = [
     'test_windrose_accumulators_keyed_by_bands',
     'test_almanac_evaluators_are_per_report',
     'test_sample_skin_declares_what_the_manual_says',
+    'test_sample_skin_declares_every_field_the_cards_read',
     'test_windrose_bands_resolution',
     'test_defaults_unit_follows_stdreport_however_it_is_written',
     'test_unit_label_windrose_is_not_a_rose',

@@ -89,6 +89,11 @@
   #silent $t.update({'Dry so far today': $gettext('Dry so far today')})
   #silent $t.update({'rate {rate}': $gettext('rate {rate}')})
   #silent $t.update({'Same as the air': $gettext('Same as the air')})
+  #silent $t.update({'Dry': $gettext('Dry')})
+  #silent $t.update({'Comfortable': $gettext('Comfortable')})
+  #silent $t.update({'Sticky': $gettext('Sticky')})
+  #silent $t.update({'Muggy': $gettext('Muggy')})
+  #silent $t.update({'Oppressive': $gettext('Oppressive')})
   #silent $t.update({'{n}° warmer than the air': $gettext('{n}° warmer than the air')})
   #silent $t.update({'{n}° cooler than the air': $gettext('{n}° cooler than the air')})
   #silent $t.update({'Low': $gettext('Low')})
@@ -351,6 +356,16 @@
                    [150, fmt('Unhealthy for Sensitive Groups')],
                    [200, fmt('Unhealthy')], [300, fmt('Very Unhealthy')],
                    [Infinity, fmt('Hazardous')]];
+  // The dew point in words, on the spread WeeWX's own skins use: dry
+  // under 50\u00b0F (10\u00b0C), comfortable to 60 (16), sticky to 65 (18),
+  // muggy to 70 (21), oppressive above.  Judged in Fahrenheit, whatever
+  // the report's unit, so the bands fall where the scale draws them.
+  function dewWord(dew, label) {
+    if (dew === undefined) { return ''; }
+    var f = label.indexOf('C') >= 0 ? dew * 9 / 5 + 32 : dew;
+    return f < 50 ? fmt('Dry') : f < 60 ? fmt('Comfortable') : f < 65 ? fmt('Sticky')
+         : f < 70 ? fmt('Muggy') : fmt('Oppressive');
+  }
   function categoryWord(words, v) {
     if (v === undefined) {
       return '';
@@ -682,7 +697,7 @@
         wordHtml(said.join(' \u00b7 ')) + rangeHtml(undefined, undefined, notes));
 
     ranged(r, 'temp', 'outTemp', tempScale(tLabel), tLabel, '');
-    ranged(r, 'dew', 'dewpoint', tempScale(tLabel), tLabel, '');
+    ranged(r, 'dew', 'dewpoint', tempScale(tLabel), tLabel, dewWord(num(r['current.dewpoint.raw']), tLabel));
     ranged(r, 'hum', 'outHumidity', HUM_SCALE, r['unit.label.outHumidity'] || '', '');
 
     var bLabel = r['unit.label.barometer'] || '';

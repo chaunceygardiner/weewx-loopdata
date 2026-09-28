@@ -8503,6 +8503,11 @@ class ProcessPacketTests(unittest.TestCase):
 
     I18N_SKIN_DIR = os.path.join(
         os.path.dirname(os.path.abspath(__file__)), '..', 'skins', 'LoopData')
+    # The template and the two includes whose $gettext literals are the
+    # page's translation keys; the includes are the ones whose javascript
+    # reads the T table.
+    I18N_INCLUDES = ('realtime_updater.inc', 'gauge_cards.inc')
+    I18N_SOURCES = ('index.html.tmpl',) + I18N_INCLUDES
     I18N_BODIES = ['sun', 'moon', 'mercury', 'venus', 'earth', 'mars',
                    'jupiter', 'saturn', 'uranus', 'neptune', 'pluto',
                    'proxima_centauri']
@@ -8518,7 +8523,7 @@ class ProcessPacketTests(unittest.TestCase):
         $gettext("...")/$gettext('...') literals in the template and the
         include (keys are single-line literals by convention)."""
         keys: Set[str] = set()
-        for name in ('index.html.tmpl', 'realtime_updater.inc'):
+        for name in cls.I18N_SOURCES:
             with open(os.path.join(cls.I18N_SKIN_DIR, name), encoding='utf-8') as f:
                 found = re.findall(r'\$gettext\(\s*(?:"([^"]+)"|\'([^\']+)\')\s*\)',
                                    f.read())
@@ -8561,18 +8566,25 @@ class ProcessPacketTests(unittest.TestCase):
         # lookup key that is not fed into T -- or a T entry whose dict key
         # differs from its $gettext argument -- falls back to English
         # silently, so pin all three sets together.
-        with open(os.path.join(self.I18N_SKIN_DIR, 'realtime_updater.inc'),
-                  encoding='utf-8') as f:
-            source = f.read()
+        # Both includes feed the ONE table (gauge_cards.inc merges its
+        # entries into the T the updater built), so the pin is over their
+        # union: a card may read a key the panel fed, and does.  bold() is
+        # the cards' lookup for a sentence with bold parts; it takes a key
+        # literal exactly as fmt() does.
+        source = ''
+        for name in self.I18N_INCLUDES:
+            with open(os.path.join(self.I18N_SKIN_DIR, name), encoding='utf-8') as f:
+                source += f.read() + '\n'
         t_pairs = re.findall(
             r"#silent \$t\.update\(\{'([^']+)': \$gettext\('([^']+)'\)\}\)", source)
         self.assertTrue(t_pairs)
         for dict_key, gettext_key in t_pairs:
             self.assertEqual(dict_key, gettext_key)
         t_keys = {k for k, _ in t_pairs}
+        self.assertEqual(len(t_keys), len(t_pairs), 'a key fed into T twice')
         js = re.sub(r'^\s*#.*$', '', source, flags=re.MULTILINE)
         fmt_keys = {bytes(k, 'ascii').decode('unicode_escape')
-                    for k in re.findall(r"fmt\('([^']+)'", js)}
+                    for k in re.findall(r"(?:fmt|bold)\('([^']+)'", js)}
         self.assertTrue(fmt_keys)
         self.assertEqual(sorted(fmt_keys - t_keys), [], 'fmt key never fed into T')
         self.assertEqual(sorted(t_keys - fmt_keys), [], 'T entry no fmt call reads')
@@ -8596,6 +8608,12 @@ class ProcessPacketTests(unittest.TestCase):
         with open(os.path.join(self.I18N_SKIN_DIR, 'realtime_updater.inc'),
                   encoding='utf-8') as f:
             include = f.read()
+        # Both includes write markup the css dresses; the cards' one (8.0)
+        # must be as free of color as the panel's.
+        includes = include
+        with open(os.path.join(self.I18N_SKIN_DIR, 'gauge_cards.inc'),
+                  encoding='utf-8') as f:
+            includes += '\n' + f.read()
 
         root = re.search(r':root\s*\{(.*?)\n      \}', template, re.DOTALL)
         self.assertIsNotNone(root, 'no :root block in index.html.tmpl')
@@ -8656,7 +8674,7 @@ class ProcessPacketTests(unittest.TestCase):
         # No color literal may survive anywhere in the include.  The
         # drawing names classes and the stylesheet dresses them; a color
         # written in the javascript cannot follow the theme.
-        strays = [line.strip() for line in include.split('\n')
+        strays = [line.strip() for line in includes.split('\n')
                   if re.search(r"'#[0-9a-fA-F]{3,8}'", line)
                   or re.search(r"rgba?\([0-9]", line)]
         self.assertEqual(strays, [],
@@ -11173,12 +11191,13 @@ class ProcessPacketTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             config_dict = self._init_fixture(tmp)
             # A second declaring report, not the target, declaring fields
-            # the sample skin does not -- the celestial case.
+            # the sample skin does not -- the celestial case.  (inHumidity: the
+            # sample skin's cards declare every rain span since 8.0.)
             other = os.path.join(tmp, 'skins', 'Other')
             os.makedirs(other)
             with open(os.path.join(other, 'skin.conf'), 'w') as f:
                 f.write('[Generators]\n    generator_list = weewx.cheetahgenerator.CheetahGenerator\n'
-                        '[LoopData]\n    [[fields]]\n        a = hour.outTemp.max.raw, week.rain.sum\n')
+                        '[LoopData]\n    [[fields]]\n        a = hour.outTemp.max.raw, week.inHumidity.max\n')
             # And a third whose trend window differs, so it renders trends
             # differently and must NOT be used as a stand-in.  The window
             # goes on the report's stanza: [[Defaults]] beats a skin.conf.
@@ -11193,7 +11212,7 @@ class ProcessPacketTests(unittest.TestCase):
             config_dict['LoopData']['Include'] = {'fields': [
                 'current.outTemp.formatted',        # LoopDataReport's (the target)
                 'hour.outTemp.max.raw',   # Other's
-                'week.rain.sum',          # Other's
+                'week.inHumidity.max',          # Other's
                 'trend.outTemp.raw',      # Odd's -- different trend window
                 'current.inHumidity.raw']}   # nobody's
             config_dict['LoopData']['Formatting'] = {'target_report': 'LoopDataReport'}
@@ -11203,7 +11222,7 @@ class ProcessPacketTests(unittest.TestCase):
             self.assertEqual(cfg.legacy_shared, {
                 'current.outTemp.formatted': 'LoopDataReport',
                 'hour.outTemp.max.raw': 'Other',
-                'week.rain.sum': 'Other'})
+                'week.inHumidity.max': 'Other'})
             # Odd renders trends over a different window, so its field stays
             # the legacy context's own, along with the one nobody declares.
             self.assertEqual(sorted(cfg.legacy.specified_fields),
@@ -12221,6 +12240,26 @@ class ProcessPacketTests(unittest.TestCase):
         config_dict['LoopData'] = {'FileSpec': {'loop_data_dir': '.', 'filename': 'loop-data.txt'},
                                    'RsyncSpec': {'enable': 'false', 'compress': 'false', 'log_success': 'false'}}
         return config_dict
+
+    def test_sample_skin_declares_every_field_the_cards_read(self):
+        """Every field gauge_cards.inc reads by literal name is declared in
+        the sample skin.conf.  The 8.0 review found two it read and no
+        group declared (day.pm2_5_aqi.max.raw, day.wind.gustdir.ordinal_
+        compass): the card's row said "nothing yet" for ever, with nothing
+        failing.  Names the page builds by concatenation (the ladders')
+        cannot be read here; tools/verify_page.py drives those."""
+        skin_dict = configobj.ConfigObj(
+            os.path.join(self.I18N_SKIN_DIR, 'skin.conf'), encoding='utf-8')
+        declared = set(user.loopdata.LoopData.declared_fields_from_skin_dict(skin_dict, 'LoopDataReport'))
+        with open(os.path.join(self.I18N_SKIN_DIR, 'gauge_cards.inc'),
+                  encoding='utf-8') as f:
+            source = f.read()
+        js = re.sub(r'^\s*#.*$', '', source, flags=re.MULTILINE)
+        read = set(re.findall(r"r\['([^']+)'\]", js))
+        self.assertGreater(len(read), 60)
+        # windrose.bands is written beside every banded rose, undeclared.
+        self.assertEqual(sorted(read - declared - {'windrose.bands'}), [],
+                         'the cards read a field the sample skin does not declare')
 
     def test_init_wires_the_contexts(self):
         """LoopData.__init__ end to end against a real config, skin tree and
