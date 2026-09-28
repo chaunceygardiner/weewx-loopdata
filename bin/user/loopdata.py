@@ -58,7 +58,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '8.0'
+LOOP_DATA_VERSION = '8.0.1'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -3188,6 +3188,22 @@ class LoopData(StdService):
                 for k in day_summary:
                     day_accum.set_stats(k, day_summary[k].getStatsTuple())
 
+                # Day aggregates of an observation with no daily summary --
+                # an xtype such as weewx-purple's pm2_5_aqi -- are refused
+                # here as every other period's are below.  The summary seeds
+                # nothing for it, and weewx's Accum would create its stats
+                # from the first packet that carried it, so day.<obs>.min
+                # would be the low since the restart, with a time to match,
+                # and nothing in the file would say so.  _get_day_summary
+                # initializes every summary table's key even on a day with
+                # no rows, so membership here means "archived", not "has
+                # data today".  Once, at the build, like the other periods.
+                for obstype in sorted(self.cfg.obstypes.day):
+                    if obstype not in day_accum:
+                        log.info('Ignoring %s for day time period as this observation has no day accumulator.'
+                            % obstype)
+                self.cfg.obstypes.day = {o for o in self.cfg.obstypes.day if o in day_accum}
+
                 # Create fixed accums
                 alltime_accum, self.cfg.obstypes.alltime = LoopData.create_alltime_accum(
                     self.cfg.unit_system, self.cfg.archive_interval, self.cfg.obstypes.alltime, day_accum, dbm)
@@ -5021,8 +5037,9 @@ class LoopProcessor:
         except weewx.accum.OutOfSpan:
             timespan = weeutil.weeutil.archiveRainYearSpan(pkt['dateTime'], cfg.rainyear_start)
             accums.rainyear_accum = weewx.accum.Accum(timespan, unit_system=cfg.unit_system)
-            # Try again:
-            accums.rainyear_accum.addRecord(pkt, weight=cfg.loop_frequency)
+            # Try again, with the pruned packet: the whole one would put an
+            # observation this period refused into the fresh accumulator.
+            accums.rainyear_accum.addRecord(pruned_pkt, weight=cfg.loop_frequency)
 
         # Add packet to year accumulator.
         try:
@@ -5033,7 +5050,7 @@ class LoopProcessor:
             timespan = weeutil.weeutil.archiveYearSpan(pkt['dateTime'])
             accums.year_accum = weewx.accum.Accum(timespan, unit_system=cfg.unit_system)
             # Try again:
-            accums.year_accum.addRecord(pkt, weight=cfg.loop_frequency)
+            accums.year_accum.addRecord(pruned_pkt, weight=cfg.loop_frequency)
 
         # Add packet to month accumulator.
         try:
@@ -5044,7 +5061,7 @@ class LoopProcessor:
             timespan = weeutil.weeutil.archiveMonthSpan(pkt['dateTime'])
             accums.month_accum = weewx.accum.Accum(timespan, unit_system=cfg.unit_system)
             # Try again:
-            accums.month_accum.addRecord(pkt, weight=cfg.loop_frequency)
+            accums.month_accum.addRecord(pruned_pkt, weight=cfg.loop_frequency)
 
         # Add packet to week accumulator.
         try:
@@ -5055,7 +5072,7 @@ class LoopProcessor:
             timespan = weeutil.weeutil.archiveWeekSpan(pkt['dateTime'], cfg.week_start)
             accums.week_accum = weewx.accum.Accum(timespan, unit_system=cfg.unit_system)
             # Try again:
-            accums.week_accum.addRecord(pkt, weight=cfg.loop_frequency)
+            accums.week_accum.addRecord(pruned_pkt, weight=cfg.loop_frequency)
 
         # Add packet to day accumulator.
         try:
@@ -5066,7 +5083,7 @@ class LoopProcessor:
             timespan = weeutil.weeutil.archiveDaySpan(pkt['dateTime'])
             accums.day_accum = weewx.accum.Accum(timespan, unit_system=cfg.unit_system)
             # Try again:
-            accums.day_accum.addRecord(pkt, weight=cfg.loop_frequency)
+            accums.day_accum.addRecord(pruned_pkt, weight=cfg.loop_frequency)
 
         # Add packet to hour accumulator.
         try:
@@ -5077,7 +5094,7 @@ class LoopProcessor:
             timespan = weeutil.weeutil.archiveHoursAgoSpan(pkt['dateTime'])
             accums.hour_accum = weewx.accum.Accum(timespan, unit_system=cfg.unit_system)
             # Try again:
-            accums.hour_accum.addRecord(pkt, weight=cfg.loop_frequency)
+            accums.hour_accum.addRecord(pruned_pkt, weight=cfg.loop_frequency)
 
         # Add packets to continuous accumulators.
         for per, accum in accums.continuous.items():

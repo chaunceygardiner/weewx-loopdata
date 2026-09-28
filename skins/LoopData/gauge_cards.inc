@@ -582,8 +582,8 @@
         }
         say += p(esc(fmt('The index is EPA\u2019s, from the PM2.5 reading this moment; EPA\u2019s own AQI is a 24-hour figure, and its daily standard is 35 \u00b5g/m\u00b3.')), 'fine');
         // Today's high and low are the index of today's highest and lowest
-        // archived PM2.5, like the ladder's rows: a day aggregate of the
-        // xtype itself would count only the packets since weewxd started.
+        // archived PM2.5, like the ladder's rows: the xtype itself has no
+        // daily summary, so loopdata refuses its aggregates for every period.
         var hiToday = pm25Aqi(num(r['day.pm2_5.max.raw'])), loToday = pm25Aqi(num(r['day.pm2_5.min.raw']));
         return say + facts([[fmt('High today'), hiToday === undefined ? undefined : String(hiToday), r['day.pm2_5.maxtime']],
                             [fmt('Low today'), loToday === undefined ? undefined : String(loToday), r['day.pm2_5.mintime']],

@@ -12276,11 +12276,9 @@ class ProcessPacketTests(unittest.TestCase):
         the skin reads, the xtype included.
 
         And the declaration's SHAPE: no aggregate of an observation the
-        archive lacks, for any period.  A DAY aggregate of such an
-        observation (day.pm2_5_aqi.max, say) is produced by the build
-        above -- the day accumulator takes whatever the packets carry --
-        and counts only the packets since weewxd started, so a present
-        field cannot fail the check above; only the structure can."""
+        archive lacks, for any period.  The service refuses those now,
+        day included, so the check above would see them missing too;
+        this one names the reason rather than the symptom."""
         L = user.loopdata
         os.environ['TZ'] = 'America/Los_Angeles'
         time.tzset()
@@ -12321,8 +12319,10 @@ class ProcessPacketTests(unittest.TestCase):
                 entry = json.load(f)['LoopDataReport']
         missing = sorted(f for f in declared if f not in entry)
         self.assertEqual(missing, [], 'declared by the sample skin, produced by nothing')
+        # windrun is computed per packet from windSpeed, but its day aggregate
+        # still needs a windrun daily summary, so it is looked up as itself.
         composite = {'wind': ['windSpeed', 'windDir', 'windGust', 'windGustDir'],
-                     'windrose': ['windSpeed', 'windDir'], 'windrun': ['windSpeed', 'windDir']}
+                     'windrose': ['windSpeed', 'windDir']}
         unarchived = []
         for f in declared:
             cname = L.LoopData.parse_cname(f)
@@ -12331,8 +12331,77 @@ class ProcessPacketTests(unittest.TestCase):
             for obs in composite.get(cname.obstype, [cname.obstype]):
                 if obs not in columns:
                     unarchived.append(f)
-        self.assertEqual(unarchived, [], 'an aggregate of an observation the archive lacks: '
-                         'since the last restart for day, refused for every other period')
+        self.assertEqual(unarchived, [], 'an aggregate of an observation the archive lacks, '
+                         'which loopdata refuses for every period')
+
+    def test_day_aggregates_of_unarchived_observations_are_refused(self):
+        """A day aggregate of an observation with no daily summary (an
+        xtype: weewx-purple's pm2_5_aqi) is refused at the first-packet
+        build with the INFO line every other period logs, and stays out
+        of the file -- across a midnight rollover too, which builds a
+        fresh day accumulator and must feed it the pruned packet, not the
+        whole one.  The archived neighbor (pm2_5) and the current value
+        of the xtype are unaffected.  weewx's Accum creates stats for any
+        obstype a packet carries, so without the refusal day.pm2_5_aqi.max
+        was the high since the restart, with a time to match."""
+        L = user.loopdata
+        os.environ['TZ'] = 'America/Los_Angeles'
+        time.tzset()
+        t = 1593630000                                  # 2020-07-01 12:00 PDT
+        midnight = 1593673200                           # 2020-07-02 00:00 PDT
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp, declare_sample=False)
+            config_dict['StdReport']['LoopDataReport']['LoopData'] = {'fields': {'probe': [
+                'day.pm2_5_aqi.max', 'day.pm2_5_aqi.min', 'day.pm2_5_aqi.maxtime',
+                'day.pm2_5.max.raw', 'day.outTemp.max.raw', 'current.pm2_5_aqi.raw']}}
+            dbm = weewx.manager.open_manager_with_config(config_dict, 'wx_binding')
+            try:
+                dbm.addRecord({'dateTime': t - 900, 'usUnits': weewx.US, 'interval': 5,
+                               'outTemp': 80.0, 'pm2_5': 40.0})
+            finally:
+                dbm.close()
+            captured: List[Dict[str, Any]] = []
+            real_write = L.LoopProcessor.write_packet_to_file
+
+            def capturing_write(selective_pkt, tmpname, loop_data_dir, filename):
+                captured.append({k: dict(v) if isinstance(v, dict) else v
+                                 for k, v in selective_pkt.items()})
+                return real_write(selective_pkt, tmpname, loop_data_dir, filename)
+
+            service = L.LoopData(self.FakeEngine(config_dict), config_dict)
+            cfg = service.cfg
+            self.assertIn('pm2_5_aqi', cfg.obstypes.day)         # declared, not yet built
+            L.LoopProcessor.write_packet_to_file = staticmethod(capturing_write)
+            try:
+                with contextlib.redirect_stdout(io.StringIO()), \
+                        self.assertLogs('user.loopdata', level='INFO') as logs:
+                    service.pre_loop(None)
+                    try:
+                        for dt in (t, t + 2, midnight + 1):
+                            service.new_loop(weewx.Event(weewx.NEW_LOOP_PACKET, packet={
+                                'dateTime': dt, 'usUnits': weewx.US, 'outTemp': 70.0,
+                                'pm2_5': 6.0, 'pm2_5_aqi': 25}))
+                        deadline = time.time() + 20
+                        while not cfg.queue.empty() and time.time() < deadline:
+                            time.sleep(0.01)
+                    finally:
+                        service.shutDown()
+            finally:
+                L.LoopProcessor.write_packet_to_file = staticmethod(real_write)
+        self.assertEqual(
+            [m for m in logs.output if 'Ignoring pm2_5_aqi for day time period' in m],
+            ['INFO:user.loopdata:Ignoring pm2_5_aqi for day time period as this observation '
+             'has no day accumulator.'])
+        self.assertNotIn('pm2_5_aqi', cfg.obstypes.day)
+        self.assertEqual(len(captured), 3)
+        before, after = captured[1]['LoopDataReport'], captured[2]['LoopDataReport']
+        for entry in (before, after):
+            self.assertEqual([f for f in entry if f.startswith('day.pm2_5_aqi')], [])
+            self.assertEqual(entry['current.pm2_5_aqi.raw'], 25)
+        self.assertEqual(before['day.pm2_5.max.raw'], 40.0)       # the archive's, seeded
+        self.assertEqual(before['day.outTemp.max.raw'], 80.0)
+        self.assertEqual(after['day.pm2_5.max.raw'], 6.0)         # the new day's, from the packet
+        self.assertEqual(after['day.outTemp.max.raw'], 70.0)
 
     def test_init_wires_the_contexts(self):
         """LoopData.__init__ end to end against a real config, skin tree and

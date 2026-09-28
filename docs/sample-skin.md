@@ -107,9 +107,9 @@ Each card is the same four things:
   The air quality card's today tiles and its ladder rank each period's
   highest (and today's lowest) PM2.5, which is archived, and show it as
   the index weewx-purple computes for it; the index itself is an xtype,
-  computed per packet and never archived, so no period's extreme could be
-  built from it -- today's would count only the packets since weewxd
-  started.  Only the reading now uses the index in the packet.
+  computed per packet and never archived, so loopdata refuses its
+  aggregates for every period, today included.  Only the reading now uses
+  the index in the packet.
 
 ![The wind card in the light theme](images/LoopDataReport-card-light.png)
 

@@ -125,7 +125,8 @@ In roughly descending order of likelihood:
   [What LoopData writes to the log](#what-loopdata-writes-to-the-log).
 * **The aggregate needs the database, and the observation isn't in it.**
   Aggregates implemented via xtypes (e.g. weewx-purple's `pm2_5_aqi`) are
-  ignored; only current values work for such observations.  See
+  ignored for every period, today included; only current values work for
+  such observations.  See
   [the field reference](field-reference.html#aggregates-via-xtypes-are-not-supported).
 * **The entry was split at a comma.**  A formatting call or almanac tag
   containing a comma must be quoted in the declaration — in `skin.conf` or

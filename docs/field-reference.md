@@ -371,9 +371,17 @@ If, say, `week.pm2_5_aqi.max` were declared, it would be ignored — there is no
 for `pm2_5_aqi`.
 
 The rule is: if an observation is not stored in the database, you can't
-specify aggregates for it.  LoopData will still report *current* values if
-you specify them (e.g. `current.pm2_5_aqi.raw` works — the value is in the
-loop packet).
+specify aggregates for it, for any period — `day` included, since a day's
+high or low built from loop packets alone would run from the last restart
+rather than from midnight.  Each refused observation is logged once per
+period at startup (`Ignoring pm2_5_aqi for day time period as this
+observation has no day accumulator`).  WeeWX's own report tags can compute
+such an aggregate through the xtype, but only by reading every archive
+record in the period and computing the value for each; loopdata builds its
+accumulators on the engine thread at the first loop packet and cannot
+afford that scan, so it does not try.  LoopData will still report *current*
+values if you specify them (e.g. `current.pm2_5_aqi.raw` works — the value
+is in the loop packet).
 
 ## What report tags can do that fields cannot
 

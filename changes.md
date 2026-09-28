@@ -1,5 +1,21 @@
 # weewx-loopdata change history
 
+## 8.0.1 2026/09/28
+- A day aggregate of an observation with no daily summary -- an xtype
+  such as weewx-purple's pm2_5_aqi -- is now refused at startup with the
+  same INFO line every other period has always logged for it, and the
+  field is omitted from loop-data.txt.  It used to be produced from the
+  loop packets alone, so day.pm2_5_aqi.min after a restart was the low
+  since the restart, with a time to match, and nothing in the file said
+  so.  The rule is now the same for every period: an aggregate needs the
+  observation in the archive (a daily summary), and current.<obs> works
+  for anything in the loop packet.  A station on the classic wview
+  schema, which archives neither appTemp nor windrun, loses day.appTemp
+  and day.windrun; both were since-restart values there.  A period
+  rollover now feeds the new accumulator the pruned packet, as the first
+  one was fed, so a refused observation cannot slip into a period at
+  midnight.
+
 ## 8.0 2026/09/28
 - The sample report's gauges open cards.  A click or a tap on any gauge
   opens a card over the panel (a full-screen sheet on a phone) that says
