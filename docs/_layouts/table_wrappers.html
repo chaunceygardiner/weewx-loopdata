@@ -1,0 +1,14 @@
+---
+layout: vendor/compress
+---
+{% comment %}
+  just-the-docs v0.12.0's table_wrappers layout (the theme pinned in
+  _config.yml), copied so that every page's finished HTML passes through
+  here, plus one change: void elements lose their trailing slash.  The
+  theme's seo tags and kramdown both write "<meta ... />", "<img ... />",
+  "<hr />", which the Nu Html Checker reports on every page.  Escaped markup
+  in code blocks ("&lt;br /&gt;") cannot match.
+{% endcomment %}
+{% assign content_ = content | replace: '<table', '<div class="table-wrapper"><table' %}
+{% assign content_ = content_ | replace: '</table>', '</table></div>' %}
+{{ content_ | replace: ' />', '>' }}

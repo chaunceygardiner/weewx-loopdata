@@ -1,5 +1,13 @@
 # weewx-loopdata change history
 
+## 8.0.2 2026/10/07
+- The sample report says more plainly that its gauges open.  The line
+  under the head, which said "Click any gauge for more." in small gray
+  type, is now a band in ink with a tap icon, and says what a card
+  holds: "Click any gauge to see what its reading means, today and on
+  record."  On a touch screen it says Tap.  The new sentence is
+  translated in all eight shipped languages.
+
 ## 8.0.1 2026/09/28
 - A day aggregate of an observation with no daily summary -- an xtype
   such as weewx-purple's pm2_5_aqi -- is now refused at startup with the
