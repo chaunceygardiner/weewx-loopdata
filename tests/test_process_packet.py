@@ -30,6 +30,7 @@
 #
 """Test processing packets."""
 
+import collections
 import configobj
 import contextlib
 import importlib
@@ -69,7 +70,7 @@ from weeutil.weeutil import to_bool
 from weeutil.weeutil import to_int
 from weeutil.weeutil import timestamp_to_string
 
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
 import weecfg.extension
 import weeutil.config
@@ -204,6 +205,15 @@ class StubPass:
         self.stub.count('next_pass.max_altitude')
         return self._max_altitude
 
+class OpaqueAlmanacBody:
+    """No __str__ and no __repr__, as AlmanacBinder before WeeWX 5.3."""
+
+class StrOnlyAlmanacValue:
+    """Its own __str__ and no __repr__, as WeeWX's ValueHelper."""
+    def __str__(self) -> str:
+        return 'shown'
+
+
 class StubAlmanacType(weewx.almanac.AlmanacType):
     """Serves deterministic values so loopdata's almanac plumbing (parsing,
     evaluation, formatting, caching) can be tested from first principles,
@@ -245,6 +255,26 @@ class StubAlmanacType(weewx.almanac.AlmanacType):
         if attr == 'moon_index':
             self.count(attr)
             return 4
+        if attr == 'stub_opaque':
+            # What WeeWX before 5.3 hands back for a body nothing knows: an
+            # object with no string but its default repr.
+            return OpaqueAlmanacBody()
+        if attr == 'stub_opaque_inside':
+            # The same object inside a container, whose string is the
+            # container's repr of it.
+            return (4, (5, {'body': OpaqueAlmanacBody()}))
+        if attr == 'stub_nested_scalars':
+            return (4, (5, 6))
+        if attr == 'stub_generator':
+            return (body for body in ('sun', 'moon'))
+        if attr == 'stub_deque':
+            return collections.deque([OpaqueAlmanacBody()])
+        if attr == 'stub_str_only':
+            return StrOnlyAlmanacValue()
+        if attr == 'stub_value_helpers':
+            # A ValueHelper has its own __str__ but not __repr__, so inside
+            # a container it prints as its default repr.
+            return (StubAlmanacType.time_vh(almanac_obj, almanac_obj.time_ts),)
         if attr == 'next_full_moon':
             self.count(attr)
             if attr in self.no_data:
@@ -1619,6 +1649,14 @@ class ProcessPacketTests(unittest.TestCase):
             'almanac.moon_index.formatted',                     # invalid: skipped
             'almanac.next_full_moon.raw',                       # event tier
             'almanac.no_such_attr',                             # unknown: skipped
+            'almanac.stub_opaque',                              # bare object: skipped
+            'almanac.stub_opaque.raw',
+            'almanac.stub_opaque_inside.raw',                   # inside a container: skipped
+            'almanac.stub_nested_scalars.raw',                  # nested, nothing opaque: kept
+            'almanac.stub_value_helpers.raw',                   # a ValueHelper inside: skipped
+            'almanac.stub_str_only.raw',                        # its own __str__, alone: kept
+            'almanac.stub_generator.raw',                       # a generator: skipped
+            'almanac.stub_deque.raw',                           # another container: skipped
         ]
         cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, ['current.outTemp'])
         cfg.legacy.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
@@ -1657,16 +1695,19 @@ class ProcessPacketTests(unittest.TestCase):
             self.assertEqual(loopdata_pkt['almanac.moon_index.raw'], 4)
             self.assertNotIn('almanac.moon_index.formatted', loopdata_pkt)
             self.assertEqual(loopdata_pkt['almanac.next_full_moon.raw'], stub.next_full_moon_ts)
-            if ProcessPacketTests.unknown_almanac_body_is_refused():
-                self.assertNotIn('almanac.no_such_attr', loopdata_pkt)
-            else:
-                # WeeWX 4.6 through 5.2 hand back a binder for a body of
-                # any name and render it as its own repr, so the field is
-                # published rather than omitted.  Pinned as a difference,
-                # not as desired behavior: it is WeeWX's, it reaches only a
-                # declaration naming something no almanac knows, and
-                # loopdata does not (yet) refuse the binder itself.
-                self.assertIn('almanac.no_such_attr', loopdata_pkt)
+            # WeeWX 5.3 on refuses a body nothing knows; before 5.3 it
+            # hands back a binder whose string is its default repr, which
+            # loopdata refuses -- stub_opaque is that object, on any
+            # version, and the floor gate drives the real binder.
+            self.assertNotIn('almanac.no_such_attr', loopdata_pkt)
+            self.assertNotIn('almanac.stub_opaque', loopdata_pkt)
+            self.assertNotIn('almanac.stub_opaque.raw', loopdata_pkt)
+            self.assertNotIn('almanac.stub_opaque_inside.raw', loopdata_pkt)
+            self.assertEqual(loopdata_pkt['almanac.stub_nested_scalars.raw'], '(4, (5, 6))')
+            self.assertNotIn('almanac.stub_value_helpers.raw', loopdata_pkt)
+            self.assertEqual(loopdata_pkt['almanac.stub_str_only.raw'], 'shown')
+            self.assertNotIn('almanac.stub_generator.raw', loopdata_pkt)
+            self.assertNotIn('almanac.stub_deque.raw', loopdata_pkt)
 
             # Four fields walk the sunrise attribute; moon_index is walked
             # three times (the .formatted variant evaluates, then fails to format).
@@ -10398,22 +10439,6 @@ class ProcessPacketTests(unittest.TestCase):
                 setattr(module, name, saved)
 
     @staticmethod
-    def unknown_almanac_body_is_refused() -> bool:
-        """Does the running WeeWX refuse an almanac attribute that nothing
-        knows?  Every version hands back an AlmanacBinder for it; RENDERING
-        that binder raises AttributeError from 5.3, where _get_ephem_body
-        turns PyEphem's KeyError into one, and yields the binder's default
-        repr before that.  Asked of the library, never of
-        weewx.__version__ -- the question is what it does, and that is what
-        decides whether such a field is omitted or published."""
-        try:
-            str(getattr(weewx.almanac.Almanac(1593630000, 37.4, -122.2),
-                        'no_such_attr_at_all'))
-        except Exception:
-            return True
-        return False
-
-    @staticmethod
     def usable_locales() -> List[str]:
         """The locales this host actually has compiled, beyond C.  A fixed
         order, so a failure names the same one on a re-run."""
@@ -10742,6 +10767,217 @@ class ProcessPacketTests(unittest.TestCase):
                         base.deltatime_format_dict[contexts[0]], none_string),
                     base.delta_time_to_string(vt,
                         base.deltatime_format_dict[contexts[0]], none_string))
+
+    def test_long_form_on_a_weewx_without_it(self):
+        """Spec: long_form renders on every WeeWX loopdata supports.
+        WeeWX's Formatter.long_form and delta_time_to_string are missing
+        before 4.10 and take no None_string before 4.10.2, ValueHelper's
+        long_form likewise, and [[DeltaTimeFormats]] is not read before
+        4.10; loopdata passes None_string on every call, so every long_form
+        field -- the sample report's almanac.sun.visible.long_form() among
+        them -- was omitted on 4.6 through 4.10.1.
+
+        Both old shapes are made here by taking the running WeeWX's methods
+        away (4.6-4.9) or putting 4.10.1's signatures in their place, and
+        each must render exactly what the running WeeWX renders: through
+        ReportFormatter.long_form (packet fields, via CALL_FORMAT_SPECS)
+        and through render_endpoint_value (almanac and station fields),
+        with and without the report's locale handling, and for no value."""
+        L = user.loopdata
+        ValueHelper = weewx.units.ValueHelper
+        config_dict = configobj.ConfigObj('tests/weewx.conf.metric', encoding='utf-8')
+        skin_dict = L.LoopData.get_target_report_dict(config_dict, 'SeasonsReport')
+        render_locale = L.RenderLocale.capture('C')
+
+        def render_all(formatter: Any) -> List[Any]:
+            out: List[Any] = []
+            for context in contexts:
+                for secs in (0, 59, 61, 3601, 86401, 90061, -7200):
+                    vt = weewx.units.ValueTuple(secs, 'second', 'group_deltatime')
+                    out.append(L.CALL_FORMAT_SPECS['long_form'].render(
+                        formatter, vt, context, {}))
+                    out.append(L.render_endpoint_value('f', 'visible', 'long_form',
+                        None, None, ValueHelper(vt, context, formatter)))
+            for none_string in (None, 'nothing yet', 17):
+                vt = weewx.units.ValueTuple(None, 'second', 'group_deltatime')
+                out.append(L.render_endpoint_value('f', 'visible', 'long_form',
+                    {'None_string': none_string}, None,
+                    ValueHelper(vt, 'day', formatter)))
+            return out
+
+        # The oracle is WeeWX itself: its own Formatter, and its own
+        # ValueHelper.long_form, which render_endpoint_value calls for a
+        # formatter that is not loopdata's.
+        weewx_formatter = weewx.units.Formatter.fromSkinDict(skin_dict)
+        modern = L.ReportFormatter.from_skin_dict(skin_dict, render_locale)
+        assert modern.base_has_long_form          # landmark: the running WeeWX is current
+        contexts = sorted(weewx_formatter.deltatime_format_dict) + ['no_such_context']
+        assert len(contexts) >= 5, contexts       # landmark: real formats
+        expected = render_all(weewx_formatter)
+        self.assertEqual(len(expected), 14 * len(contexts) + 3)
+        self.assertTrue(all(isinstance(v, str) and v for v in expected), expected)
+        self.assertIn('1 day, 1 hour, 1 minute', expected)  # landmark: WeeWX's words
+        self.assertEqual(render_all(modern), expected)
+
+        # A current WeeWX keeps its own ValueHelper.long_form: the
+        # formatter is called directly only where that method is too old.
+        class OwnLongForm(ValueHelper):
+            def long_form(self, format_string: Any = None, None_string: Any = None) -> str:
+                return 'its own'
+        self.assertEqual(L.render_endpoint_value('f', 'visible', 'long_form', None, None,
+            OwnLongForm(weewx.units.ValueTuple(61, 'second', 'group_deltatime'),
+                        'day', modern)), 'its own')
+
+        for shape in ('4.6-4.9', '4.10.0-4.10.1'):
+            with self.weewx_long_form_as(shape):
+                old = L.ReportFormatter.from_skin_dict(skin_dict, render_locale)
+                self.assertFalse(old.base_has_long_form, shape)
+                self.assertEqual(render_all(old), expected, shape)
+                old.locale_aware = False
+                self.assertEqual(render_all(old), expected, shape + ', not locale aware')
+        self.assertTrue(L.ReportFormatter.base_long_form_is_current())
+        self.assertEqual(render_all(L.ReportFormatter.from_skin_dict(
+            skin_dict, render_locale)), expected)  # landmark: all restored
+
+    @staticmethod
+    @contextlib.contextmanager
+    def weewx_long_form_as(shape: str) -> Iterator[None]:
+        """The running WeeWX's long_form as an older one has it: '4.6-4.9'
+        takes Formatter.long_form, delta_time_to_string and
+        ValueHelper.long_form away and reads no [[DeltaTimeFormats]];
+        '4.10.0-4.10.1' puts in signatures without None_string, each
+        failing the test if called, since loopdata must not call them.
+        Only those are replaced: _to_string, the labels and the rest of
+        the Formatter stay the running WeeWX's, so a 4.6 difference
+        anywhere else is invisible here.  The real 4.6.0, 4.9.1 and
+        4.10.1 trees are checked by rendering probes against them,
+        outside the suite, since below 5.2 the suite needs shims."""
+        Formatter, ValueHelper = weewx.units.Formatter, weewx.units.ValueHelper
+        def old_long_form(self: Any, val_t: Any, context: Any, format_string: Any = None) -> Any:
+            raise AssertionError('4.10.1 long_form called')
+        def old_delta(self: Any, val_t: Any, label_format: Any) -> Any:
+            raise AssertionError('4.10.1 delta_time_to_string called')
+        def old_vh_long_form(self: Any, format_string: Any = None) -> Any:
+            raise AssertionError('4.10.1 ValueHelper.long_form called')
+        real_from_skin_dict = Formatter.fromSkinDict
+        def from_skin_dict_before_4_10(skin_dict: Any) -> Any:
+            base = real_from_skin_dict(skin_dict)
+            del base.deltatime_format_dict
+            return base
+        patches = {
+            '4.6-4.9': {(Formatter, 'long_form'): None,
+                        (Formatter, 'delta_time_to_string'): None,
+                        (ValueHelper, 'long_form'): None,
+                        (Formatter, 'fromSkinDict'): staticmethod(from_skin_dict_before_4_10)},
+            '4.10.0-4.10.1': {(Formatter, 'long_form'): old_long_form,
+                              (Formatter, 'delta_time_to_string'): old_delta,
+                              (ValueHelper, 'long_form'): old_vh_long_form},
+        }[shape]
+        saved = {(cls, name): vars(cls)[name] for cls, name in patches}
+        try:
+            for (cls, name), new in patches.items():
+                if new is None:
+                    delattr(cls, name)
+                else:
+                    setattr(cls, name, new)
+            yield
+        finally:
+            for (cls, name), method in saved.items():
+                setattr(cls, name, method)
+
+    def test_long_form_answers_as_4_10_on_an_older_weewx(self):
+        """Spec: WeeWX before 4.10 ships no [[DeltaTimeFormats]].  It
+        formats a duration from [[TimeFormats]], under context names 4.10
+        renamed: a body's visible time is short_delta (4.10: day),
+        visible_change brief_delta (hour), $station.uptime long_delta
+        (month), and its defaults ship all three.  Rendered with nothing
+        for those, the sample report's length of day would read '0 days,
+        11 hours, 30 minutes' on 4.6 through 4.9.  For each context the
+        format is, first found: the report's [[DeltaTimeFormats]] entry;
+        for an old name its [[TimeFormats]] entry, which that WeeWX's own
+        .formatted uses; for an old name its new name's format; 4.10's
+        default.  So a duration reads as on a newer WeeWX, and as the
+        station's own .formatted where the station set one.  None of it is
+        written into the skin dict, whose contents are the report's
+        render_signature."""
+        L = user.loopdata
+        render_locale = L.RenderLocale.capture('C')
+        with tempfile.TemporaryDirectory() as tmp:
+            skin_dict = L.LoopData.get_target_report_dict(
+                self._init_fixture(tmp), 'LoopDataReport')
+        modern = L.ReportFormatter.from_skin_dict(skin_dict, render_locale)
+        def render(formatter: Any, context: str, secs: int = 41436) -> Any:
+            return L.render_endpoint_value('f', 'sun.visible', 'long_form', None, None,
+                weewx.units.ValueHelper(
+                    weewx.units.ValueTuple(secs, 'second', 'group_deltatime'),
+                    context, formatter))
+        expected = {(context, secs): render(modern, context, secs)
+                    for context in L.WEEWX_DELTATIME_FORMATS
+                    for secs in (61, 3725, 41436, 90061)}
+        # What WeeWX 4.6's defaults put in [[TimeFormats]] (weewx/defaults.py
+        # at v4.6.0; 4.9.1 is the same).
+        shipped_4_6 = {
+            'brief_delta': '%(minute)d%(minute_label)s, %(second)d%(second_label)s',
+            'short_delta': '%(hour)d%(hour_label)s, %(minute)d%(minute_label)s, %(second)d%(second_label)s',
+            'long_delta':  '%(day)d%(day_label)s, %(hour)d%(hour_label)s, %(minute)d%(minute_label)s',
+            'delta_time':  '%(day)d%(day_label)s, %(hour)d%(hour_label)s, %(minute)d%(minute_label)s'}
+        def skin(time_formats: Dict[str, str], delta_formats: Any = None) -> Any:
+            """A 4.6-9 skin dict: no [[DeltaTimeFormats]] unless a report
+            writes one, and these [[TimeFormats]] entries."""
+            d = weeutil.config.deep_copy(skin_dict)
+            del d['Units']['DeltaTimeFormats']
+            d['Units']['TimeFormats'].update(time_formats)
+            if delta_formats is not None:
+                d['Units']['DeltaTimeFormats'] = delta_formats
+            return d
+        own = '%(hour)dh %(minute)dm'
+        with self.weewx_long_form_as('4.6-4.9'):
+            # A scalar of that name, which 4.6 ignores, is ignored.
+            scalar = L.ReportFormatter.from_skin_dict(skin(shipped_4_6, 'x'), render_locale)
+            self.assertEqual(render(scalar, 'short_delta'), '11 hours, 30 minutes, 36 seconds')
+
+            # As 4.6 ships it, and with no duration formats at all: every
+            # context reads as on 4.10 (steps 2 and 3 agree on defaults).
+            for time_formats in (shipped_4_6, {}):
+                bare = skin(time_formats)
+                signature = L.LoopData.render_signature(bare, [])
+                old = L.ReportFormatter.from_skin_dict(bare, render_locale)
+                for (context, secs), rendered in expected.items():
+                    self.assertEqual(render(old, context, secs), rendered, context)
+                self.assertEqual(render(old, 'short_delta'), '11 hours, 30 minutes, 36 seconds')
+                self.assertEqual(render(old, 'short_delta', 3725), expected[('day', 3725)])
+                self.assertEqual(render(old, 'brief_delta', 3725), expected[('hour', 3725)])
+                self.assertEqual(render(old, 'long_delta', 90061), expected[('month', 90061)])
+                self.assertEqual(L.LoopData.render_signature(bare, []), signature)
+
+            # 3 over 4: the report's day and month reach the old names that
+            # [[TimeFormats]] does not name.
+            follows = L.ReportFormatter.from_skin_dict(skin({}, {
+                'day': '%(hour)d%(hour_label)s', 'month': '%(day)d%(day_label)s'}),
+                render_locale)
+            self.assertEqual(render(follows, 'short_delta'), '11 hours')
+            self.assertEqual(render(follows, 'long_delta', 90061), '1 day')
+            # 2 over 3: the station's own short_delta, the one its
+            # .formatted uses, beats the day format.
+            station = L.ReportFormatter.from_skin_dict(skin(
+                dict(shipped_4_6, short_delta=own), {'day': '%(hour)d%(hour_label)s'}),
+                render_locale)
+            self.assertEqual(render(station, 'short_delta'), '11h 30m')
+            self.assertEqual(station.time_format_dict['short_delta'], own)
+            # 1 over 2: a [[DeltaTimeFormats]] entry under the old name.
+            named = L.ReportFormatter.from_skin_dict(skin(
+                dict(shipped_4_6, short_delta=own), {'short_delta': '%(hour)dh%(minute)02dm'}),
+                render_locale)
+            self.assertEqual(render(named, 'short_delta'), '11h30m')
+
+    def test_deltatime_formats_match_the_running_weewx(self):
+        """Spec: WEEWX_DELTATIME_FORMATS is a copy of the defaults WeeWX
+        ships (4.10 on), seeded only where WeeWX has none; this keeps the
+        copy honest against the running WeeWX.  Read without ConfigObj's
+        interpolation, which would try to fill in %(minute_label)s."""
+        section = weewx.defaults.defaults['Units']['DeltaTimeFormats']
+        self.assertEqual({k: dict.__getitem__(section, k) for k in section},
+                         user.loopdata.WEEWX_DELTATIME_FORMATS)
 
     def test_long_form_carries_the_reports_decimal_point(self):
         """Spec: the defect the override above exists to close.  A

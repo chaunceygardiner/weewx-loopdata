@@ -309,6 +309,18 @@ For example:
 * `day.sunshineDur.sum.long_form()` might yield
   `6 hours, 25 minutes, 10 seconds`
 
+WeeWX before 4.10.2 has no `long_form` that LoopData can call, so LoopData
+provides it there.  On WeeWX before 4.10, which neither ships nor reads
+`[Units][DeltaTimeFormats]`, an almanac or uptime duration takes its format
+from the report's `[Units][TimeFormats]`, as that WeeWX's own `.formatted`
+does: `short_delta` for a body's visible time (`almanac.sun.visible`),
+`brief_delta` for its change from yesterday (`almanac.sun.visible_change`)
+and `long_delta` for `station.uptime` and `station.os_uptime`.  Those
+versions ship all three in `[Units][TimeFormats]`, so that is where to
+change them; a `[Units][DeltaTimeFormats]` entry under one of those three
+names, if you add one, comes first.  From 4.10 on, the same durations use
+`[Units][DeltaTimeFormats]` `day`, `hour` and `month`.
+
 Exactly as in a report, a time-of-event field's `format_string` is a
 strftime format, and a numeric field's is a %-format.  Arguments must be
 literals; positional arguments bind exactly as the report tag's do.  A bare

@@ -1,5 +1,56 @@
 # weewx-loopdata change history
 
+## 8.0.3 2026/10/08
+- long_form() renders on every WeeWX loopdata supports.  On WeeWX 4.6
+  through 4.10.1 every long_form() field was omitted from
+  loop-data.txt -- the sample report's almanac.sun.visible.long_form()
+  among them, so its UV and radiation cards showed no length of day --
+  because WeeWX's long_form is missing before 4.10 and takes no
+  None_string before 4.10.2.  LoopData now composes it itself there,
+  and it reads as on a newer WeeWX ("11 hours, 30 minutes, 36
+  seconds").  Before 4.10, which has no [[DeltaTimeFormats]] and
+  formats the almanac's and $station.uptime's durations from
+  [[TimeFormats]] as short_delta, brief_delta and long_delta (4.10
+  renamed them day, hour and month), LoopData formats those three from
+  the report's [[TimeFormats]] entries, which those versions always
+  ship, as the same value's .formatted does; a [[DeltaTimeFormats]]
+  entry under one of those three names, if you add one, comes first.
+- An almanac field naming a body no almanac knows is omitted, with the
+  "Cannot evaluate almanac field" line in the log, on every WeeWX.  On
+  WeeWX 4.6 through 5.2 it was published as
+  `<weewx.almanac.AlmanacBinder object at 0x...>`.
+- The sample report's radiation card says how much shorter or longer
+  the day is than yesterday ("2 minutes shorter than yesterday", "1
+  minute longer", "under a minute shorter"), where it said "minutes"
+  twice: the field it declared kept WeeWX's unit label.  It now declares
+  almanac.sun.visible_change.minute.raw and words the change itself,
+  which also brings it back on WeeWX before 4.10, where the old field
+  failed.  On WeeWX before 5.0, which has no almanac.sun.altitude or
+  azimuth, the UV card now gives the sun's transit and sunset, and the
+  radiation card its transit, sunset and end of civil twilight, which
+  were left out with the sentences saying where the sun is; the
+  transit and civil twilight need PyEphem, as they always have.  Those
+  sentences still need WeeWX 5.0.
+- At high latitudes, the sample report's UV and radiation cards say in
+  words that the sun does not set today, or does not rise, that civil
+  twilight lasts all night, and that the sun is up "all day", where
+  they put WeeWX's "N/A" into the sentence: "it sets at N/A and civil
+  twilight ends at N/A".  The sample skin declares the .raw of the
+  sunrise, the sunset, the end of civil twilight and the day's length
+  beside them, since a time WeeWX has no answer for is published only
+  formatted.  Where the sun sets after midnight (Reykjavik for weeks
+  around midsummer), WeeWX's day length comes out negative and reads as
+  the night's length, and its change from yesterday is off by a day
+  when the sunset crosses midnight; the cards now leave both out on
+  those days.  Restart weewxd after installing: the service reads the
+  declaration only when it starts, and until then the sun cards leave
+  out the sunrise and sunset, the Sun up tile, the end of civil
+  twilight and the change in daylight from yesterday.
+- The almanac page of the manual gave almanac.sun.az.format(...) and
+  almanac.sun.az.round(1).raw as examples, and az is a plain number, so
+  both were refused.  They now use almanac.sun.azimuth, and the page
+  says that azimuth and altitude need WeeWX 5.0.
+
 ## 8.0.2 2026/10/07
 - The sample report says more plainly that its gauges open.  The line
   under the head, which said "Click any gauge for more." in small gray

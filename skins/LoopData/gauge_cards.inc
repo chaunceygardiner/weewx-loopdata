@@ -127,6 +127,7 @@
   #silent $t.update({'Air now': $gettext('Air now')})
   #silent $t.update({'measured': $gettext('measured')})
   #silent $t.update({'The sun is {alt} above the horizon; highest at {transit}, sets {set}': $gettext('The sun is {alt} above the horizon; highest at {transit}, sets {set}')})
+  #silent $t.update({'Highest at {transit}, sets {set}': $gettext('Highest at {transit}, sets {set}')})
   #silent $t.update({'EPA names the index rounded, so 2.5 is Moderate.  The peak comes at solar noon, not clock noon, on a clear day.': $gettext('EPA names the index rounded, so 2.5 is Moderate.  The peak comes at solar noon, not clock noon, on a clear day.')})
   #silent $t.update({'Peak today': $gettext('Peak today')})
   #silent $t.update({'Sun up': $gettext('Sun up')})
@@ -136,9 +137,24 @@
   #silent $t.update({'EPA’s scale': $gettext('EPA’s scale')})
   #silent $t.update({'The sun is {alt} above the horizon, {az} around from north': $gettext('The sun is {alt} above the horizon, {az} around from north')})
   #silent $t.update({'Highest at {transit}; it sets at {set} and civil twilight ends at {civil}': $gettext('Highest at {transit}; it sets at {set} and civil twilight ends at {civil}')})
+  #silent $t.update({'The sun is {alt} above the horizon; highest at {transit}': $gettext('The sun is {alt} above the horizon; highest at {transit}')})
+  #silent $t.update({'Highest at {transit}': $gettext('Highest at {transit}')})
+  #silent $t.update({'Highest at {transit}; it sets at {set} and civil twilight lasts all night': $gettext('Highest at {transit}; it sets at {set} and civil twilight lasts all night')})
+  #silent $t.update({'The sun does not set today': $gettext('The sun does not set today')})
+  #silent $t.update({'The sun does not rise today': $gettext('The sun does not rise today')})
+  #silent $t.update({'all day': $gettext('all day')})
+  #silent $t.update({'not today': $gettext('not today')})
+  #silent $t.update({'from midnight': $gettext('from midnight')})
+  #silent $t.update({'to past midnight': $gettext('to past midnight')})
   #silent $t.update({'Sunlight on a level surface, in watts per square meter.  A clear noon in summer reaches about 1000; haze, cloud and a low sun take it down.': $gettext('Sunlight on a level surface, in watts per square meter.  A clear noon in summer reaches about 1000; haze, cloud and a low sun take it down.')})
   #silent $t.update({'Daylight': $gettext('Daylight')})
-  #silent $t.update({'{d} minutes on yesterday': $gettext('{d} minutes on yesterday')})
+  #silent $t.update({'{d} minutes shorter than yesterday': $gettext('{d} minutes shorter than yesterday')})
+  #silent $t.update({'{d} minute shorter than yesterday': $gettext('{d} minute shorter than yesterday')})
+  #silent $t.update({'{d} minutes longer than yesterday': $gettext('{d} minutes longer than yesterday')})
+  #silent $t.update({'{d} minute longer than yesterday': $gettext('{d} minute longer than yesterday')})
+  #silent $t.update({'under a minute shorter than yesterday': $gettext('under a minute shorter than yesterday')})
+  #silent $t.update({'under a minute longer than yesterday': $gettext('under a minute longer than yesterday')})
+  #silent $t.update({'same length as yesterday': $gettext('same length as yesterday')})
   #silent $t.update({'the brightest moment of each period': $gettext('the brightest moment of each period')})
   #silent $t.update({'PM2.5 {now} now, {h1} over the last hour, {h24} over the last 24': $gettext('PM2.5 {now} now, {h1} over the last hour, {h24} over the last 24')})
   #silent $t.update({'The index is EPA’s, from the PM2.5 reading this moment; EPA’s own AQI is a 24-hour figure, and its daily standard is 35 µg/m³.': $gettext('The index is EPA’s, from the PM2.5 reading this moment; EPA’s own AQI is a 24-hour figure, and its daily standard is 35 µg/m³.')})
@@ -290,6 +306,58 @@
       return '<div class="sec"><div class="sec-head"><h3>' + esc(title) + '</h3>' +
              (aside ? '<span class="aside">' + esc(aside) + '</span>' : '') + '</div>' + html +
              (note ? '<p>' + note + '</p>' : '') + '</div>';
+    }
+    // ---- THE SUN'S DAY, for the UV and radiation cards.  Each of its
+    // times is in one of three states: the feed has it; it does not
+    // happen today (no sunset under the midnight sun, no end to civil
+    // twilight on a high-latitude summer night), which WeeWX has no time
+    // for, so the feed carries the report's formatted "N/A" -- in the
+    // report's words, which the page cannot recognize -- with the .raw
+    // beside it left out; or the feed lacks it.  The cards name only the
+    // times of the first kind and say the second in words.
+    function sunDay(r) {
+      function none(key) { return r[key] !== undefined && r[key + '.raw'] === undefined; }
+      function at(key) { return r[key] !== undefined && !none(key) ? r[key] : undefined; }
+      var civil = 'almanac(horizon=-6).sun(use_center=1).set';
+      var noSet = none('almanac.sunset');
+      // Without a sunset the sun is up all day or down all day, as the
+      // day's length says.
+      var up = num(r['almanac.sun.visible.second.raw']);
+      // WeeWX's length is the next sunset less the next sunrise, from
+      // midnight, so on a day the sun sets after midnight and rises
+      // later that morning it comes out negative (Reykjavik for weeks
+      // around midsummer), and its long form drops the sign and reads
+      // as the night.  Such a length is left out.
+      var len = up !== undefined && up < 0 ? undefined : r['almanac.sun.visible.long_form()'];
+      return {transit: r['almanac.sun.transit'], len: len,
+              rise: at('almanac.sunrise'), set: at('almanac.sunset'), civil: at(civil),
+              noRise: none('almanac.sunrise'), noSet: noSet, civilAllNight: none(civil),
+              allDay: noSet && up !== undefined && up > 0, noDay: noSet && up === 0};
+    }
+    // No day's length changes by half a day from one day to the next.  A
+    // change that big is WeeWX subtracting one of its negative lengths
+    // (above) from a real one, on the day the sunset crosses midnight.
+    var MAX_DAYLIGHT_CHANGE = 720;
+    // The sentence for a day without a sunset, saying which way.
+    function sunNote(sd) {
+      return sd.allDay ? fmt('The sun does not set today')
+        : sd.noDay ? fmt('The sun does not rise today') : undefined;
+    }
+    // The day's length against yesterday's, from the change in minutes:
+    // whole minutes toward zero, as WeeWX's %d writes them, and under a
+    // minute said so rather than as 0.  A count here is never below one,
+    // where every shipped language's singular is exactly one.
+    function daylightChange(m) {
+      var d = Math.trunc(Math.abs(m));
+      if (m === 0) { return fmt('same length as yesterday'); }
+      if (m > 0) {
+        return d === 0 ? fmt('under a minute longer than yesterday')
+          : d === 1 ? fmt('{d} minute longer than yesterday', {d: String(d)})
+          : fmt('{d} minutes longer than yesterday', {d: String(d)});
+      }
+      return d === 0 ? fmt('under a minute shorter than yesterday')
+        : d === 1 ? fmt('{d} minute shorter than yesterday', {d: String(d)})
+        : fmt('{d} minutes shorter than yesterday', {d: String(d)});
     }
     // A change as loopdata formats it, with an explicit plus.
     function signed(text) {
@@ -538,17 +606,36 @@
       uv: {gauge: 'gauge-uv', read: 'read-uv', body: function (r) {
         var uv = num(r['current.UV.raw']);
         var say = p(esc(categoryWord(UV_WORDS, uv)), 'lead');
+        var sd = sunDay(r);
+        var note = sunNote(sd);
+        // altitude is WeeWX 5.0 and later; before that the times still show.
         if (r['almanac.sun.altitude'] !== undefined) {
-          say += p(bold('The sun is {alt} above the horizon; highest at {transit}, sets {set}',
-                        {alt: r['almanac.sun.altitude'], transit: r['almanac.sun.transit'], set: r['almanac.sunset']}));
+          say += sd.set === undefined
+            ? p(bold('The sun is {alt} above the horizon; highest at {transit}',
+                     {alt: r['almanac.sun.altitude'], transit: sd.transit}))
+            : p(bold('The sun is {alt} above the horizon; highest at {transit}, sets {set}',
+                     {alt: r['almanac.sun.altitude'], transit: sd.transit, set: sd.set}));
+        } else if (sd.transit !== undefined) {
+          say += sd.set === undefined
+            ? p(bold('Highest at {transit}', {transit: sd.transit}))
+            : p(bold('Highest at {transit}, sets {set}', {transit: sd.transit, set: sd.set}));
         }
+        if (note !== undefined) { say += p(esc(note)); }
         say += p(esc(fmt('EPA names the index rounded, so 2.5 is Moderate.  The peak comes at solar noon, not clock noon, on a clear day.')), 'fine');
-        var sunUp = r['almanac.sunrise'] === undefined ? undefined
-          : r['almanac.sun.visible.long_form()'] !== undefined
-            ? fmt('to {set}, {len}', {set: r['almanac.sunset'], len: r['almanac.sun.visible.long_form()']})
-            : fmt('to {set}', {set: r['almanac.sunset']});
+        // Sun up: the rise, then the set and the day's length; a day
+        // missing either says so in words rather than as "N/A".
+        var risen = sd.rise !== undefined ? sd.rise
+          : !sd.noRise ? undefined
+          : !sd.noSet ? fmt('from midnight')
+          : sd.allDay ? fmt('all day')
+          : sd.noDay ? fmt('not today') : undefined;
+        var sunUp = sd.noRise && sd.noSet ? undefined
+          : sd.noSet ? fmt('to past midnight')
+          : sd.set === undefined ? undefined
+          : sd.len !== undefined ? fmt('to {set}, {len}', {set: sd.set, len: sd.len})
+          : fmt('to {set}', {set: sd.set});
         return say + facts([[fmt('Peak today'), r['day.UV.max'], r['day.UV.maxtime']],
-                            [fmt('Sun up'), r['almanac.sunrise'], sunUp],
+                            [fmt('Sun up'), risen, sunUp],
                             [fmt('Last hour'), r['1h.UV.avg.formatted'], fmt('average')]]) +
                section(fmt('Peaks'), fmt('the highest of each period, in EPA\u2019s colors'),
                        peakLadder(r, 'UV', '', 1, PEAKS, uvClass)) +
@@ -558,19 +645,33 @@
       rad: {gauge: 'gauge-rad', read: 'read-rad', body: function (r) {
         var unit = r['unit.label.radiation'] || '';
         var say = '';
-        if (r['almanac.sun.altitude'] !== undefined) {
+        var change = num(r['almanac.sun.visible_change.minute.raw']);
+        // altitude and azimuth are WeeWX 5.0 and later; before that the
+        // sun's place is left out and the times below still show.
+        if (r['almanac.sun.altitude'] !== undefined && r['almanac.sun.azimuth'] !== undefined) {
           say += p(bold('The sun is {alt} above the horizon, {az} around from north',
-                        {alt: r['almanac.sun.altitude'], az: r['almanac.sun.azimuth']}), 'lead') +
-                 p(bold('Highest at {transit}; it sets at {set} and civil twilight ends at {civil}',
-                        {transit: r['almanac.sun.transit'], set: r['almanac.sunset'],
-                         civil: r['almanac(horizon=-6).sun(use_center=1).set']}));
+                        {alt: r['almanac.sun.altitude'], az: r['almanac.sun.azimuth']}), 'lead');
         }
+        var sd = sunDay(r);
+        var note = sunNote(sd);
+        if (sd.transit !== undefined) {
+          say += sd.set === undefined
+            ? p(bold('Highest at {transit}', {transit: sd.transit}))
+            : sd.civilAllNight
+              ? p(bold('Highest at {transit}; it sets at {set} and civil twilight lasts all night',
+                       {transit: sd.transit, set: sd.set}))
+              : sd.civil === undefined
+                ? p(bold('Highest at {transit}, sets {set}', {transit: sd.transit, set: sd.set}))
+                : p(bold('Highest at {transit}; it sets at {set} and civil twilight ends at {civil}',
+                         {transit: sd.transit, set: sd.set, civil: sd.civil}));
+        }
+        if (note !== undefined) { say += p(esc(note)); }
         say += p(esc(fmt('Sunlight on a level surface, in watts per square meter.  A clear noon in summer reaches about 1000; haze, cloud and a low sun take it down.')), 'fine');
         return say + facts([[fmt('Peak today'), r['day.radiation.max'], r['day.radiation.maxtime']],
                             [fmt('Last hour'), r['1h.radiation.avg'], fmt('average')],
-                            [fmt('Daylight'), r['almanac.sun.visible.long_form()'],
-                             r['almanac.sun.visible_change.minute.format("%d")'] === undefined ? undefined
-                             : fmt('{d} minutes on yesterday', {d: r['almanac.sun.visible_change.minute.format("%d")']})]]) +
+                            [fmt('Daylight'), sd.len,
+                             change === undefined || Math.abs(change) >= MAX_DAYLIGHT_CHANGE ? undefined
+                             : daylightChange(change)]]) +
                section(fmt('Peaks'), fmt('the brightest moment of each period'), peakLadder(r, 'radiation', unit, 0, PEAKS));
       }},
       aqi: {gauge: 'gauge-aqi', read: 'read-aqi', body: function (r) {

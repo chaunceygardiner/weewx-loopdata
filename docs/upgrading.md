@@ -176,6 +176,28 @@ a restart.  Details, and the aggregates the new type adds, are under
 
 ## Worth knowing, but nothing to do
 
+* **8.0.3** — fixes for older WeeWX, and one for the sample report.  On
+  WeeWX 4.6 through 4.10.1, `long_form()` fields are now written (every
+  one was missing, including the sample report's length of day), and
+  they read as they do on a newer WeeWX.  Before 4.10, where your own
+  `[[TimeFormats]]` set a duration format, they follow it, as that
+  WeeWX's own reports do.  On WeeWX 4.6 through 5.2, an almanac field
+  naming a body no almanac knows — usually a typo — is now omitted, with
+  `Cannot evaluate almanac field` in the log, where it was written as
+  `<weewx.almanac.AlmanacBinder object at 0x…>`.  On every WeeWX, the
+  sample report's radiation card says the day's change in daylight as
+  "2 minutes shorter than yesterday", where it said "minutes" twice (or,
+  before WeeWX 4.10, nothing).  On WeeWX before 5.0, the UV and
+  radiation cards now show the sun's transit and sunset times, and the
+  radiation card the end of civil twilight (the transit and civil
+  twilight need PyEphem), which were missing with the sun's position;
+  the sun's position itself still needs WeeWX 5.0.  At high latitudes, the
+  same cards say that the sun does not set or rise today, or that civil
+  twilight lasts all night, where they read "N/A", and leave out
+  WeeWX's day length on the days it comes out wrong.  Until weewxd
+  restarts after the install, the sun cards leave out the sunrise and
+  sunset, the Sun up tile, the end of civil twilight and the change in
+  daylight from yesterday.
 * **7.4.1** — values write again on WeeWX earlier than 5.3.  If you
   upgraded to 7.4 and part of `loop-data.txt` vanished — a report's whole
   entry, or the flat keys of an `[[Include]]` fields line — leaving

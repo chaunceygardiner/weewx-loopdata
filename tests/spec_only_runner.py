@@ -192,6 +192,9 @@ SPEC_TESTS = [
     'test_report_formatter_carries_every_formatter_attribute',
     'test_formatted_and_the_formatter_agree_on_what_a_time_is',
     'test_long_form_matches_the_base_formatter',
+    'test_long_form_on_a_weewx_without_it',
+    'test_long_form_answers_as_4_10_on_an_older_weewx',
+    'test_deltatime_formats_match_the_running_weewx',
     'test_long_form_carries_the_reports_decimal_point',
     'test_a_value_that_is_not_a_tuple_reaches_the_base_formatter',
 ]

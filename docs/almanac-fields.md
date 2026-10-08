@@ -79,8 +79,8 @@ A unit segment pins the unit regardless — the same override
 (`station.altitude.meter.raw`) already take:
 
 ```
-almanac.sunrise.unix_epoch.raw               epoch seconds, always
-almanac.sun.visible.second.raw               seconds of daylight, always
+almanac.sunrise.unix_epoch.raw               epoch seconds, whatever the report's units
+almanac.sun.visible.second.raw               seconds of daylight, whatever the report's units
 almanac.sun.visible.hour.round(2).raw        hours, rounded — the unit sits
                                              before round(n) and the format spec
 ```
@@ -97,8 +97,19 @@ Pin the unit on any `.raw` field your javascript consumes numerically.
   unchanged.
 * The formatting calls and `round(n)` work here too, exactly as on report
   almanac tags: `almanac.sunrise.format("%H:%M")`,
-  `almanac.sun.az.format("%.1f", add_label=False)`,
-  `almanac.sun.az.round(1).raw`.
+  `almanac.sun.azimuth.format("%.1f", add_label=False)`,
+  `almanac.sun.azimuth.round(1).raw`.
+* `almanac.sun.azimuth` and `almanac.sun.altitude` need WeeWX 5.0 or
+  later.  `almanac.sun.az` and `almanac.sun.alt` work on every WeeWX
+  version LoopData supports (with PyEphem or weewx-skyfield, which any
+  position in the sky needs), but they are plain numbers of degrees, so
+  they take `.raw` and neither the formatting calls nor `round(n)`.
+* An event that does not happen today, such as a sunset under the
+  midnight sun or the end of civil twilight on a high-latitude summer night,
+  has no time.  Its formatted field is published as the report reads it
+  (`N/A`, in the report's language), and its `.raw` field is left out.
+  So to tell "no sunset today" from a sunset, declare the `.raw` beside
+  the formatted one and test for the `.raw` key, never for the text.
 * The json key is the field entry verbatim, so element ids can match keys
   as usual.
 * A call with more than one keyword contains a comma, so the entry must be

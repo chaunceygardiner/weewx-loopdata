@@ -58,7 +58,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '8.0.2'
+LOOP_DATA_VERSION = '8.0.3'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -877,6 +877,35 @@ def weewx_default_time_format() -> str:
 
 DEFAULT_TIME_FORMAT: str = weewx_default_time_format()
 
+# WeeWX's own [Units] [[DeltaTimeFormats]] defaults (weewx/defaults.py),
+# which it has shipped since 4.10.  A WeeWX before 4.10 ships none and
+# reads none, so ReportFormatter seeds them there (from_skin_dict), and
+# long_form then renders on 4.6 what 4.10 and later render by default.
+# Pinned against the running WeeWX by
+# test_deltatime_formats_match_the_running_weewx.
+WEEWX_DELTATIME_FORMATS: Dict[str, str] = {
+    'current': '%(minute)d%(minute_label)s, %(second)d%(second_label)s',
+    'hour':    '%(minute)d%(minute_label)s, %(second)d%(second_label)s',
+    'day':     '%(hour)d%(hour_label)s, %(minute)d%(minute_label)s, %(second)d%(second_label)s',
+    'week':    '%(day)d%(day_label)s, %(hour)d%(hour_label)s, %(minute)d%(minute_label)s',
+    'month':   '%(day)d%(day_label)s, %(hour)d%(hour_label)s, %(minute)d%(minute_label)s',
+    'year':    '%(day)d%(day_label)s, %(hour)d%(hour_label)s, %(minute)d%(minute_label)s',
+}
+
+# The durations whose context 4.10 renamed, old name to new:
+# $almanac.<body>.visible was short_delta and is day, visible_change was
+# brief_delta and is hour, $station.uptime and os_uptime were long_delta
+# and are month -- every context WeeWX 4.6 through 4.9 gives a duration.
+# A WeeWX before 4.10 formats them from [Units] [[TimeFormats]] under the
+# old names (its defaults ship all three, and they are 4.10's day, hour and
+# month), and [[DeltaTimeFormats]] does not exist there; see
+# ReportFormatter.from_skin_dict for the order a format is looked for in.
+PRE_4_10_DELTA_CONTEXTS: Dict[str, str] = {
+    'short_delta': 'day',
+    'brief_delta': 'hour',
+    'long_delta':  'month',
+}
+
 
 class ReportFormatter(weewx.units.Formatter):
     """A report's Formatter, rendering under the report's own locale.
@@ -912,6 +941,7 @@ class ReportFormatter(weewx.units.Formatter):
         super().__init__(*args, **kwargs)
         self.render_locale = render_locale
         self.locale_aware = ReportFormatter.base_signature_is_known()
+        self.base_has_long_form = ReportFormatter.base_long_form_is_current()
 
     @staticmethod
     def base_signature_is_known() -> bool:
@@ -921,6 +951,26 @@ class ReportFormatter(weewx.units.Formatter):
         except (AttributeError, ValueError, TypeError):
             return False
         return params[1:] == ReportFormatter._BASE_TO_STRING_PARAMS
+
+    @staticmethod
+    def base_long_form_is_current() -> bool:
+        """Do the base class's long_form and delta_time_to_string both take
+        None_string, as they have since WeeWX 4.10.2?  Before that they are
+        missing (4.6 through 4.9) or take no None_string (4.10.0, 4.10.1),
+        and every long_form loopdata renders passes one, so on those
+        versions every long_form field was omitted -- the sample report's
+        almanac.sun.visible.long_form() among them.  Asked of the
+        signature, never of weewx.__version__."""
+        for name in ('long_form', 'delta_time_to_string'):
+            method = getattr(weewx.units.Formatter, name, None)
+            if method is None:
+                return False
+            try:
+                if 'None_string' not in inspect.signature(method).parameters:
+                    return False
+            except (ValueError, TypeError):
+                return False
+        return True
 
     @staticmethod
     def from_skin_dict(skin_dict: Dict[str, Any],
@@ -938,6 +988,34 @@ class ReportFormatter(weewx.units.Formatter):
         formatter.__dict__.update(vars(base))
         formatter.render_locale = render_locale
         formatter.locale_aware = ReportFormatter.base_signature_is_known()
+        formatter.base_has_long_form = ReportFormatter.base_long_form_is_current()
+        if 'deltatime_format_dict' not in vars(base):
+            # WeeWX before 4.10 neither ships nor reads [[DeltaTimeFormats]];
+            # it formats a duration from [[TimeFormats]], under the context
+            # names 4.10 renamed.  Answer as 4.10 would, and for an old
+            # context as that WeeWX's own .formatted does.  For each
+            # context, first found wins:
+            #   1. the report's [[DeltaTimeFormats]] entry, read exactly as
+            #      4.10's fromSkinDict reads it;
+            #   2. for an old context, its [[TimeFormats]] entry -- the
+            #      table the base class's _to_string formats it from;
+            #   3. for an old context, the format of its new name;
+            #   4. 4.10's shipped default.
+            # Only here, in the formatter: written into a skin dict, it
+            # would change the report's render_signature.
+            formats = dict(WEEWX_DELTATIME_FORMATS)
+            try:
+                report_formats = skin_dict['Units']['DeltaTimeFormats']
+            except KeyError:
+                report_formats = None
+            if isinstance(report_formats, dict):
+                # A scalar of that name is ignored, as this WeeWX ignores it.
+                formats.update(report_formats)
+            time_formats = getattr(base, 'time_format_dict', {})
+            for old, new in PRE_4_10_DELTA_CONTEXTS.items():
+                if old not in formats:
+                    formats[old] = time_formats.get(old, formats[new])
+            formatter.deltatime_format_dict = formats
         if not formatter.locale_aware and not _locale_support_logged:
             # Once, not once per report: it says nothing about the report,
             # and a station with seven of them would get seven copies.
@@ -1036,7 +1114,7 @@ class ReportFormatter(weewx.units.Formatter):
         land while a German report was generating.  The cheap path is not
         worth a wrong answer."""
         if not self.locale_aware:
-            return super().delta_time_to_string(val_t, label_format, None_string)
+            return self._base_delta_time(val_t, label_format, None_string)
         try:
             return self._delta_time_localized(val_t, label_format, None_string)
         except Exception as e:
@@ -1044,7 +1122,34 @@ class ReportFormatter(weewx.units.Formatter):
             # back to the base class, which then raises or renders exactly
             # as it always did.
             log.debug('long_form(%r): %s' % (label_format, e))
+            return self._base_delta_time(val_t, label_format, None_string)
+
+    def long_form(self, val_t: Any, context: str,
+            format_string: Optional[str] = None,
+            None_string: Optional[str] = None) -> Any:
+        """WeeWX's own long_form where it takes None_string (4.10.2 on);
+        below that, its body, repeated (see base_long_form_is_current)."""
+        if self.base_has_long_form:
+            return super().long_form(val_t, context, format_string=format_string,
+                                     None_string=None_string)
+        label_format: str = format_string or getattr(
+            self, 'deltatime_format_dict', {}).get(
+                context, weewx.units.DEFAULT_DELTATIME_FORMAT)
+        return self.delta_time_to_string(val_t, label_format, None_string)
+
+    def _base_delta_time(self, val_t: Any, label_format: str,
+            None_string: Optional[str]) -> Any:
+        """The base class's delta_time_to_string, or below 4.10.2, which
+        lacks it or its None_string, the same body: WeeWX 5.3's, with the
+        arithmetic shared with the localized composition."""
+        if self.base_has_long_form:
             return super().delta_time_to_string(val_t, label_format, None_string)
+        if val_t is None or val_t[0] is None:
+            if None_string is None:
+                return self.unit_format_dict.get('NONE', 'N/A')
+            return str(None_string)
+        return locale.format_string(label_format,
+                                    self._delta_parts(val_t, label_format))
 
     def _delta_time_localized(self, val_t: Any, label_format: str,
             None_string: Optional[str]) -> Any:
@@ -1053,7 +1158,16 @@ class ReportFormatter(weewx.units.Formatter):
         if val_t is None or val_t[0] is None:
             # The no-value renderings (None_string, the NONE format) hold no
             # number, so the base class keeps them.
-            return super().delta_time_to_string(val_t, label_format, None_string)
+            return self._base_delta_time(val_t, label_format, None_string)
+        etime_dict = self._delta_parts(val_t, label_format)
+        # Formatted once whole, purely so that a format WeeWX would reject
+        # raises here too, out of the same % machinery, rather than being
+        # quietly rendered by the piecewise composition that follows.
+        label_format % etime_dict
+        return self._compose(label_format, etime_dict)
+
+    def _delta_parts(self, val_t: Any, label_format: str) -> Dict[str, Any]:
+        """The mapping WeeWX formats a long-form duration with."""
         secs = abs(weewx.units.convert(val_t, 'second')[0])
         etime_dict: Dict[str, Any] = {}
         for label, interval in ReportFormatter._DELTA_INTERVALS:
@@ -1065,11 +1179,7 @@ class ReportFormatter(weewx.units.Formatter):
             # WeeWX folds the days into the hours when the format does not
             # ask for days.
             etime_dict['hour'] += 24 * etime_dict['day']
-        # Formatted once whole, purely so that a format WeeWX would reject
-        # raises here too, out of the same % machinery, rather than being
-        # quietly rendered by the piecewise composition that follows.
-        label_format % etime_dict
-        return self._compose(label_format, etime_dict)
+        return etime_dict
 
     def _compose(self, label_format: str, mapping: Dict[str, Any]) -> str:
         """label_format % mapping, with the report's decimal point put into
@@ -4436,6 +4546,11 @@ def cheetah_autocall(obj: Any) -> Any:
         return obj()
     return obj
 
+# The address CPython writes into a default repr -- object's, a
+# generator's, a function's, a bound method's -- with %p, which it
+# guarantees starts 0x.
+MEMORY_ADDRESS = re.compile(r' at 0x[0-9a-fA-F]+>')
+
 def render_endpoint_value(field: str, chain_desc: str, format_spec: Optional[str],
         format_kwargs: Optional[Dict[str, Any]], round_ndigits: Optional[int],
         obj: Any) -> Any:
@@ -4457,9 +4572,20 @@ def render_endpoint_value(field: str, chain_desc: str, format_spec: Optional[str
             # with the field's bound kwargs; a bare spec that is callable
             # (ordinal_compass) is called with none, as Cheetah's
             # auto-call renders it.
-            value = getattr(obj, format_spec)
-            if callable(value):
-                value = value(**(format_kwargs or {}))
+            if format_spec == 'long_form' and isinstance(
+                    obj.formatter, ReportFormatter) and \
+                    not obj.formatter.base_has_long_form:
+                # The call ValueHelper.long_form makes, made here: the
+                # method is missing before WeeWX 4.10 and takes no
+                # None_string before 4.10.2, and ReportFormatter answers it
+                # there.  A current WeeWX keeps its own method.
+                value = CALL_FORMAT_SPECS[format_spec].render(
+                    obj.formatter, obj.value_t, obj.context,
+                    format_kwargs or {})
+            else:
+                value = getattr(obj, format_spec)
+                if callable(value):
+                    value = value(**(format_kwargs or {}))
         else:
             value = str(obj)
     elif round_ndigits is not None or (
@@ -4479,7 +4605,22 @@ def render_endpoint_value(field: str, chain_desc: str, format_spec: Optional[str
         # report tag exposes -- $station.latitude is ('37', '24.00', 'N'),
         # indexed by templates exactly as page javascript would index this.
         return list(value)
-    return str(value)
+    text = str(value)
+    if MEMORY_ADDRESS.search(text):
+        # A value that is not itself a string, whose string has an
+        # address in it, has no value to publish: an object printed as
+        # its default repr, or a container printing one of its parts so
+        # (a container shows each part by __repr__, so even a ValueHelper,
+        # whose own __str__ reads well, prints there as '<... at 0x...>').
+        # An almanac body nothing knows comes back as an AlmanacBinder,
+        # and WeeWX before 5.3 renders it exactly so; 5.3 raises instead.
+        # Refused here on every version, so the field is omitted.  Asked
+        # of the output, not of the value's type, since that is what
+        # would be published.  A string the chain itself returns is its
+        # answer and was published above, unchecked.
+        raise TypeError('%s: %s returned %s, which has no value to publish'
+            % (field, chain_desc, type(value).__name__))
+    return text
 
 class AlmanacFieldEvaluator:
     """Evaluates almanac fields against weewx.almanac (whatever AlmanacTypes
