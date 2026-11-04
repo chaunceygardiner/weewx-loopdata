@@ -174,7 +174,9 @@ The card rows are the groups 8.0 added, one per card, on top of the
 gauge's own; a card also reads its gauge's fields.  Each card's page
 lines are the panel's, copied.
 
-`current.dateTime.raw` drives the timestamp and the LIVE indicator.
+`current.dateTime.unix_epoch.raw` drives the timestamp and the LIVE
+indicator; the unit segment pins it to seconds, because the page does
+arithmetic on it and a report's group_time override must not move it.
 `unit.label.outTemp`, `unit.label.outHumidity`, `unit.label.barometer`,
 `unit.label.rain`, `unit.label.rainRate`, `unit.label.windSpeed` and
 `unit.label.radiation` supply the unit beside each reading and pick the

@@ -810,7 +810,10 @@
       return;
     }
     try {
-      var stamp = result["current.dateTime.raw"];
+      // The clock is declared pinned to seconds (current.dateTime.unix_epoch.raw):
+      // a report's group_time override must not move a value the page does
+      // arithmetic on.
+      var stamp = result["current.dateTime.unix_epoch.raw"];
       if (stamp === undefined || stamp === null || stamp === ''
           || isNaN(Number(stamp))) {
         // This report declared fields but not the clock group, so there is
@@ -823,7 +826,7 @@
         updateGauges(result);
         setIndicator(fmt('BAD DATA \u2014 check loop_data_file'));
         setStamp("");
-        console.log("no current.dateTime.raw in this report's loop data");
+        console.log("no current.dateTime.unix_epoch.raw in this report's loop data");
         return;
       }
       // The LIVE indicator, from the packet's own timestamp aged against

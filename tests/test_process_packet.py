@@ -1920,6 +1920,47 @@ class ProcessPacketTests(unittest.TestCase):
         finally:
             weewx.almanac.almanacs.remove(stub)
 
+    def test_almanac_next_group_expires_under_a_nanosecond_report(self) -> None:
+        """The group's expiry is the event's instant brought back to seconds
+        from whatever unit the report's converter put it in.  With
+        group_time in unix_epoch_ns that conversion has to use loopdata's
+        own factor: through WeeWX's table (a million before 5.6) the pass
+        would expire a thousand times further out than it ends, and the
+        page would show a finished pass for the life of the process."""
+        specified_fields = ['almanac.next_pass.rise.raw', 'almanac.next_pass.set.raw']
+        cfg: user.loopdata.Configuration = ProcessPacketTests._get_config('us', 10800, 10, 6, ['current.outTemp'])
+        cfg.legacy.almanac_fields = user.loopdata.LoopData.get_almanac_fields(specified_fields)
+        cfg.legacy.converter = user.loopdata.ReportConverter({'group_time': 'unix_epoch_ns'})
+        cfg.latitude, cfg.longitude, cfg.altitude_m = 37.4, -122.1, 20.0
+
+        stub = StubAlmanacType()
+        weewx.almanac.almanacs.insert(0, stub)
+        try:
+            evaluator = user.loopdata.AlmanacFieldEvaluator(cfg.legacy, cfg)
+            day1_noon = 1593630000    # 2020-07-01 noon PDT
+            pass_a = (day1_noon + 3600, day1_noon + 3600 + 600, 45.0)
+            pass_b = (day1_noon + 4 * 3600, day1_noon + 4 * 3600 + 480, 62.0)
+            stub.passes = [pass_a, pass_b]
+
+            def insert(pkt_time: float) -> Dict[str, Any]:
+                loopdata_pkt: Dict[str, Any] = {}
+                evaluator.insert_fields(loopdata_pkt, {'dateTime': pkt_time, 'usUnits': 1})
+                return loopdata_pkt
+
+            pkt = insert(day1_noon)
+            self.assertEqual(pkt['almanac.next_pass.set.raw'], pass_a[1] * 1000000000)
+            # Mid-pass: served from cache.
+            pkt = insert(pass_a[0] + 300)
+            self.assertEqual(pkt['almanac.next_pass.set.raw'], pass_a[1] * 1000000000)
+            self.assertEqual(stub.counts['next_pass'], 2)
+            # At set: expired, recomputed, pass B.
+            pkt = insert(pass_a[1])
+            self.assertEqual(pkt['almanac.next_pass.rise.raw'], pass_b[0] * 1000000000)
+            self.assertEqual(pkt['almanac.next_pass.set.raw'], pass_b[1] * 1000000000)
+            self.assertEqual(stub.counts['next_pass'], 4)
+        finally:
+            weewx.almanac.almanacs.remove(stub)
+
     def test_almanac_next_group_no_data_retries(self) -> None:
         """A next_* group whose evaluation yields no data (a satellite
         awaiting its orbital elements) is not cached AT ALL: every packet
@@ -2071,6 +2112,7 @@ class ProcessPacketTests(unittest.TestCase):
         specified_fields = [
             'almanac.sunrise.raw',                    # follows the override
             'almanac.sunrise.unix_epoch.raw',         # pinned
+            'almanac.sunrise.unix_epoch_ns.raw',      # pinned, loopdata's factor
             'almanac.sun.visible.raw',                # follows the override
             'almanac.sun.visible.second.raw',         # pinned
             'almanac.sun.visible.hour.round(2).raw',  # pinned, then rounded
@@ -2083,7 +2125,7 @@ class ProcessPacketTests(unittest.TestCase):
         # The hazard the unit segment exists for: a target report that
         # overrides unit groups (skyfield issue #2's lesson -- ValueHelper
         # .raw is unformatted, NOT unconverted).
-        cfg.legacy.converter = weewx.units.Converter(
+        cfg.legacy.converter = user.loopdata.ReportConverter(
             {'group_time': 'unix_epoch_ms', 'group_deltatime': 'hour'})
 
         stub = StubAlmanacType()
@@ -2098,6 +2140,11 @@ class ProcessPacketTests(unittest.TestCase):
 
             self.assertEqual(loopdata_pkt['almanac.sunrise.raw'], sunrise_ts * 1000)
             self.assertEqual(loopdata_pkt['almanac.sunrise.unix_epoch.raw'], sunrise_ts)
+            # A billion to the second on every WeeWX: the segment converts
+            # through loopdata's table, not ValueHelper.__getattr__'s
+            # (WeeWX's own table said a million before 5.6).
+            self.assertEqual(loopdata_pkt['almanac.sunrise.unix_epoch_ns.raw'],
+                             sunrise_ts * 1000000000)
             self.assertEqual(loopdata_pkt['almanac.sun.visible.raw'], 52921.0 / 3600)
             self.assertEqual(loopdata_pkt['almanac.sun.visible.second.raw'], 52921.0)
             self.assertEqual(loopdata_pkt['almanac.sun.visible.hour.round(2).raw'], 14.7)
@@ -7897,7 +7944,7 @@ class ProcessPacketTests(unittest.TestCase):
         target_report_dict: Dict[str, Any] = user.loopdata.LoopData.get_target_report_dict(config_dict, 'SeasonsReport')
         ctx = user.loopdata.LoopData.build_report_context(
             None, list(specified_fields), target_report_dict, None, None)
-        assert type(ctx.converter) == weewx.units.Converter
+        assert type(ctx.converter) == user.loopdata.ReportConverter
         assert type(ctx.formatter) == user.loopdata.ReportFormatter
         # The test names the trend window; the skin dict's is overridden
         # (trend_key follows, being derived from it).
@@ -10616,6 +10663,7 @@ class ProcessPacketTests(unittest.TestCase):
         assert 'local_djd' in L.TIME_UNITS, sorted(L.TIME_UNITS)
         assert len(L.TIME_UNITS) >= 4, sorted(L.TIME_UNITS)
         epoch = 1750558260
+        # True factors: loopdata owns them (test_epoch_units_use_loopdata_factors).
         values = {'unix_epoch': epoch, 'unix_epoch_ms': epoch * 1000,
                   'unix_epoch_ns': epoch * 1000000000,
                   'local_djd': 45828.416666666664}
@@ -10638,6 +10686,176 @@ class ProcessPacketTests(unittest.TestCase):
                              formatter.toString(value_t, context='current',
                                                 addLabel=False), unit)
             self.assertIn('/', pkt['current.dateTime.formatted'])
+
+    def test_epoch_units_use_loopdata_factors(self):
+        """Spec: a time declared in unix_epoch_ms or unix_epoch_ns is the
+        instant times a thousand or a billion, and renders as the same
+        instant as in unix_epoch, on every WeeWX.  Both halves are
+        loopdata's: ReportConverter makes the value with TIME_UNIT_TYPES'
+        factors and _localtime divides by them.  WeeWX's own table said a
+        million nanoseconds to the second from 2021 until 5.6, and this
+        table was once copied from it, error included: the two canceled
+        in the rendering, while every unix_epoch_ns .raw was a microsecond
+        count, and against 5.6 the stale copy rendered 06/21/25 as
+        12/25/42 in the year 57442.
+
+        So the check runs against WeeWX's table as installed and with each
+        of its two known nanosecond factors put in its place, and expects
+        the same output every time: loopdata's values do not depend on
+        WeeWX's table.  The field is a real one -- day.outTemp.maxtime off
+        the accumulators, through a converter whose group_time is the
+        epoch unit, as a report's [Units][[Groups]] declares it -- and the
+        packet goes through generate_loopdata_dictionary."""
+        L = user.loopdata
+        fields = ['day.outTemp.maxtime.formatted', 'day.outTemp.maxtime.raw',
+                  'current.dateTime.formatted', 'current.dateTime.raw']
+        t_max = 1593630000    # 2020-07-01 noon PDT
+        pkts = [{'dateTime': t_max - 60, 'usUnits': 1, 'outTemp': 50.0},
+                {'dateTime': t_max,      'usUnits': 1, 'outTemp': 80.0},
+                {'dateTime': t_max + 60, 'usUnits': 1, 'outTemp': 70.0}]
+        # (field, its instant, its TimeFormats context and the fixture's format)
+        expected = (('day.outTemp.maxtime', t_max, 'day', '%X'),
+                    ('current.dateTime', t_max + 60, 'current', '%x %X'))
+
+        def rendered(unit: str) -> Dict[str, Any]:
+            cfg = ProcessPacketTests._get_config('us', 10800, 1, 6, fields)
+            cfg.legacy.converter = L.ReportConverter({'group_time': unit})
+            accums = ProcessPacketTests._get_accums(cfg, pkts[0]['dateTime'])
+            out: Dict[str, Any] = {}
+            for pkt in pkts:
+                out = L.LoopProcessor.generate_loopdata_dictionary(dict(pkt), cfg, accums)
+            return out
+
+        skin_dict = L.LoopData.get_target_report_dict(
+            configobj.ConfigObj('tests/weewx.conf.us', encoding='utf-8'), 'SeasonsReport')
+        base = weewx.units.Formatter.fromSkinDict(skin_dict)
+        conversions = weewx.units.conversionDict
+        installed_factor = conversions['unix_epoch']['unix_epoch_ns'](1)
+        # Landmark: WeeWX's factor is one of the two it has had.
+        self.assertIn(installed_factor, (1000000, 1000000000))
+
+        def check() -> None:
+            for unit, factor in (('unix_epoch', 1), ('unix_epoch_ms', 1000),
+                                 ('unix_epoch_ns', 1000000000)):
+                out = rendered(unit)
+                for field, epoch, context, fmt in expected:
+                    # The .raw is the instant in the declared unit, by
+                    # arithmetic ...
+                    self.assertEqual(out[field + '.raw'], epoch * factor, (unit, field))
+                    # An integer epoch is an integer in the file (not
+                    # 1593630000000.0, nor 1.59363e+18) ...
+                    self.assertEqual(json.dumps(out[field + '.raw']), str(epoch * factor), (unit, field))
+                    # ... and the rendering is the instant, in the context's
+                    # format, as the C library says it.
+                    self.assertEqual(out[field + '.formatted'],
+                                     time.strftime(fmt, time.localtime(epoch)), (unit, field))
+                    # ... and the same string WeeWX's own formatter gives for
+                    # the value, where WeeWX's factor is the true one (its
+                    # formatter divides by a literal of its own, so the
+                    # table patch below cannot reach it): the report beside
+                    # the page agrees.
+                    if factor == 1 or installed_factor == 1000000000:
+                        self.assertEqual(
+                            out[field + '.formatted'],
+                            base.toString((epoch * factor, unit, 'group_time'),
+                                          context=context, addLabel=False),
+                            (unit, field))
+
+        check()
+        # Only the two entries loopdata's code once read are patched; the
+        # point is that it reads neither now.
+        to_ns, to_s = conversions['unix_epoch']['unix_epoch_ns'], conversions['unix_epoch_ns']['unix_epoch']
+        try:
+            for weewx_factor in (1000000, 1000000000):   # before 5.6, and 5.6
+                conversions['unix_epoch']['unix_epoch_ns'] = lambda x, f=weewx_factor: x * f
+                conversions['unix_epoch_ns']['unix_epoch'] = lambda x, f=weewx_factor: x / f
+                check()
+        finally:
+            conversions['unix_epoch']['unix_epoch_ns'] = to_ns
+            conversions['unix_epoch_ns']['unix_epoch'] = to_s
+
+    def test_convert_value_owns_every_epoch_leg(self):
+        """Spec: a conversion with an epoch unit on EITHER side goes through
+        seconds, with loopdata's factor on the epoch leg and WeeWX's
+        conversion on the other.  The case that matters is a Dublin julian
+        day: WeeWX's almanac produces its moon, planet and next_* events
+        that way on every version and hands them to the report's converter
+        (measured on 5.5.2: moon.rise arrives as dublin_jd), and WeeWX's
+        own dublin_jd-to-unix_epoch_ns entry carries the same
+        million as its epoch one, so a nanosecond report rendered a
+        next_* event in 1970 and expired the group on every packet.
+        Routing by the SOURCE unit alone, as the first build did, left
+        exactly that path on WeeWX's table.  Also pinned: a list datum
+        converts elementwise with None kept, as weewx.units.convert does;
+        an integral epoch stays an integer in both directions and a
+        fractional one a float; a format spec on an epoch ValueHelper is
+        untouched; an impossible unit raises ValueHelper's AttributeError."""
+        L = user.loopdata
+        epoch = 1593630000
+        djd = epoch / 86400 + 25567.5
+        config_dict = configobj.ConfigObj('tests/weewx.conf.us', encoding='utf-8')
+        skin_dict = L.LoopData.get_target_report_dict(config_dict, 'SeasonsReport')
+        formatter = L.ReportFormatter.from_skin_dict(skin_dict, L.RenderLocale.capture('C'))
+        ns = L.ReportConverter({'group_time': 'unix_epoch_ns'})
+
+        # Dublin julian day in, nanoseconds out: a day is 86400 s by WeeWX,
+        # a second is 1e9 ns by loopdata.  (The day's float arithmetic
+        # leaves sub-microsecond noise, hence the delta.)
+        v = ns.convert((djd, 'dublin_jd', 'group_time'))
+        self.assertEqual(v[1:], ('unix_epoch_ns', 'group_time'))
+        self.assertAlmostEqual(v[0], epoch * 10**9, delta=1000)
+        # ... as a ValueHelper built with the report's converter, the way
+        # an almanac field arrives, rendered by the report's formatter.
+        vh = weewx.units.ValueHelper((djd, 'dublin_jd', 'group_time'), 'current', formatter, ns)
+        self.assertAlmostEqual(vh.raw, epoch * 10**9, delta=1000)
+        self.assertEqual(vh.formatted, time.strftime('%x %X', time.localtime(epoch)))
+        # ... and as a unit segment on a Dublin-julian-day ValueHelper.
+        plain = weewx.units.ValueHelper((djd, 'dublin_jd', 'group_time'), 'current', formatter)
+        self.assertAlmostEqual(L.unit_segment(plain, 'unix_epoch_ns').raw, epoch * 10**9, delta=1000)
+        # The group expiry's leg: nanoseconds back to seconds.
+        self.assertAlmostEqual(L.convert_value(v, 'unix_epoch')[0], epoch, delta=1e-6)
+        # Epoch in, Dublin julian day out: loopdata's factor down to
+        # seconds, WeeWX's conversion from there.
+        self.assertAlmostEqual(
+            L.convert_value((epoch * 10**9, 'unix_epoch_ns', 'group_time'), 'dublin_jd')[0],
+            djd, places=9)
+        self.assertAlmostEqual(
+            L.unit_segment(weewx.units.ValueHelper((epoch * 10**9, 'unix_epoch_ns', 'group_time'),
+                                                   'current', formatter), 'dublin_jd').raw,
+            djd, places=9)
+
+        # A list datum, elementwise, None kept.
+        self.assertEqual(L.convert_value(([epoch, None, 1], 'unix_epoch', 'group_time'), 'unix_epoch_ms')[0],
+                         [epoch * 1000, None, 1000])
+        self.assertEqual(L.convert_value(([epoch * 10**9, None], 'unix_epoch_ns', 'group_time'), 'unix_epoch')[0],
+                         [epoch, None])
+        # Integral stays integer both ways; fractional stays float.
+        for val_t, unit, expected in (
+                ((epoch, 'unix_epoch', 'group_time'), 'unix_epoch_ns', epoch * 10**9),
+                ((epoch * 10**9, 'unix_epoch_ns', 'group_time'), 'unix_epoch_ms', epoch * 1000),
+                ((epoch * 10**9, 'unix_epoch_ns', 'group_time'), 'unix_epoch', epoch),
+                ((epoch + 0.5, 'unix_epoch', 'group_time'), 'unix_epoch_ms', epoch * 1000 + 500.0),
+                ((epoch * 1000 + 1, 'unix_epoch_ms', 'group_time'), 'unix_epoch', epoch + 0.001)):
+            got = L.convert_value(val_t, unit)[0]
+            self.assertEqual(type(got), type(expected), (val_t, unit))
+            self.assertAlmostEqual(got, expected, places=6, msg=(val_t, unit))
+        self.assertEqual(json.dumps(L.convert_value((epoch, 'unix_epoch', 'group_time'), 'unix_epoch_ns')[0]),
+                         str(epoch * 10**9))
+
+        # Names that are not a unit of the value's group are the
+        # ValueHelper's own, as before -- a format spec most of all.
+        secs = weewx.units.ValueHelper((epoch, 'unix_epoch', 'group_time'), 'current', formatter)
+        self.assertEqual(L.unit_segment(secs, 'raw'), epoch)
+        self.assertEqual(L.unit_segment(secs, 'formatted'), secs.formatted)
+        # An impossible unit: ValueHelper's own error, so the evaluator's
+        # "Cannot evaluate" path is unchanged.
+        with self.assertRaises(AttributeError):
+            L.unit_segment(secs, 'degree_C')
+        duration = weewx.units.ValueHelper((60, 'second', 'group_deltatime'), 'current', formatter)
+        with self.assertRaises(AttributeError):
+            L.unit_segment(duration, 'unix_epoch_ns')
+        # And a non-time group is WeeWX's business entirely.
+        self.assertEqual(L.convert_value((0.0, 'degree_C', 'group_temperature'), 'degree_F')[0], 32.0)
 
     def test_number_rendering_matches_weewx_for_every_conversion(self):
         """Spec: the strftime oracle's twin, for numbers.  loopdata renders

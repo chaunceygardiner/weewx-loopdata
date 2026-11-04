@@ -58,7 +58,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '8.0.3'
+LOOP_DATA_VERSION = '8.0.4'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -374,11 +374,116 @@ WINDROSE_AGG_TYPES: FrozenSet[str] = frozenset(('sum', 'time', 'banded', 'calm')
 #                            The report's locale
 # ===============================================================================
 
-# Unit types that hold a point in time, mapped to what divides one into
-# seconds.  Times have no numeric format string; they render through the
-# formatter with a [Units][TimeFormats] context.
-TIME_UNIT_TYPES: Dict[str, float] = {
-    'unix_epoch': 1.0, 'unix_epoch_ms': 1000.0, 'unix_epoch_ns': 1000000.0}
+# The unit types that hold a point in time as an epoch, each mapped to
+# how many of it make a second.  Times have no numeric format string;
+# they render through the formatter with a [Units][TimeFormats] context.
+# LOOPDATA OWNS THESE FACTORS, in both directions: convert_value makes a
+# millisecond or nanosecond value from an epoch with them, and
+# ReportFormatter._localtime divides by them.  WeeWX's own table
+# (weewx.units.conversionDict) carried 1e6 for unix_epoch_ns from 2021
+# until 5.6 corrected it, and this table was once copied from it, error
+# included.  A billion nanoseconds to the second is arithmetic, not a
+# WeeWX convention, so loopdata's unix_epoch_ns values are right on every
+# WeeWX; where WeeWX's own are wrong (before 5.6) a report's $tag.raw in
+# that unit is a thousandth of loopdata's, and WeeWX's is the wrong one.
+# Integers, so an integral epoch stays an integer in either direction
+# (json writes 1593630000000, not 1593630000000.0 or 1.59363e+18); a
+# fractional epoch -- an almanac instant -- is a float, as it always was.
+TIME_UNIT_TYPES: Dict[str, int] = {
+    'unix_epoch': 1, 'unix_epoch_ms': 1000, 'unix_epoch_ns': 1000000000}
+
+def _scale_epoch(value: Any, per_second_in: int, per_second_out: int) -> Any:
+    """One scalar between two epoch units, by the integer ratio of their
+    factors; an integral result stays an integer."""
+    if value is None or per_second_in == per_second_out:
+        return value
+    if per_second_out > per_second_in:
+        return value * (per_second_out // per_second_in)
+    divisor = per_second_in // per_second_out
+    if isinstance(value, int) and value % divisor == 0:
+        return value // divisor
+    return value / divisor
+
+def convert_value(val_t: Any, target_unit: str) -> Any:
+    """weewx.units.convert, except that a conversion with an epoch unit on
+    EITHER side goes through seconds, with TIME_UNIT_TYPES' factors on the
+    epoch legs (see there for why) and WeeWX's conversion on any other leg
+    -- so a Dublin julian day, which WeeWX's almanac produces for its moon,
+    planet and next_* events on every version and hands to the report's
+    converter, reaches unix_epoch_ns by WeeWX's correct day-to-seconds
+    conversion and loopdata's factor, never WeeWX's dublin_jd-to-ns entry,
+    which carries the same error as its epoch one.  Maps over a list or
+    tuple datum as weewx.units.convert does.  Raises KeyError for a unit
+    pair neither side knows, as weewx.units.convert does; callers guard
+    for that."""
+    source_unit = val_t[1]
+    if source_unit == target_unit:
+        return val_t
+    source_is_epoch = source_unit in TIME_UNIT_TYPES
+    target_is_epoch = target_unit in TIME_UNIT_TYPES
+    if not (source_is_epoch or target_is_epoch):
+        return weewx.units.convert(val_t, target_unit)
+
+    def one(value: Any) -> Any:
+        if value is None:
+            return None
+        if source_is_epoch:
+            seconds = _scale_epoch(value, TIME_UNIT_TYPES[source_unit], 1)
+        else:
+            seconds = weewx.units.convert((value, source_unit, val_t[2]), 'unix_epoch')[0]
+        if target_is_epoch:
+            return _scale_epoch(seconds, 1, TIME_UNIT_TYPES[target_unit])
+        return weewx.units.convert((seconds, 'unix_epoch', val_t[2]), target_unit)[0]
+
+    datum = val_t[0]
+    if isinstance(datum, (list, tuple)):
+        converted: Any = [one(x) for x in datum]
+    else:
+        converted = one(datum)
+    return weewx.units.ValueTuple(converted, target_unit, val_t[2])
+
+def unit_segment(obj: Any, name: str) -> Any:
+    """getattr for one dotted segment of a report tag chain, except that a
+    unit segment with an epoch unit on either side of a ValueHelper's value
+    (almanac.sunrise.unix_epoch_ns, or .dublin_jd on an epoch) converts
+    through convert_value: ValueHelper.__getattr__ would use WeeWX's table.
+    Any other name -- a format spec, a unit of some other group -- is the
+    ValueHelper's own attribute, as before."""
+    if isinstance(obj, weewx.units.ValueHelper):
+        value_t = obj.value_t
+        if name in TIME_UNIT_TYPES or (
+                value_t[1] in TIME_UNIT_TYPES
+                and name in weewx.units.conversionDict.get(value_t[1], ())):
+            try:
+                converted = convert_value(value_t, name)
+            except KeyError:
+                # ValueHelper.__getattr__'s own contract for a unit the
+                # value cannot take.
+                raise AttributeError("Illegal conversion from '%s' to '%s'"
+                                     % (value_t[1], name))
+            return weewx.units.ValueHelper(converted, obj.context, obj.formatter)
+    return getattr(obj, name)
+
+class ReportConverter(weewx.units.Converter):
+    """The report's Converter, with every conversion that has an epoch unit
+    on either side done by convert_value -- so a report whose
+    [Units][[Groups]] puts group_time in unix_epoch_ms or unix_epoch_ns
+    gets loopdata's factors whatever unit the value arrived in, and the
+    formatter's _localtime, dividing by the same table, gets the instant
+    back exactly.  ValueHelper applies its converter through this method
+    too, so the almanac and station fields are covered."""
+
+    @staticmethod
+    def from_skin_dict(skin_dict: Dict[str, Any]) -> 'ReportConverter':
+        return ReportConverter(weewx.units.Converter.fromSkinDict(skin_dict).group_unit_dict)
+
+    def convert(self, val_t: Any) -> Any:
+        if val_t[1] is not None and val_t[2] is not None:
+            target_unit = self.group_unit_dict.get(
+                val_t[2], weewx.units.USUnits.get(val_t[2]))
+            if target_unit in TIME_UNIT_TYPES or val_t[1] in TIME_UNIT_TYPES:
+                return convert_value(val_t, target_unit)
+        return super().convert(val_t)
 
 # EVERY unit type that holds a point in time: the epoch units above, plus
 # the Dublin julian day, which WeeWX also renders through a date format but
@@ -1214,7 +1319,9 @@ class ReportFormatter(weewx.units.Formatter):
     def _localtime(self, val_t: Any) -> Optional[time.struct_time]:
         """The struct_time a time-valued tuple denotes, or None if this is
         not a time.  Mirrors WeeWX's own two time paths: an epoch in
-        seconds, milliseconds or nanoseconds, and a Dublin julian day."""
+        seconds, milliseconds or nanoseconds, and a Dublin julian day.
+        The epoch is brought to seconds by TIME_UNIT_TYPES' own factors,
+        the ones ReportConverter made it with."""
         if val_t[0] is None:
             return None
         if val_t[1] in TIME_UNIT_TYPES:
@@ -2858,7 +2965,7 @@ class LoopData(StdService):
         lang = str(skin_dict.get('lang', ''))
         render_locale = RenderLocale.capture(lang)
         formatter = ReportFormatter.from_skin_dict(skin_dict, render_locale)
-        converter = weewx.units.Converter.fromSkinDict(skin_dict)
+        converter = ReportConverter.from_skin_dict(skin_dict)
 
         # [possibly localized] strings for trend.barometer.desc: the English
         # descriptions are gettext-style keys into the report's [Texts] (its
@@ -4741,7 +4848,7 @@ class AlmanacFieldEvaluator:
             almanac = almanac(**almanac_field.almanac_kwargs)
         obj: Any = almanac
         for segment in almanac_field.chain:
-            obj = getattr(obj, segment.name)
+            obj = unit_segment(obj, segment.name)
             if segment.kwargs is not None:
                 obj = obj(**segment.kwargs)
             else:
@@ -4819,7 +4926,7 @@ class AlmanacFieldEvaluator:
                     no_data = True
                 elif (isinstance(obj, weewx.units.ValueHelper)
                         and getattr(obj.value_t, 'group', None) == 'group_time'):
-                    event_ts = weewx.units.convert(obj.value_t, 'unix_epoch')[0]
+                    event_ts = convert_value(obj.value_t, 'unix_epoch')[0]
                     if event_ts is not None:
                         expiry = event_ts if expiry is None else max(expiry, event_ts)
             except Exception as e:
@@ -4924,7 +5031,7 @@ class StationFieldEvaluator:
         try:
             obj: Any = self.station
             for name in station_field.chain:
-                obj = cheetah_autocall(getattr(obj, name))
+                obj = cheetah_autocall(unit_segment(obj, name))
             return render_endpoint_value(station_field.field,
                 '.'.join(station_field.chain), station_field.format_spec,
                 station_field.format_kwargs, station_field.round_ndigits, obj)
@@ -5392,7 +5499,7 @@ class LoopProcessor:
                 value_t = converter.convert((src_value, src_type, src_group))
             else:
                 # Unit override, e.g. week.length.hour.raw.
-                value_t = weewx.units.convert((src_value, src_type, src_group), cname.unit)
+                value_t = convert_value((src_value, src_type, src_group), cname.unit)
         except (KeyError, ValueError) as e:
             # Override incompatible with the property's group (a timestamp
             # asked for in beaufort).  Skip the field.
@@ -5467,7 +5574,7 @@ class LoopProcessor:
             else:
                 # Unit override: convert straight to the requested unit rather
                 # than the target report's unit for this group.
-                tgt_value, tgt_type, tgt_group = weewx.units.convert((src_value, src_type, src_group), cname.unit)
+                tgt_value, tgt_type, tgt_group = convert_value((src_value, src_type, src_group), cname.unit)
         except (KeyError, ValueError) as e:
             # Unit override incompatible with the obstype's group.  Skip the field.
             log.debug('%s: cannot convert %s to %s: %s' % (cname.field, cname.obstype, cname.unit, e))
@@ -5594,14 +5701,14 @@ class LoopProcessor:
         When target_unit is None the value is converted to the target report's
         unit for the obstype's group (converter.convert).  When target_unit is
         given (a unit override), the value is converted directly to that unit
-        (weewx.units.convert), which raises if the unit is incompatible with the
+        (convert_value, which owns the epoch factors), which raises if the unit is incompatible with the
         obstype's group -- callers guard for that. """
 
         v_t = weewx.units.as_value_tuple(pkt, obstype)
         if target_unit is None:
             value, unit_type, group_type = converter.convert(v_t)
         else:
-            value, unit_type, group_type = weewx.units.convert(v_t, target_unit)
+            value, unit_type, group_type = convert_value(v_t, target_unit)
 
         return value, unit_type, group_type
 

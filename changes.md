@@ -1,5 +1,32 @@
 # weewx-loopdata change history
 
+## 8.0.4 2026/11/04
+- Times declared in unix_epoch_ns are correct on every WeeWX.  LoopData
+  took the factors that turn an epoch into milliseconds or nanoseconds
+  from WeeWX, whose nanosecond factor was a million (the microsecond
+  factor) from 2021 until WeeWX 5.6 corrected it; LoopData now owns the
+  arithmetic in both directions, making the value with a thousand and a
+  billion to the second and dividing by the same, so a nanosecond field
+  is a nanosecond count and renders as the right instant on WeeWX 4.6
+  through 5.6 alike.  A page that divided the old value by a million to
+  get seconds was correcting for the bug and now divides by a billion;
+  formatted times are unchanged.  Before 5.6 WeeWX's own report tags
+  still publish a microsecond count under that name, so a page should
+  read LoopData's.
+  The same factors cover a unit segment (almanac.sunrise.unix_epoch_ns),
+  the instant at which a next_* almanac group expires, and a time WeeWX's
+  almanac gives as a Dublin julian day (its moon, planet and next_* events,
+  on every WeeWX), which reaches the epoch unit by WeeWX's day-to-seconds
+  conversion and LoopData's factor from there.
+- The sample report declares its clock as current.dateTime.unix_epoch.raw,
+  pinned to seconds, where it declared current.dateTime.raw: the page
+  ages that value against the server's clock and prints it as the last
+  update, so a report whose group_time is overridden to milliseconds or
+  nanoseconds showed LIVE for ever and a nonsense date.  Restart weewxd
+  after installing: the page reads the pinned key, which the service
+  writes only once it has read the new declaration.  Declare any time a
+  page does arithmetic on the same way.
+
 ## 8.0.3 2026/10/08
 - long_form() renders on every WeeWX loopdata supports.  On WeeWX 4.6
   through 4.10.1 every long_form() field was omitted from

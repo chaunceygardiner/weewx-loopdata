@@ -29,7 +29,7 @@ sub-section of named groups:
 ```
 [LoopData]
     [[fields]]
-        clock       = current.dateTime.raw
+        clock       = current.dateTime.unix_epoch.raw
         temperature = current.outTemp, current.outTemp.raw, day.outTemp.max
         barometer   = current.barometer, trend.barometer.desc
         labels      = unit.label.outTemp, unit.label.barometer

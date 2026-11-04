@@ -281,6 +281,14 @@ applies to value fields only; the `unit.label` prefix form has no override
 incompatible with the observation's group (e.g. `day.outTemp.avg.beaufort`),
 the field is simply omitted from loop-data.txt.
 
+One exception to "exactly as WeeWX": a time pinned to `unix_epoch_ms` or
+`unix_epoch_ns` (or a report whose `group_time` is one of those) is a true
+millisecond or nanosecond count, by LoopData's own arithmetic.  WeeWX's own
+nanosecond conversion was a factor of a thousand out through 5.5, so on
+those versions the same report tag's `.raw` disagrees with LoopData's by a
+thousand, and WeeWX's is the one in error.  Formatted times agree on every
+version.
+
 {: .note }
 A unit must already be registered with WeeWX when LoopData starts: all of
 WeeWX's own units (including `beaufort`) always are, but a unit registered by

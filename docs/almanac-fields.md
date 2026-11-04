@@ -85,7 +85,10 @@ almanac.sun.visible.hour.round(2).raw        hours, rounded — the unit sits
                                              before round(n) and the format spec
 ```
 
-Pin the unit on any `.raw` field your javascript consumes numerically.
+Pin the unit on any `.raw` field your javascript consumes numerically.  An
+epoch pin in milliseconds or nanoseconds is a true count by LoopData's own
+arithmetic, which [differs from WeeWX's own tag](field-reference.html#overriding-the-unit-of-a-field)
+on versions whose nanosecond factor was wrong.
 
 ## Rules and limits
 

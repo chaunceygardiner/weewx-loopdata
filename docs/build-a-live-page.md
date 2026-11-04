@@ -162,8 +162,11 @@ old complete file or the new complete file.
 The sample skin's `realtime_updater.inc` shows the touches that separate a
 demo from a page you can leave running for months:
 
-* **A LIVE/age indicator** driven by `current.dateTime.raw` — the packet's
-  own timestamp, so the page knows how fresh its data really is.  Age it
+* **A LIVE/age indicator** driven by `current.dateTime.unix_epoch.raw` — the
+  packet's own timestamp, so the page knows how fresh its data really is.
+  Declare any time your page does arithmetic on with its unit pinned, as
+  here: a report's `group_time` override (milliseconds, nanoseconds) would
+  otherwise move a value the page assumes is seconds.  Age it
   against the **server's** clock, not the viewer's: read `Date` off the
   response that carried the record (`response.headers.get('Date')`, adding
   back any `Age` a proxy reports).  Subtracting a station timestamp from
