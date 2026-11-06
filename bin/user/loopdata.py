@@ -58,7 +58,17 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '8.0.5'
+LOOP_DATA_VERSION = '8.0.6'
+
+# WeeWX's own [[RSYNC]] report names these options differently, so a
+# station that copies one into [LoopData] [[RsyncSpec]] gets nothing:
+# LoopData never reads it.  Each is named back at startup.
+WEEWX_RSYNC_NAMES: Dict[str, str] = {
+    'port':   'remote_port',
+    'server': 'remote_server',
+    'user':   'remote_user',
+    'path':   'remote_dir',
+}
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -2448,6 +2458,11 @@ class LoopData(StdService):
         rsync_spec_dict          = loop_config_dict.get('RsyncSpec', {})
         include_spec_dict        = loop_config_dict.get('Include', {})
 
+        for weewx_name, loopdata_name in WEEWX_RSYNC_NAMES.items():
+            if weewx_name in rsync_spec_dict:
+                log.warning("Ignoring [LoopData] [[RsyncSpec]] %s: LoopData's name for it is %s."
+                            % (weewx_name, loopdata_name))
+
         # Get the unit_system as specified by StdConvert->target_unit.
         # Note: this value will be overwritten if the day accumulator has a a unit_system.
         default_binding = config_dict.get('StdReport')['data_binding']
@@ -2654,7 +2669,12 @@ class LoopData(StdService):
 
         # The rsync timeout also drives the ssh-side time bounds folded into
         # ssh_options (see compose_ssh_options), so resolve it first.
-        rsync_timeout: int = to_int(rsync_spec_dict.get('timeout', 1))
+        # A blank or explicitly none timeout converts to None, which means
+        # the default: compared as it stood, None > 0 stopped weewxd at
+        # startup, even with uploads off.  (Before WeeWX 5.0, to_int itself
+        # raises on a blank, wherever WeeWX reads a number with it.)
+        timeout_spec: Optional[int] = to_int(rsync_spec_dict.get('timeout', 1))
+        rsync_timeout: int = 1 if timeout_spec is None else timeout_spec
 
         # A cutoff below one second would ship every packet however late --
         # the backlog the option exists to prevent -- so it is refused, the
@@ -5090,6 +5110,9 @@ class LoopProcessor:
         # leak between services in one interpreter, silently swallowing
         # the report of a later failure.
         self.render_failures: Set[str] = set()
+        # Loop packets that failed in a row: the first is logged, and the
+        # first success after them.
+        self.packet_failures: int = 0
         self.archive_start: float = time.time()
         self.renderers: List[ReportRenderer] = [
             ReportRenderer.for_context(ctx, cfg) for ctx in cfg.contexts]
@@ -5131,43 +5154,24 @@ class LoopProcessor:
 
                 # This is a loop packet.
                 assert event.event_type == weewx.NEW_LOOP_PACKET
-
-                pkt: Dict[str, Any] = event.packet
-                pkt_time: int       = to_int(pkt['dateTime'])
-                pkt['interval']     = self.cfg.loop_frequency / 60.0
-
-                log.debug('Dequeued loop event(%s): %s' % (event, timestamp_to_string(pkt_time)))
-                log.debug(pkt)
-
                 try:
-                    windrun_val = weewx.wxxtypes.WXXTypes.calc_windrun('windrun', pkt)
-                    pkt['windrun'] = windrun_val[0]
-                except weewx.CannotCalculate:
-                    log.info('Cannot calculate windrun.')
-                    pass
-
-                try:
-                    beaufort_val = weewx.wxxtypes.WXXTypes.calc_beaufort('beaufort', pkt)
-                    pkt['beaufort'] = beaufort_val[0]
-                except weewx.CannotCalculate:
-                    log.info('Cannot calculate beaufort.')
-                    pass
-
-                # Process new packet.
-                loopdata_pkt = LoopProcessor.generate_output(
-                    pkt, self.cfg, self.accumulators, self.renderers, self.render_failures)
-                # Write the loop-data.txt file.
-                LoopProcessor.write_packet_to_file(loopdata_pkt,
-                    self.cfg.tmpname, self.cfg.loop_data_dir, self.cfg.filename)
-                if self.cfg.enable:
-                    # Rsync the loop-data.txt file.
-                    LoopProcessor.rsync_data(pkt_time,
-                        self.cfg.skip_if_older_than, self.cfg.loop_data_dir,
-                        self.cfg.filename, self.cfg.remote_dir,
-                        self.cfg.remote_server, self.cfg.remote_port,
-                        self.cfg.timeout, self.cfg.remote_user,
-                        self.cfg.ssh_options, self.cfg.compress,
-                        self.cfg.log_success)
+                    self.process_packet(event.packet)
+                except Exception as e:
+                    # A packet's failure costs that packet, as a failed post
+                    # costs a WeeWX uploader that record: re-raising would end
+                    # this thread, and loop-data.txt would freeze while weewxd
+                    # ran on.  Logged once per run of failures, since packets
+                    # arrive every few seconds, and again on recovery.
+                    if self.packet_failures == 0:
+                        log.error('Could not process a loop packet; LoopData will say when it recovers.  '
+                                  'Exception: %s' % e)
+                        weeutil.logger.log_traceback(log.error, "    ****  ")
+                    self.packet_failures += 1
+                    continue
+                if self.packet_failures > 0:
+                    log.info('LoopData is processing loop packets again, after %d failed.'
+                             % self.packet_failures)
+                    self.packet_failures = 0
         except Exception:
             weeutil.logger.log_traceback(log.critical, "    ****  ")
             raise
@@ -5178,6 +5182,46 @@ class LoopProcessor:
                 os.unlink(self.cfg.tmpname)
             except FileNotFoundError:
                 pass
+
+    def process_packet(self, pkt: Dict[str, Any]) -> None:
+        """One loop packet: windrun and beaufort, accumulate and render,
+        write the file, upload it.  An exception ends the packet, so a
+        failed write is never followed by an upload of the previous file."""
+        pkt_time: int       = to_int(pkt['dateTime'])
+        pkt['interval']     = self.cfg.loop_frequency / 60.0
+
+        log.debug('Dequeued loop packet: %s' % timestamp_to_string(pkt_time))
+        log.debug(pkt)
+
+        try:
+            windrun_val = weewx.wxxtypes.WXXTypes.calc_windrun('windrun', pkt)
+            pkt['windrun'] = windrun_val[0]
+        except weewx.CannotCalculate:
+            log.info('Cannot calculate windrun.')
+            pass
+
+        try:
+            beaufort_val = weewx.wxxtypes.WXXTypes.calc_beaufort('beaufort', pkt)
+            pkt['beaufort'] = beaufort_val[0]
+        except weewx.CannotCalculate:
+            log.info('Cannot calculate beaufort.')
+            pass
+
+        # Process new packet.
+        loopdata_pkt = LoopProcessor.generate_output(
+            pkt, self.cfg, self.accumulators, self.renderers, self.render_failures)
+        # Write the loop-data.txt file.
+        LoopProcessor.write_packet_to_file(loopdata_pkt,
+            self.cfg.tmpname, self.cfg.loop_data_dir, self.cfg.filename)
+        if self.cfg.enable:
+            # Rsync the loop-data.txt file.
+            LoopProcessor.rsync_data(pkt_time,
+                self.cfg.skip_if_older_than, self.cfg.loop_data_dir,
+                self.cfg.filename, self.cfg.remote_dir,
+                self.cfg.remote_server, self.cfg.remote_port,
+                self.cfg.timeout, self.cfg.remote_user,
+                self.cfg.ssh_options, self.cfg.compress,
+                self.cfg.log_success)
 
     @staticmethod
     def generate_output(in_pkt: Dict[str, Any], cfg: Configuration, accums: Accumulators,
@@ -5200,9 +5244,9 @@ class LoopProcessor:
                 # Every enabled report's declaration is rendered here,
                 # including skins this station's operator never wrote.  One
                 # of them failing must cost that report its entry, not stop
-                # the file for all of them: process_queue re-raises, which
-                # ends the LoopProcessor thread for good and freezes
-                # loop-data.txt while weewxd carries on none the wiser.
+                # the file for all of them: escaping here would cost the
+                # whole packet, every report's entry with it, on every
+                # packet for as long as the one report keeps failing.
                 reraise_if_terminate(e)
                 if renderer.ctx.label not in render_failures:
                     render_failures.add(renderer.ctx.label)

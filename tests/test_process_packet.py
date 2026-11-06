@@ -71,7 +71,7 @@ from weeutil.weeutil import to_bool
 from weeutil.weeutil import to_int
 from weeutil.weeutil import timestamp_to_string
 
-from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
+from typing import Any, Dict, FrozenSet, Iterator, List, Optional, Set, Tuple
 
 import weecfg.extension
 import weeutil.config
@@ -9762,6 +9762,8 @@ class ProcessPacketTests(unittest.TestCase):
             'log_success': 'false',
             'timeout': '1',
             'skip_if_older_than': '3',
+            'remote_port': '22',
+            'ssh_options': '-i /home/weewx/.ssh/id_ed25519',
         },
         'Extras': {
             'loop_data_file': 'loop-data.txt',
@@ -9775,6 +9777,9 @@ class ProcessPacketTests(unittest.TestCase):
     # The two whose default is ABSENCE, not a value: their assignment is an
     # EXAMPLE (and says so), so there is no fallback for it to equal.
     COMMENTED_EXAMPLES = {'googleAnalyticsId', 'analytics_host'}
+    # The same in [[RsyncSpec]]: unset, ssh chooses the port and gets only
+    # LoopData's own bounds.
+    RSYNC_COMMENTED_EXAMPLES = {'remote_port', 'ssh_options'}
 
     def test_installer_commented_defaults(self):
         """The options a fresh install receives commented out, pinned as a
@@ -9849,6 +9854,11 @@ class ProcessPacketTests(unittest.TestCase):
         self.assertEqual(to_int(rsync.pop('timeout')), cfg.timeout)
         self.assertEqual(to_int(rsync.pop('skip_if_older_than')),
                          cfg.skip_if_older_than)
+        # Examples, not defaults: the default is absence, so assert it is.
+        for name in sorted(self.RSYNC_COMMENTED_EXAMPLES):
+            rsync.pop(name)
+        self.assertIsNone(cfg.remote_port)
+        self.assertEqual(cfg.ssh_options, user.loopdata.LoopData.compose_ssh_options('', cfg.timeout))
         # Anything else demoted here is a default nothing checks.
         self.assertEqual(rsync, {})
 
@@ -11680,6 +11690,150 @@ class ProcessPacketTests(unittest.TestCase):
             cmd = uploads[0]
             self.assertEqual(cmd[cmd.index('-e') + 1], ssh + ' ' + cfg.ssh_options, port)
             self.assertEqual(cmd[-1], 'nobody@example.invalid:/remote/loop-data.txt', port)
+
+    def _run_packets(self, rsync: Dict[str, str], write_fails: FrozenSet[int] = frozenset()
+                     ) -> Tuple[Dict[str, Any], List[List[str]], List[str], bool]:
+        """Four loop packets through the real service and its processor
+        thread, uploading through WeeWX's own RsyncUpload with only Popen
+        stood in.  write_fails names the packets (1-4) whose write raises
+        ENOSPC, as a full /dev/shm does.  Returns the file as last written,
+        the upload commands, everything logged, and whether the thread was
+        still alive once it had taken every packet."""
+        from unittest import mock
+        import types
+        import weeutil.rsyncupload
+        L = user.loopdata
+        uploads: List[List[str]] = []
+
+        class FakePopen:
+            def __init__(self, cmd, **kwargs):
+                uploads.append(cmd)
+
+            def communicate(self):
+                return (b'Number of files transferred: 1\n', None)
+        rsync_subprocess = types.SimpleNamespace(
+            Popen=FakePopen, PIPE=subprocess.PIPE, STDOUT=subprocess.STDOUT)
+        real_write = L.LoopProcessor.write_packet_to_file
+        writes = [0]
+
+        def write(selective_pkt, tmpname, loop_data_dir, filename):
+            writes[0] += 1
+            if writes[0] in write_fails:
+                raise OSError(28, 'No space left on device')
+            real_write(selective_pkt, tmpname, loop_data_dir, filename)
+
+        t = int(time.time())
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp)
+            config_dict['StdReport']['LoopDataReport']['LoopData'] = {
+                'fields': {'thread': ['current.dateTime.raw', 'current.outTemp.raw']}}
+            config_dict['LoopData']['RsyncSpec'].update(rsync)
+            service = L.LoopData(self.FakeEngine(config_dict), config_dict)
+            cfg = service.cfg
+            written = os.path.join(cfg.loop_data_dir, cfg.filename)
+            with contextlib.redirect_stdout(io.StringIO()), \
+                    mock.patch.object(weeutil.rsyncupload, 'subprocess', rsync_subprocess), \
+                    mock.patch.object(L.LoopProcessor, 'write_packet_to_file', write), \
+                    self.assertLogs('user.loopdata', level='INFO') as logs:
+                service.pre_loop(None)
+                thread = service.loop_thread
+                try:
+                    for n in range(4):
+                        service.new_loop(weewx.Event(weewx.NEW_LOOP_PACKET, packet={
+                            'dateTime': t + 2 * n, 'usUnits': weewx.US, 'outTemp': 70.0 + n,
+                            'windSpeed': 10.0, 'windDir': 90.0, 'barometer': 30.0, 'rain': 0.0}))
+                    # Every packet taken off the queue: a dead thread leaves
+                    # the rest there, so stop waiting the moment it dies.
+                    # Bounded, so a loaded machine waits.
+                    deadline = time.time() + 20
+                    while not cfg.queue.empty() and time.time() < deadline \
+                            and thread is not None and thread.is_alive():
+                        time.sleep(0.01)
+                    alive = thread is not None and thread.is_alive()
+                finally:
+                    service.shutDown()
+            # The queue empties when the last packet is TAKEN, not handled,
+            # so alive alone misses a thread that dies on it.  The thread's
+            # backstop logs CRITICAL whenever it ends by an exception, and
+            # shutDown has joined it, so this sees the whole run.
+            alive = alive and not any(m.startswith('CRITICAL') for m in logs.output)
+            with open(written) as f:
+                out = json.load(f)
+        return out, uploads, logs.output, alive
+
+    def test_a_failed_write_costs_that_packet(self):
+        """A packet whose write fails -- /dev/shm full, here for packets 2
+        and 3 -- costs that packet and its upload, not the thread: before
+        8.0.6 process_queue re-raised, the thread ended, and loop-data.txt
+        froze while weewxd ran on.  The failure is logged once for the run
+        of two, with its traceback, and the recovery once.  No upload
+        follows a failed write: the file on disk is the previous packet's,
+        and skip_if_older_than judges the packet's age, not the file's."""
+        out, uploads, logs, alive = self._run_packets(
+            {'enable': 'true', 'remote_server': 'example.invalid', 'remote_user': 'nobody',
+             'remote_dir': '/remote', 'skip_if_older_than': '999999999'},
+            write_fails=frozenset({2, 3}))
+        self.assertTrue(alive)
+        self.assertEqual(out['LoopDataReport']['current.outTemp.raw'], 73.0)   # packet 4 landed
+        self.assertEqual(len(uploads), 2, uploads)                              # packets 1 and 4 only
+        failed = [m for m in logs if 'Could not process a loop packet' in m]
+        self.assertEqual(len(failed), 1, logs)
+        self.assertIn('No space left on device', failed[0])
+        recovered = [m for m in logs if 'processing loop packets again' in m]
+        self.assertEqual(len(recovered), 1, logs)
+        self.assertIn('after 2 failed', recovered[0])
+
+    def test_a_failed_upload_costs_that_upload(self):
+        """enable = true with no remote_dir: WeeWX's RsyncUpload is built
+        with os.path.join(None, ...), a TypeError on every packet.  Before
+        8.0.6 the first one ended the thread; now each packet is still
+        written, before its upload, and the failure is logged once, with
+        no recovery since none comes."""
+        out, uploads, logs, alive = self._run_packets(
+            {'enable': 'true', 'remote_server': 'example.invalid', 'remote_user': 'nobody',
+             'skip_if_older_than': '999999999'})
+        self.assertTrue(alive)
+        self.assertEqual(out['LoopDataReport']['current.outTemp.raw'], 73.0)
+        self.assertEqual(uploads, [])
+        self.assertEqual(len([m for m in logs if 'Could not process a loop packet' in m]), 1, logs)
+        self.assertEqual([m for m in logs if 'processing loop packets again' in m], [], logs)
+
+    def test_a_blank_timeout_is_the_default(self):
+        """[[RsyncSpec]] timeout = with no value, or none, means the
+        default of 1.  to_int answers None for both, and before 8.0.6 the
+        ssh bounds then compared None > 0, which stopped weewxd at
+        startup even with enable = false (the fixture's)."""
+        L = user.loopdata
+        for spec in ('', 'none', 'None'):
+            with tempfile.TemporaryDirectory() as tmp:
+                config_dict = self._init_fixture(tmp)
+                config_dict['LoopData']['RsyncSpec']['timeout'] = spec
+                cfg = L.LoopData(self.FakeEngine(config_dict), config_dict).cfg
+            self.assertEqual(cfg.timeout, 1, spec)
+            self.assertEqual(cfg.ssh_options, L.LoopData.compose_ssh_options('', 1), spec)
+
+    def test_weewxs_rsync_names_are_named_back(self):
+        """WeeWX's own [[RSYNC]] names its options port, server, user and
+        path; LoopData's are remote_port, remote_server, remote_user and
+        remote_dir, so a station that copies WeeWX's into [[RsyncSpec]]
+        gets nothing for it.  Each draws one warning naming LoopData's
+        option, uploads enabled or not.  No other key is checked."""
+        L = user.loopdata
+        weewx_names = {'port': '22', 'server': 'example.invalid', 'user': 'nobody', 'path': '/remote'}
+        for enable in ('false', 'true'):
+            with tempfile.TemporaryDirectory() as tmp:
+                config_dict = self._init_fixture(tmp)
+                spec = config_dict['LoopData']['RsyncSpec']
+                spec.update(weewx_names)
+                spec.update({'enable': enable, 'delete': 'false', 'remote_dir': '/remote'})
+                with self.assertLogs('user.loopdata', level='WARNING') as logs:
+                    L.LoopData(self.FakeEngine(config_dict), config_dict)
+            named = sorted(m for m in logs.output if '[[RsyncSpec]]' in m)
+            self.assertEqual(named, sorted(
+                "WARNING:user.loopdata:Ignoring [LoopData] [[RsyncSpec]] %s: "
+                "LoopData's name for it is %s." % (ours, theirs)
+                for ours, theirs in (('port', 'remote_port'), ('server', 'remote_server'),
+                                     ('user', 'remote_user'), ('path', 'remote_dir'))), enable)
 
     class Terminate(Exception):
         """Stands in for weewxd's Terminate."""

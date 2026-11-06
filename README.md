@@ -262,7 +262,9 @@ working as before.
         #timeout = 1
         #skip_if_older_than = 3
         remote_server = www.foobar.com
+        #remote_port = 22
         remote_user = root
+        #ssh_options = -i /home/weewx/.ssh/id_ed25519
         remote_dir = /home/weewx/loop-data
 ```
 

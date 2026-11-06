@@ -1,5 +1,27 @@
 # weewx-loopdata change history
 
+## 8.0.6 2026/11/06
+- A failure while handling a loop packet costs that packet, not the
+  file.  Any exception there -- a write of loop-data.txt failing because
+  /dev/shm was full, say -- used to end LoopData's processing thread, so
+  loop-data.txt stopped updating while weewxd carried on, until weewxd
+  was restarted.  Now that packet and its upload are dropped and the next
+  packet is handled as usual.  The first failure is logged with its
+  traceback ("Could not process a loop packet"), and the first success
+  after a run of failures is logged too ("LoopData is processing loop
+  packets again").
+- A blank timeout in [[RsyncSpec]] (timeout = with no value, or none)
+  means the default of 1 second on WeeWX 5.0 and later.  It stopped weewxd
+  at startup, even with enable = false.  (Before 5.0, WeeWX itself
+  rejects a blank number, here as everywhere else.)
+- LoopData warns about WeeWX's own [[RSYNC]] option names in
+  [[RsyncSpec]].  A port, server, user or path there was silently
+  ignored, since LoopData's names are remote_port, remote_server,
+  remote_user and remote_dir; each now gets a warning at startup naming
+  the option to use instead.
+- A fresh install's [[RsyncSpec]] shows remote_port and ssh_options as
+  commented-out examples.
+
 ## 8.0.5 2026/11/06
 - remote_port in [[RsyncSpec]] works.  LoopData handed the port to
   WeeWX's rsync code as a string, which WeeWX cannot format, so the first

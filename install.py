@@ -110,9 +110,19 @@ CONFIG = """
         # PLACEHOLDER -- replace with the server to copy the file to.
         remote_server = www.foobar.com
 
+        # The ssh port on remote_server.  Unset, ssh chooses: 22, unless
+        # ssh_config sets a Port for the host.  A port set here overrides
+        # ssh_config.
+        #remote_port = 22
+
         # PLACEHOLDER -- replace with the userid on remote_server that has
         # write permission to remote_dir.
         remote_user = root
+
+        # Extra options for ssh, e.g. a key file.  LoopData adds the
+        # ConnectTimeout, ServerAliveInterval, ServerAliveCountMax and
+        # BatchMode bounds unless they are set here.
+        #ssh_options = -i /home/weewx/.ssh/id_ed25519
 
         # PLACEHOLDER -- replace with the directory on remote_server that
         # filename will be copied into.
@@ -280,7 +290,7 @@ def loader():
 class LoopDataInstaller(ExtensionInstaller):
     def __init__(self):
         super(LoopDataInstaller, self).__init__(
-            version = "8.0.5",
+            version = "8.0.6",
             name = 'loopdata',
             description = 'Loop statistics for real time reporting.',
             author = "John A Kline",

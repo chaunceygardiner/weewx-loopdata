@@ -253,8 +253,13 @@ Only needed if you push loop-data.txt to a remote webserver — see
 | `compress` | `True` to compress the file before sending.  Default is `False`. |
 | `log_success` | `True` to write success-with-timing messages to the log (for debugging).  Default is `False`. |
 | `ssh_options` | Extra options for the ssh transport (e.g., a key file or port).  Whether or not this is set, LoopData appends safety bounds for any keyword you don't set yourself: `-o ConnectTimeout=<timeout>`, `-o ServerAliveInterval=<timeout>`, `-o ServerAliveCountMax=2` and `-o BatchMode=yes`, so a dead or hanging remote cannot stall the loop processing thread (an option you set always wins). |
-| `timeout` | I/O timeout.  Default is `1` (when sending, time out in 1 second).  Also used for the ssh `ConnectTimeout` and `ServerAliveInterval` bounds described under `ssh_options`.  `0` disables all time bounds. |
+| `timeout` | I/O timeout.  Default is `1` (when sending, time out in 1 second).  Also used for the ssh `ConnectTimeout` and `ServerAliveInterval` bounds described under `ssh_options`.  `0` disables all time bounds.  Left blank, the default applies (WeeWX 5.0 and later; before 5.0, WeeWX itself rejects a blank number). |
 | `skip_if_older_than` | Don't bother to rsync if the data is older than this number of seconds.  Default is `3`.  (Skip it and move on to the next packet rather than shipping stale data late.)  Must be at least `1`; a blank, zero, negative or smaller value is ignored with a warning and the default is used. |
+
+These are not the names WeeWX's own `[[RSYNC]]` report uses.  WeeWX's
+`port`, `server`, `user` and `path` are `remote_port`, `remote_server`,
+`remote_user` and `remote_dir` here; LoopData ignores WeeWX's names, and
+logs a warning naming its own for each one it finds.
 
 ## `[[Include]]` (deprecated)
 
@@ -378,13 +383,19 @@ weewx.conf, and those keep working as before.
         #timeout = 1
         #skip_if_older_than = 3
         remote_server = www.foobar.com
+        #remote_port = 22
         remote_user = root
+        #ssh_options = -i /home/weewx/.ssh/id_ed25519
         remote_dir = /home/weewx/loop-data
 ```
 
-A station installed before that change has all eight of those
+A station installed before that change has the eight other
 `[[RsyncSpec]]` options as ordinary live settings, with the same values;
 nothing about it changes, and there is no reason to comment anything out by
 hand.  Go by what your own weewx.conf shows: where it reads `#timeout = 1`,
 uncomment the line and change it; where it reads `timeout = 1`, edit the
 value.
+
+`#remote_port` and `#ssh_options` are examples, not defaults: commented
+out, neither is set.  Fresh installs have written them since 8.0.6; an
+upgrade does not add them.
