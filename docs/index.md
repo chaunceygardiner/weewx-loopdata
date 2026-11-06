@@ -123,7 +123,7 @@ all there is to it.
 
 ## See it in action
 
-* The "Tempestas" skin at
+* The skin at
   [www.paloaltoweather.com](https://www.paloaltoweather.com/) is
   loopdata-driven throughout, including its celestial tabs:
   [weewx-celestial](https://github.com/chaunceygardiner/weewx-celestial)'s

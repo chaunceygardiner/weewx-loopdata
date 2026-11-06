@@ -58,7 +58,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '8.0.4'
+LOOP_DATA_VERSION = '8.0.5'
 
 if sys.version_info[0] < 3 or (sys.version_info[0] == 3 and sys.version_info[1] < 7):
     raise weewx.UnsupportedFeature(
@@ -91,13 +91,21 @@ WINDROSE_DEFAULT_BANDS_MPS: List[float] = [0.5, 2.1, 3.6, 5.7, 8.8, 11.1]
 
 def reraise_if_terminate(e: BaseException) -> None:
     """weewxd stops by raising Terminate from its SIGTERM signal handler --
-    inside whatever the main thread is executing at that instant.  Every
-    broad exception handler on a main-thread path must call this first and
-    hand the exception back, or weewx cannot shut down.  weewxd runs as
-    __main__, so its Terminate class cannot be imported here and is
-    recognized by name."""
-    if type(e).__name__ == 'Terminate':
-        raise e
+    inside whatever the main thread is executing at that instant -- and
+    Terminate subclasses Exception, so a broad handler on a main-thread
+    path catches the shutdown as its own failure, logs it, and weewxd runs
+    on until systemd kills it.  Every broad exception handler on a
+    main-thread path must call this first and hand the exception back.
+    The class is the running weewxd's own, not a name match (a library's
+    class called Terminate is not the shutdown): weewxd.py runs as a
+    script, so the class is __main__.Terminate; the console script would
+    import it as weewxd.Terminate; and an `import weewxd` here would mint
+    a third class that is neither.  Where neither module defines one
+    (weectl report run) nothing can raise it, and this does nothing."""
+    for name in ('__main__', 'weewxd'):
+        cls = getattr(sys.modules.get(name), 'Terminate', None)
+        if isinstance(cls, type) and issubclass(cls, BaseException) and isinstance(e, cls):
+            raise e
 
 @dataclass
 class CheetahName:
@@ -265,7 +273,7 @@ class Configuration:
     tmpname                  : str
     enable                   : bool
     remote_server            : str
-    remote_port              : int
+    remote_port              : Optional[int] # None: unset, ssh's own port answers
     remote_user              : str
     remote_dir               : str
     compress                 : bool
@@ -5860,7 +5868,7 @@ class LoopProcessor:
     @staticmethod
     def rsync_data(pktTime: int, skip_if_older_than: int, loop_data_dir: str,
             filename: str, remote_dir: str, remote_server: str,
-            remote_port: int, timeout: int, remote_user: str, ssh_options: str,
+            remote_port: Optional[int], timeout: int, remote_user: str, ssh_options: str,
             compress: bool, log_success: bool) -> None:
         log.debug('rsync_data(%d) start' % pktTime)
         # Don't upload if more than skip_if_older_than seconds behind.
@@ -5873,7 +5881,9 @@ class LoopProcessor:
             remote_root = os.path.join(remote_dir, filename),
             server=remote_server,
             user=remote_user,
-            port=str(remote_port) if remote_port is not None else None,
+            # An int or None, never a string: WeeWX writes the port into
+            # the ssh command with %d, which raises on a string.
+            port=remote_port,
             ssh_options=ssh_options,
             compress=compress,
             delete=False,

@@ -247,7 +247,7 @@ Only needed if you push loop-data.txt to a remote webserver — see
 |---|---|
 | `enable` | Set to `true` to rsync the loop data file to `remote_server`. |
 | `remote_server` | The server to which the loop data file will be copied.  Passwordless ssh using public/private key must be configured from the user account weewx runs under to the account on the remote machine with write access to `remote_dir`. |
-| `remote_port` | The ssh port on `remote_server`, if it is not the default 22.  Unset by default, in which case ssh's own default applies.  (A port set here and a port set in `ssh_options` are two ways to the same end; pick one.) |
+| `remote_port` | The ssh port on `remote_server`.  Unset by default, in which case ssh chooses: 22, unless `ssh_config` sets a `Port` for the host.  A port set here overrides `ssh_config`, 22 included.  (A port set here and a port set in `ssh_options` are two ways to the same end; pick one.) |
 | `remote_user` | The userid on `remote_server` with write permission to `remote_dir`. |
 | `remote_dir` | The directory on `remote_server` where `filename` will be copied. |
 | `compress` | `True` to compress the file before sending.  Default is `False`. |

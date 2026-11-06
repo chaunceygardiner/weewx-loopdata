@@ -50,6 +50,7 @@ import shutil
 import decimal
 import string
 import subprocess
+import sys
 import threading
 import tempfile
 import time
@@ -10041,7 +10042,16 @@ class ProcessPacketTests(unittest.TestCase):
         right only if it reads the summary of the PACKET's day; and the
         archive holds records from that day, so a span seed that counted
         today's summary row as well as today's running totals shows
-        double."""
+        double.
+
+        It uploads too, through WeeWX's own RsyncUpload with only Popen
+        stood in: remote_port as weewx.conf writes it (a string) reaches
+        the ssh command as `ssh -p 2222` on every packet.  Before 8.0.5 the
+        port reached WeeWX as a string, WeeWX's %d raised TypeError, and
+        the thread ended at the first packet."""
+        from unittest import mock
+        import types
+        import weeutil.rsyncupload
         L = user.loopdata
         os.environ['TZ'] = 'America/Los_Angeles'    # t below is noon here and midnight at UTC+5
         time.tzset()
@@ -10054,6 +10064,20 @@ class ProcessPacketTests(unittest.TestCase):
                 'current.dateTime.raw', 'current.outTemp.raw', 'current.windrun.raw',
                 'current.beaufort.raw', 'day.outTemp.max.raw', '10m.outTemp.max.raw',
                 'month.rain.sum.raw', 'month.outTemp.count.raw']}}
+            config_dict['LoopData']['RsyncSpec'].update({
+                'enable': 'true', 'remote_server': 'example.invalid', 'remote_port': '2222',
+                'remote_user': 'nobody', 'remote_dir': '/remote',
+                'skip_if_older_than': '999999999'})     # the packets are from 2020
+            uploads: List[List[str]] = []
+
+            class FakePopen:
+                def __init__(self, cmd, **kwargs):
+                    uploads.append(cmd)
+
+                def communicate(self):
+                    return (b'Number of files transferred: 1\n', None)
+            rsync_subprocess = types.SimpleNamespace(
+                Popen=FakePopen, PIPE=subprocess.PIPE, STDOUT=subprocess.STDOUT)
 
             # Records 15 to 25 minutes before the packets: inside their day,
             # outside the 10m window.
@@ -10079,7 +10103,8 @@ class ProcessPacketTests(unittest.TestCase):
             # weewx prints a one-time deprecation of the beaufort TYPE from
             # calc_beaufort, on the processor thread, so the redirect has to
             # cover the stop as well as the packets.
-            with contextlib.redirect_stdout(io.StringIO()):
+            with contextlib.redirect_stdout(io.StringIO()), \
+                    mock.patch.object(weeutil.rsyncupload, 'subprocess', rsync_subprocess):
                 try:
                     for dt, temp in ((t, 70.0), (t + 2, 72.0), (t + 4, 71.0)):
                         service.new_loop(weewx.Event(weewx.NEW_LOOP_PACKET, packet={
@@ -10097,6 +10122,11 @@ class ProcessPacketTests(unittest.TestCase):
                 finally:
                     service.shutDown()
             self.assertFalse(thread.is_alive())
+            # One upload per packet, each through ssh on the configured port.
+            self.assertEqual(len(uploads), 3, uploads)
+            for cmd in uploads:
+                self.assertEqual(cmd[cmd.index('-e') + 1], 'ssh -p 2222 ' + cfg.ssh_options)
+                self.assertEqual(cmd[-1], 'nobody@example.invalid:/remote/loop-data.txt')
 
             with open(written) as f:
                 out = json.load(f)
@@ -11601,6 +11631,155 @@ class ProcessPacketTests(unittest.TestCase):
                                        '/remote', 'nowhere.invalid', None, 1, 'nobody', '', False, False)
         self.assertEqual(len(logs.output), 1, logs.output)
         self.assertIn('skipping packet', logs.output[0])
+
+    def test_remote_port_reaches_the_ssh_command(self):
+        """[[RsyncSpec]] remote_port as weewx.conf writes it (a string),
+        through a real __init__, then rsync_data called with the resulting
+        cfg the way process_queue calls it (test_queue_loop_writes_the_file
+        covers the real call site), into WeeWX's own RsyncUpload, with only
+        Popen stood in: the command it runs reaches ssh on that port, and
+        with no port set, on ssh's own.
+        Port 22 is the case that reported it: a station whose ssh_config
+        sends that host elsewhere and wants LoopData on 22 (ssh's -p wins
+        over ssh_config).  Before 8.0.5 any port set here reached WeeWX as
+        a string and WeeWX's %d raised TypeError."""
+        from unittest import mock
+        import types
+        import weeutil.rsyncupload
+        L = user.loopdata
+        uploads: List[List[str]] = []
+
+        class FakePopen:
+            def __init__(self, cmd, **kwargs):
+                uploads.append(cmd)
+
+            def communicate(self):
+                return (b'Number of files transferred: 1\n', None)
+        rsync_subprocess = types.SimpleNamespace(
+            Popen=FakePopen, PIPE=subprocess.PIPE, STDOUT=subprocess.STDOUT)
+        for port, ssh in (('2222', 'ssh -p 2222'), ('22', 'ssh -p 22'), (None, 'ssh')):
+            with tempfile.TemporaryDirectory() as tmp:
+                config_dict = self._init_fixture(tmp)
+                spec = config_dict['LoopData']['RsyncSpec']
+                spec.update({'enable': 'true', 'remote_server': 'example.invalid',
+                             'remote_user': 'nobody', 'remote_dir': '/remote'})
+                if port is not None:
+                    spec['remote_port'] = port
+                cfg = L.LoopData(self.FakeEngine(config_dict), config_dict).cfg
+            del uploads[:]
+            # At DEBUG, which rsync_data always writes, so an error among
+            # what arrived is visible rather than a missing-logs failure.
+            with mock.patch.object(weeutil.rsyncupload, 'subprocess', rsync_subprocess), \
+                    self.assertLogs('user.loopdata', level='DEBUG') as logs:
+                L.LoopProcessor.rsync_data(int(time.time()), cfg.skip_if_older_than,
+                    cfg.loop_data_dir, cfg.filename, cfg.remote_dir, cfg.remote_server,
+                    cfg.remote_port, cfg.timeout, cfg.remote_user, cfg.ssh_options,
+                    cfg.compress, cfg.log_success)
+            self.assertEqual([m for m in logs.output if not m.startswith('DEBUG')], [], (port, logs.output))
+            self.assertEqual(len(uploads), 1, port)
+            cmd = uploads[0]
+            self.assertEqual(cmd[cmd.index('-e') + 1], ssh + ' ' + cfg.ssh_options, port)
+            self.assertEqual(cmd[-1], 'nobody@example.invalid:/remote/loop-data.txt', port)
+
+    class Terminate(Exception):
+        """Stands in for weewxd's Terminate."""
+
+    class Impostor(Exception):
+        """A class that merely shares the name, installed nowhere."""
+    Impostor.__name__ = 'Terminate'
+
+    @contextlib.contextmanager
+    def _weewxd_running(self, where: str = 'weewxd') -> Iterator[None]:
+        """The stand-in Terminate where the running weewxd would define it:
+        on the weewxd module (the console script) or on __main__ (weewxd.py
+        run as a script, as on the fleet).  __main__ here is the test
+        runner, so the class is set on it rather than the module swapped."""
+        from unittest import mock
+        import types
+        if where == '__main__':
+            with mock.patch.object(sys.modules['__main__'], 'Terminate', self.Terminate, create=True):
+                yield
+        else:
+            with mock.patch.dict(sys.modules, {'weewxd': types.SimpleNamespace(Terminate=self.Terminate)}):
+                yield
+
+    def test_the_shutdown_is_the_running_weewxds_terminate(self):
+        """reraise_if_terminate hands back the class the running weewxd
+        defines, wherever it defines it, and nothing else: not a class
+        that only shares the name, not a message that says it, and not a
+        module whose Terminate is not an exception class.  With no weewxd
+        running (weectl report run) nothing is the shutdown."""
+        from unittest import mock
+        import types
+        guard = user.loopdata.reraise_if_terminate
+        # Whatever runner hosts the suite, its __main__ defines no
+        # Terminate here, and no weewxd module is loaded.
+        with mock.patch.dict(sys.modules), \
+                mock.patch.object(sys.modules['__main__'], 'Terminate', None, create=True):
+            sys.modules.pop('weewxd', None)
+            guard(self.Terminate())                         # no weewxd: returns
+            for where in ('__main__', 'weewxd'):
+                with self._weewxd_running(where):
+                    with self.assertRaises(self.Terminate):
+                        guard(self.Terminate())
+                    with self.assertRaises(self.Terminate):
+                        guard(type('Subclass', (self.Terminate,), {})())
+                    guard(self.Impostor())                  # the name alone is not it
+                    guard(ValueError('Terminate'))
+                guard(self.Terminate())                     # and gone with the module
+            sys.modules['weewxd'] = types.SimpleNamespace(Terminate='x')
+            with mock.patch.object(sys.modules['__main__'], 'Terminate', int, create=True):
+                guard(self.Terminate())                     # not classes of exceptions: skipped
+
+    def test_the_installed_weewxds_terminate_is_the_shutdown(self):
+        """Against the real thing, not the stand-in: the venv's weewxd,
+        imported, defines the class weewxd's main loop catches, and the
+        guard hands it back.  A WeeWX release that moved or renamed the
+        class would otherwise return every handler to swallowing SIGTERM
+        with every other test green.  weewxd.py runs main() only as
+        __main__, so importing it starts nothing; it is removed again
+        afterwards so no later test sees it.  Only weewxd: restoring all
+        of sys.modules would also drop what weewxd imported first, and a
+        later import would mint second copies of those modules."""
+        fresh = 'weewxd' not in sys.modules
+        try:
+            import weewxd
+            self.assertTrue(issubclass(weewxd.Terminate, Exception))
+            with self.assertRaises(weewxd.Terminate):
+                user.loopdata.reraise_if_terminate(weewxd.Terminate())
+            user.loopdata.reraise_if_terminate(self.Terminate())   # the stand-in is not it
+            user.loopdata.reraise_if_terminate(ValueError('boom'))
+        finally:
+            if fresh:
+                sys.modules.pop('weewxd', None)
+
+    def test_a_startup_handler_lets_the_shutdown_through(self):
+        """One of __init__'s broad handlers, driven: a report whose context
+        cannot be built is skipped with an error, but weewxd's Terminate
+        arriving there is the shutdown and leaves __init__, unlogged.  An
+        impostor of the same name is an ordinary failure."""
+        from unittest import mock
+        L = user.loopdata
+        raising: List[BaseException] = []
+
+        def build(*args, **kwargs):
+            raise raising[0]
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dict = self._init_fixture(tmp)
+            with self._weewxd_running(), \
+                    mock.patch.object(L.LoopData, 'build_report_context', build):
+                raising[:] = [self.Terminate()]
+                with self.assertLogs('user.loopdata', level='DEBUG') as logs:
+                    with self.assertRaises(self.Terminate):
+                        L.LoopData(self.FakeEngine(config_dict), config_dict)
+                    L.log.debug('marker')
+                self.assertEqual([m for m in logs.output if 'Could not set up' in m], [], logs.output)
+                for failure in (ValueError('broken'), self.Impostor('not weewxd')):
+                    raising[:] = [failure]
+                    with self.assertLogs('user.loopdata', level='ERROR') as logs:
+                        L.LoopData(self.FakeEngine(config_dict), config_dict)
+                    self.assertTrue(any('Could not set up report LoopDataReport' in m
+                                        for m in logs.output), logs.output)
 
     def test_legacy_bands_follow_the_target_report(self):
         """The [[Include]] line is rendered through target_report, so it

@@ -126,9 +126,8 @@ translations, and the recipe for building your own live page.
 ## Example of LoopData in Action
 
 See weewx-loopdata in action at
-[www.paloaltoweather.com](https://www.paloaltoweather.com/) — the
-"Tempestas" skin, including its celestial tabs, is loopdata-driven
-throughout.
+[www.paloaltoweather.com](https://www.paloaltoweather.com/) — the site's
+skin, including its celestial tabs, is loopdata-driven throughout.
 
 Below, loopdata is driving
 [weewx-celestial](https://github.com/chaunceygardiner/weewx-celestial)'s
@@ -296,10 +295,10 @@ working as before.
                          using public/private key must be configured for authentication from the user
                          account that weewx runs under on this computer to the user account on the
                          remote machine with write access to the destination directory (remote_dir).
- * `remote_port`       : The ssh port on remote_server, if it is not the default 22.  Unset
-                         by default, in which case ssh's own default applies.  (A port set
-                         here and a port set in `ssh_options` are two ways to the same end;
-                         pick one.)
+ * `remote_port`       : The ssh port on remote_server.  Unset by default, in which case ssh
+                         chooses: 22, unless ssh_config sets a Port for the host.  A port set
+                         here overrides ssh_config, 22 included.  (A port set here and a port
+                         set in `ssh_options` are two ways to the same end; pick one.)
  * `remote_user`       : The userid on remote_server with write permission to remote_dir.
  * `remote_dir`        : The directory on remote_server where filename will be copied.
  * `compress`          : True to compress the file before sending.  Default is False.

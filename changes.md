@@ -1,5 +1,19 @@
 # weewx-loopdata change history
 
+## 8.0.5 2026/11/06
+- remote_port in [[RsyncSpec]] works.  LoopData handed the port to
+  WeeWX's rsync code as a string, which WeeWX cannot format, so the first
+  upload failed with "TypeError: %d format: a real number is required,
+  not str" and LoopData stopped writing loop-data.txt until weewxd was
+  restarted.  Every station on WeeWX 4.6 or later that set remote_port
+  was affected (4.6 changed how WeeWX writes the port into the ssh
+  command); one that left it unset, or put the port in ssh_options or
+  ssh_config, was not.  A port set here overrides a Port that ssh_config
+  sets for the host, 22 included.
+- Internal: weewxd's shutdown is recognized by the running weewxd's own
+  Terminate class rather than by the class name, so a library exception
+  that happens to be called Terminate is no longer mistaken for it.
+
 ## 8.0.4 2026/11/04
 - Times declared in unix_epoch_ns are correct on every WeeWX.  LoopData
   took the factors that turn an epoch into milliseconds or nanoseconds
