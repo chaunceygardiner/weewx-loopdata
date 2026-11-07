@@ -58,7 +58,7 @@ from weewx.engine import StdService
 # get a logger object
 log = logging.getLogger(__name__)
 
-LOOP_DATA_VERSION = '8.0.6'
+LOOP_DATA_VERSION = '8.0.7'
 
 # WeeWX's own [[RSYNC]] report names these options differently, so a
 # station that copies one into [LoopData] [[RsyncSpec]] gets nothing:
@@ -274,7 +274,6 @@ class Configuration:
     queue                    : queue.SimpleQueue
     config_dict              : Dict[str, Any]
     unit_system              : int
-    archive_interval         : int
     archive_delay            : int
     loop_data_dir            : str
     filename                 : str
@@ -2699,7 +2698,6 @@ class LoopData(StdService):
             queue                    = queue.SimpleQueue(),
             config_dict              = config_dict,
             unit_system              = unit_system,
-            archive_interval         = to_int(std_archive_dict.get('archive_interval')),
             archive_delay            = to_int(std_archive_dict.get('archive_delay', 15)),
             loop_data_dir            = loop_data_dir,
             filename                 = file_spec_dict.get('filename', 'loop-data.txt'),
@@ -3451,17 +3449,17 @@ class LoopData(StdService):
 
                 # Create fixed accums
                 alltime_accum, self.cfg.obstypes.alltime = LoopData.create_alltime_accum(
-                    self.cfg.unit_system, self.cfg.archive_interval, self.cfg.obstypes.alltime, day_accum, dbm)
+                    self.cfg.unit_system, self.cfg.obstypes.alltime, day_accum, dbm)
                 rainyear_accum, self.cfg.obstypes.rainyear = LoopData.create_rainyear_accum(
-                    self.cfg.unit_system, self.cfg.archive_interval, self.cfg.obstypes.rainyear, pkt_time, self.cfg.rainyear_start, day_accum, dbm)
+                    self.cfg.unit_system, self.cfg.obstypes.rainyear, pkt_time, self.cfg.rainyear_start, day_accum, dbm)
                 year_accum, self.cfg.obstypes.year = LoopData.create_year_accum(
-                    self.cfg.unit_system, self.cfg.archive_interval, self.cfg.obstypes.year, pkt_time, day_accum, dbm)
+                    self.cfg.unit_system, self.cfg.obstypes.year, pkt_time, day_accum, dbm)
                 month_accum, self.cfg.obstypes.month = LoopData.create_month_accum(
-                    self.cfg.unit_system, self.cfg.archive_interval, self.cfg.obstypes.month, pkt_time, day_accum, dbm)
+                    self.cfg.unit_system, self.cfg.obstypes.month, pkt_time, day_accum, dbm)
                 week_accum, self.cfg.obstypes.week = LoopData.create_week_accum(
-                    self.cfg.unit_system, self.cfg.archive_interval, self.cfg.obstypes.week, pkt_time, self.cfg.week_start, day_accum, dbm)
+                    self.cfg.unit_system, self.cfg.obstypes.week, pkt_time, self.cfg.week_start, day_accum, dbm)
                 hour_accum, self.cfg.obstypes.hour = LoopData.create_hour_accum(
-                    self.cfg.unit_system, self.cfg.archive_interval, self.cfg.obstypes.hour, pkt_time, day_accum, dbm,
+                    self.cfg.unit_system, self.cfg.obstypes.hour, pkt_time, day_accum, dbm,
                     archive_delay=self.cfg.archive_delay)
 
                 # Create continuous accums
@@ -3481,7 +3479,7 @@ class LoopData(StdService):
                         continue
 
                     cont_accum, obstypes = LoopData.create_continuous_accum(
-                        per, self.cfg.unit_system, self.cfg.archive_interval, obstypes, timelength, day_accum, dbm,
+                        per, self.cfg.unit_system, obstypes, timelength, day_accum, dbm,
                         archive_delay=self.cfg.archive_delay)
                     if cont_accum:
                         continuous_accums[per], self.cfg.obstypes.continuous[per]  = cont_accum, obstypes
@@ -3525,51 +3523,51 @@ class LoopData(StdService):
         self.cfg.queue.put(event)
 
     @staticmethod
-    def create_alltime_accum(unit_system: int, archive_interval: int, obstypes: Set[str], 
+    def create_alltime_accum(unit_system: int, obstypes: Set[str], 
             day_accum: weewx.accum.Accum, dbm) -> Tuple[Optional[weewx.accum.Accum], Set[str]]:
         log.debug('Creating alltime_accum')
         # Pick a timespan such that all observations will be included
         # Span from Friday, January 2, 1970 12:00:00 AM UTC to January 1, 2525 12:00:00 AM UTC
         span = weeutil.weeutil.TimeSpan(86400, 17514144000)
-        return LoopData.create_period_accum('alltime', unit_system, archive_interval, obstypes, span, day_accum, dbm)
+        return LoopData.create_period_accum('alltime', unit_system, obstypes, span, day_accum, dbm)
 
     @staticmethod
-    def create_rainyear_accum(unit_system: int, archive_interval: int, obstypes: Set[str], pkt_time: int,
+    def create_rainyear_accum(unit_system: int, obstypes: Set[str], pkt_time: int,
             rainyear_start: int, day_accum: weewx.accum.Accum, dbm) -> Tuple[Optional[weewx.accum.Accum], Set[str]]:
         log.debug('Creating initial rainyear_accum')
         span = weeutil.weeutil.archiveRainYearSpan(pkt_time, rainyear_start)
-        return LoopData.create_period_accum('rainyear', unit_system, archive_interval, obstypes, span, day_accum, dbm)
+        return LoopData.create_period_accum('rainyear', unit_system, obstypes, span, day_accum, dbm)
 
     @staticmethod
-    def create_year_accum(unit_system: int, archive_interval: int, obstypes: Set[str], pkt_time: int, day_accum: weewx.accum.Accum, dbm
+    def create_year_accum(unit_system: int, obstypes: Set[str], pkt_time: int, day_accum: weewx.accum.Accum, dbm
             ) -> Tuple[Optional[weewx.accum.Accum], Set[str]]:
         log.debug('Creating initial year_accum')
         span = weeutil.weeutil.archiveYearSpan(pkt_time)
-        return LoopData.create_period_accum('year', unit_system, archive_interval, obstypes, span, day_accum, dbm)
+        return LoopData.create_period_accum('year', unit_system, obstypes, span, day_accum, dbm)
 
     @staticmethod
-    def create_month_accum(unit_system: int, archive_interval: int, obstypes: Set[str], pkt_time: int, day_accum: weewx.accum.Accum, dbm
+    def create_month_accum(unit_system: int, obstypes: Set[str], pkt_time: int, day_accum: weewx.accum.Accum, dbm
             ) -> Tuple[Optional[weewx.accum.Accum], Set[str]]:
         log.debug('Creating initial month_accum')
         span = weeutil.weeutil.archiveMonthSpan(pkt_time)
-        return LoopData.create_period_accum('month', unit_system, archive_interval, obstypes, span, day_accum, dbm)
+        return LoopData.create_period_accum('month', unit_system, obstypes, span, day_accum, dbm)
 
     @staticmethod
-    def create_week_accum(unit_system: int, archive_interval: int, obstypes: Set[str], pkt_time: int,
+    def create_week_accum(unit_system: int, obstypes: Set[str], pkt_time: int,
             week_start: int, day_accum: weewx.accum.Accum, dbm) -> Tuple[Optional[weewx.accum.Accum], Set[str]]:
         log.debug('Creating initial week_accum')
         span = weeutil.weeutil.archiveWeekSpan(pkt_time, week_start)
-        return LoopData.create_period_accum('week', unit_system, archive_interval, obstypes, span, day_accum, dbm)
+        return LoopData.create_period_accum('week', unit_system, obstypes, span, day_accum, dbm)
 
     @staticmethod
-    def create_hour_accum(unit_system: int, archive_interval: int, obstypes: Set[str], pkt_time: int, day_accum: weewx.accum.Accum, dbm,
+    def create_hour_accum(unit_system: int, obstypes: Set[str], pkt_time: int, day_accum: weewx.accum.Accum, dbm,
             archive_delay: int = 15) -> Tuple[Optional[weewx.accum.Accum], Set[str]]:
         log.debug('Creating initial hour_accum')
         span = weeutil.weeutil.archiveHoursAgoSpan(pkt_time)
-        return LoopData.create_period_accum('hour', unit_system, archive_interval, obstypes, span, day_accum, dbm, archive_delay=archive_delay)
+        return LoopData.create_period_accum('hour', unit_system, obstypes, span, day_accum, dbm, archive_delay=archive_delay)
 
     @staticmethod
-    def create_period_accum(name: str, unit_system: int, archive_interval: int, obstypes: Set[str],
+    def create_period_accum(name: str, unit_system: int, obstypes: Set[str],
             span: weeutil.weeutil.TimeSpan, day_accum: weewx.accum.Accum, dbm,
             archive_delay: int = 15) -> Tuple[Optional[weewx.accum.Accum], Set[str]]:
         """return period accumulator and (possibly trimmed) obstypes"""
@@ -3660,7 +3658,11 @@ class LoopData(StdService):
                     continue
                 pkt['usUnits'] = unit_system
                 pruned_pkt = LoopProcessor.prune_period_packet(pkt, obstypes)
-                accum.addRecord(pruned_pkt, weight=archive_interval * 60)
+                # Each record weighs its own interval in seconds, as in
+                # WeeWX's own accumulators (manager._calc_weight) and the
+                # windrose seed below; [StdArchive] archive_interval is
+                # already seconds and is not a record's weight.
+                accum.addRecord(pruned_pkt, weight=to_float(pkt['interval']) * 60.0)
                 pkt_count += 1
             log.debug('Primed hour_accum with %d archive packets in %f seconds.' % (pkt_count, time.time() - start))
 
@@ -3668,7 +3670,7 @@ class LoopData(StdService):
         return accum, valid_obstypes
 
     @staticmethod
-    def create_continuous_accum(name: str, unit_system: int, archive_interval: int, obstypes: Set[str],
+    def create_continuous_accum(name: str, unit_system: int, obstypes: Set[str],
             timelength, day_accum: weewx.accum.Accum, dbm,
             archive_delay: int = 15) -> Tuple[Optional[ContinuousAccum], Set[str]]:
         """return continuously accumulator and (possibly trimmed) obstypes"""
@@ -3718,7 +3720,11 @@ class LoopData(StdService):
                 continue
             pkt['usUnits'] = unit_system
             pruned_pkt = LoopProcessor.prune_period_packet(pkt, obstypes)
-            accum.addRecord(pruned_pkt, weight=archive_interval * 60)
+            # Each record weighs its own interval in seconds, as in WeeWX's
+            # own accumulators (manager._calc_weight) and the windrose seed;
+            # [StdArchive] archive_interval is already seconds and is not a
+            # record's weight.
+            accum.addRecord(pruned_pkt, weight=to_float(pkt['interval']) * 60.0)
             pkt_count += 1
         log.debug('Primed ContinousAccum(%s) with %d archive packets in %f seconds.' % (name, pkt_count, time.time() - start))
 
@@ -5857,7 +5863,6 @@ class LoopProcessor:
         # queue
         # config_dict
         log.info('unit_system             : %d' % cfg.unit_system)
-        log.info('archive_interval        : %d' % cfg.archive_interval)
         log.info('loop_data_dir           : %s' % cfg.loop_data_dir)
         log.info('filename                : %s' % cfg.filename)
         log.info('target_report           : %s' % cfg.target_report)

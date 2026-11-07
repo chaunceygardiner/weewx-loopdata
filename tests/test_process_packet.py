@@ -6250,7 +6250,6 @@ class ProcessPacketTests(unittest.TestCase):
         pkt_time = 1593630000
         week_start = 6
         rainyear_start = 1
-        archive_interval = 5
 
         tmpdir = tempfile.mkdtemp()
         dbm = None
@@ -6271,37 +6270,37 @@ class ProcessPacketTests(unittest.TestCase):
 
             # year
             accum, _ = user.loopdata.LoopData.create_year_accum(
-                US, archive_interval, obstypes, pkt_time, day_accum, dbm)
+                US, obstypes, pkt_time, day_accum, dbm)
             self.assertEqual(span_of(accum),
                 (weeutil.weeutil.archiveYearSpan(pkt_time).start,
                  weeutil.weeutil.archiveYearSpan(pkt_time).stop))
             # month
             accum, _ = user.loopdata.LoopData.create_month_accum(
-                US, archive_interval, obstypes, pkt_time, day_accum, dbm)
+                US, obstypes, pkt_time, day_accum, dbm)
             self.assertEqual(span_of(accum),
                 (weeutil.weeutil.archiveMonthSpan(pkt_time).start,
                  weeutil.weeutil.archiveMonthSpan(pkt_time).stop))
             # week
             accum, _ = user.loopdata.LoopData.create_week_accum(
-                US, archive_interval, obstypes, pkt_time, week_start, day_accum, dbm)
+                US, obstypes, pkt_time, week_start, day_accum, dbm)
             self.assertEqual(span_of(accum),
                 (weeutil.weeutil.archiveWeekSpan(pkt_time, week_start).start,
                  weeutil.weeutil.archiveWeekSpan(pkt_time, week_start).stop))
             # rainyear
             accum, _ = user.loopdata.LoopData.create_rainyear_accum(
-                US, archive_interval, obstypes, pkt_time, rainyear_start, day_accum, dbm)
+                US, obstypes, pkt_time, rainyear_start, day_accum, dbm)
             self.assertEqual(span_of(accum),
                 (weeutil.weeutil.archiveRainYearSpan(pkt_time, rainyear_start).start,
                  weeutil.weeutil.archiveRainYearSpan(pkt_time, rainyear_start).stop))
             # hour
             accum, _ = user.loopdata.LoopData.create_hour_accum(
-                US, archive_interval, obstypes, pkt_time, day_accum, dbm)
+                US, obstypes, pkt_time, day_accum, dbm)
             self.assertEqual(span_of(accum),
                 (weeutil.weeutil.archiveHoursAgoSpan(pkt_time).start,
                  weeutil.weeutil.archiveHoursAgoSpan(pkt_time).stop))
             # alltime (fixed literal span)
             accum, _ = user.loopdata.LoopData.create_alltime_accum(
-                US, archive_interval, obstypes, day_accum, dbm)
+                US, obstypes, day_accum, dbm)
             self.assertEqual(span_of(accum), (86400, 17514144000))
         finally:
             if dbm is not None:
@@ -7965,7 +7964,6 @@ class ProcessPacketTests(unittest.TestCase):
             queue                    = queue.SimpleQueue(), # dummy
             config_dict              = config_dict,
             unit_system              = unit_system,
-            archive_interval         = to_int(std_archive_dict.get('archive_interval')),
             archive_delay            = to_int(std_archive_dict.get('archive_delay', 15)),
             loop_data_dir            = '', # dummy
             filename                 = '', # dummy
@@ -8146,7 +8144,7 @@ class ProcessPacketTests(unittest.TestCase):
             # Request both a scalar and a vector obstype: this exercises the
             # ScalarStats AND VecStats type-dispatch and merge paths.
             accum, valid_obstypes = user.loopdata.LoopData.create_period_accum(
-                'week', unit_system, 5, {'outTemp', 'wind'}, week_span, day_accum, dbm)
+                'week', unit_system, {'outTemp', 'wind'}, week_span, day_accum, dbm)
 
             self.assertIsNotNone(accum)
             self.assertIn('outTemp', valid_obstypes)
@@ -8178,7 +8176,7 @@ class ProcessPacketTests(unittest.TestCase):
     def test_create_period_accum_empty_obstypes(self) -> None:
         # The early-return guard: no obstypes -> (None, empty set), no DB needed.
         accum, valid = user.loopdata.LoopData.create_period_accum(
-            'week', 1, 5, set(),
+            'week', 1, set(),
             weeutil.weeutil.TimeSpan(0, 100), None, None)
         self.assertIsNone(accum)
         self.assertEqual(valid, set())
@@ -8230,7 +8228,7 @@ class ProcessPacketTests(unittest.TestCase):
                 {'dateTime': today, 'usUnits': 1, 'outTemp': 50.0}, weight=300)
 
             accum, valid = user.loopdata.LoopData.create_period_accum(
-                'week', unit_system, 5, {'outTemp'}, span, day_accum, dbm)
+                'week', unit_system, {'outTemp'}, span, day_accum, dbm)
 
             self.assertIsNotNone(accum)
             self.assertIn('outTemp', accum)
@@ -8273,7 +8271,7 @@ class ProcessPacketTests(unittest.TestCase):
 
                 span = weeutil.weeutil.archiveYearSpan(today)     # holds both days
                 accum, valid = user.loopdata.LoopData.create_period_accum(
-                    'year', unit_system, 5, {'outTemp', 'rain'}, span, day_accum, dbm)
+                    'year', unit_system, {'outTemp', 'rain'}, span, day_accum, dbm)
                 self.assertIsNotNone(accum)
                 self.assertEqual(valid, {'outTemp', 'rain'})
                 # yesterday's row (1 obs) + today's totals (2 obs); today's row
@@ -8329,10 +8327,13 @@ class ProcessPacketTests(unittest.TestCase):
             recs = [{'dateTime': hour_span.start, 'usUnits': 1, 'interval': 5,
                      'outTemp': 99.0}]
             # Three included records a few seconds in the past, distinct and
-            # strictly inside (span.start, now].
+            # strictly inside (span.start, now].  Their intervals differ (in
+            # minutes, as the archive stores them) so that only a per-record
+            # weight can satisfy the weight assertions below.
+            intervals = (5, 1, 10)
             for i, off in enumerate((3, 2, 1)):
                 recs.append({'dateTime': now - off, 'usUnits': 1,
-                             'interval': 5, 'outTemp': 60.0 + i})
+                             'interval': intervals[i], 'outTemp': 60.0 + i})
             dbm.addRecord(recs)
 
             # day_accum for today, populated so 'outTemp' dispatches as ScalarStats.
@@ -8342,7 +8343,7 @@ class ProcessPacketTests(unittest.TestCase):
                 {'dateTime': now, 'usUnits': 1, 'outTemp': 65.0}, weight=300)
 
             accum, valid = user.loopdata.LoopData.create_period_accum(
-                'hour', unit_system, 5, {'outTemp'}, hour_span, day_accum, dbm)
+                'hour', unit_system, {'outTemp'}, hour_span, day_accum, dbm)
 
             self.assertIsNotNone(accum)
             self.assertIn('outTemp', valid)
@@ -8353,6 +8354,12 @@ class ProcessPacketTests(unittest.TestCase):
             self.assertEqual(accum['outTemp'].count, 3)
             self.assertEqual(accum['outTemp'].min, 60.0)
             self.assertEqual(accum['outTemp'].max, 62.0)  # NOT 99 -> start excluded
+            # Weights (spec: WeeWX weighs an archive record by its own
+            # interval in seconds, manager._calc_weight): 300 s, 60 s and
+            # 600 s, whatever [StdArchive] archive_interval says.
+            self.assertEqual(accum['outTemp'].sumtime, 300 + 60 + 600)
+            self.assertAlmostEqual(accum['outTemp'].wsum,
+                                   60.0 * 300 + 61.0 * 60 + 62.0 * 600)
 
         finally:
             if dbm is not None:
@@ -8396,9 +8403,13 @@ class ProcessPacketTests(unittest.TestCase):
             recs = [
                 {'dateTime': far_outside, 'usUnits': 1, 'interval': 5, 'outTemp': 99.0},
                 {'dateTime': just_outside, 'usUnits': 1, 'interval': 5, 'outTemp': 88.0}]
+            # The in-window records' intervals differ (minutes, as the archive
+            # stores them) so that only a per-record weight can satisfy the
+            # weight assertions below.
+            intervals = (5, 1, 10)
             for i, ts in enumerate(inside):
-                recs.append({'dateTime': ts, 'usUnits': 1, 'interval': 5,
-                             'outTemp': 50.0 + i})
+                recs.append({'dateTime': ts, 'usUnits': 1,
+                             'interval': intervals[i], 'outTemp': 50.0 + i})
             dbm.addRecord(recs)
 
             day_accum = weewx.accum.Accum(
@@ -8407,7 +8418,7 @@ class ProcessPacketTests(unittest.TestCase):
                 {'dateTime': now - 60, 'usUnits': 1, 'outTemp': 55.0}, weight=300)
 
             accum, valid = user.loopdata.LoopData.create_continuous_accum(
-                '1h', unit_system, 5, {'outTemp'}, timelength, day_accum, dbm)
+                '1h', unit_system, {'outTemp'}, timelength, day_accum, dbm)
 
             self.assertIsNotNone(accum)
             self.assertIn('outTemp', valid)
@@ -8420,11 +8431,46 @@ class ProcessPacketTests(unittest.TestCase):
             # left-edge exclusion; if either out-of-window record leaked in,
             # count would be 4 or 5.
             self.assertEqual(accum['outTemp'].count, 3)
+            # Weights (spec: WeeWX weighs an archive record by its own
+            # interval in seconds, manager._calc_weight): 300 s, 60 s and
+            # 600 s, whatever [StdArchive] archive_interval says.  These are
+            # what avg, rms, vecavg and vecdir divide by.
+            self.assertEqual(accum['outTemp'].sumtime, 300 + 60 + 600)
+            self.assertAlmostEqual(accum['outTemp'].wsum,
+                                   50.0 * 300 + 51.0 * 60 + 52.0 * 600)
 
         finally:
             if dbm is not None:
                 dbm.close()
             shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_live_packets_weigh_loop_frequency_seconds(self) -> None:
+        # The other half of the seed's ratio.  A seeded archive record weighs
+        # its interval in SECONDS (the two *_from_database tests above), and
+        # an average over a seeded period divides by both kinds of weight, so
+        # a live packet must weigh [[LoopFrequency]] seconds in the same unit.
+        # An average over live packets alone cannot see the unit -- equal
+        # weights cancel -- so this asks each accumulator's sumtime directly,
+        # for every period accumulate_packet feeds.
+        cfg = ProcessPacketTests._get_config('us', 10800, 1, 6, [
+            '%s.outTemp.avg' % per for per in
+            ('alltime', 'rainyear', 'year', 'month', 'week', 'day', 'hour', '10m', '24h')])
+        self.assertEqual(cfg.loop_frequency, 2.0)
+        t = 1593630000 + 600                        # 2020-07-01 12:10 PDT: one hour holds both
+        accums = ProcessPacketTests._get_accums(cfg, t)
+        for dt, temp in ((t, 70.0), (t + 2, 72.0)):
+            user.loopdata.LoopProcessor.accumulate_packet(
+                {'dateTime': dt, 'usUnits': weewx.US, 'outTemp': temp}, cfg, accums)
+        stats = {
+            'alltime': accums.alltime_accum, 'rainyear': accums.rainyear_accum,
+            'year': accums.year_accum, 'month': accums.month_accum,
+            'week': accums.week_accum, 'day': accums.day_accum,
+            'hour': accums.hour_accum,
+            '10m': accums.continuous['10m'], '24h': accums.continuous['24h']}
+        for per, accum in stats.items():
+            with self.subTest(period=per):
+                self.assertEqual(accum['outTemp'].sumtime, 2 * 2.0)
+                self.assertAlmostEqual(accum['outTemp'].wsum, 70.0 * 2.0 + 72.0 * 2.0)
 
     def test_windrose_seed_from_database(self) -> None:
         # Spec test against a REAL sqlite archive: seed_windrose_span_accum's
@@ -10058,7 +10104,15 @@ class ProcessPacketTests(unittest.TestCase):
         stood in: remote_port as weewx.conf writes it (a string) reaches
         the ssh command as `ssh -p 2222` on every packet.  Before 8.0.5 the
         port reached WeeWX as a string, WeeWX's %d raised TypeError, and
-        the thread ended at the first packet."""
+        the thread ended at the first packet.
+
+        And [StdArchive] has no archive_interval, which WeeWX allows (it
+        uses 300 s).  LoopData reads none: each seeded record weighs its
+        own interval.  Through 8.0.6 the hour and rolling seeds multiplied
+        the missing value by 60 and raised TypeError in new_loop, on the
+        engine's thread, at the first packet; and behind that, the startup
+        log line formatted it with %d, which would have ended the
+        processing thread before any packet was written."""
         from unittest import mock
         import types
         import weeutil.rsyncupload
@@ -10067,6 +10121,7 @@ class ProcessPacketTests(unittest.TestCase):
         time.tzset()
         with tempfile.TemporaryDirectory() as tmp:
             config_dict = self._init_fixture(tmp)
+            del config_dict['StdArchive']['archive_interval']
             # A weewx.conf-side group beside the sample skin's own: the two
             # types only the thread computes, plus enough to tell a seeded
             # accumulator from one the packets alone would have filled.

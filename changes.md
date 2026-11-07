@@ -1,5 +1,13 @@
 # weewx-loopdata change history
 
+## 8.0.7 2026/11/07
+- Archive records seeded into hour and the rolling windows at startup
+  carry their real weight.
+- LoopData runs on a station whose [StdArchive] leaves out
+  archive_interval, which WeeWX allows.
+- Internal: the period and rolling-window accumulator builders no longer
+  take archive_interval, whose only use was that weight.
+
 ## 8.0.6 2026/11/06
 - A failure while handling a loop packet costs that packet, not the
   file.  Any exception there -- a write of loop-data.txt failing because

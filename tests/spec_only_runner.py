@@ -93,6 +93,7 @@ SPEC_TESTS = [
     'test_period_accum_wrappers_use_correct_spans',
     'test_create_hour_accum_from_database',
     'test_create_continuous_accum_from_database',
+    'test_live_packets_weigh_loop_frequency_seconds',
     'test_windrose_banding',
     'test_parse_windrose_bands',
     'test_get_windrose_periods',
